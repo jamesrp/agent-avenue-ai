@@ -1,2 +1,2 @@
 # agent-avenue-ai
-Agent Avenue AI experiments
+[Agent Avenue](https://boardgamegeek.com/boardgame/422732/agent-avenue) AI experiments

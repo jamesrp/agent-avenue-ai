@@ -23,11 +23,14 @@ There should be a lightweight web UI to play the game (to verify the rules engin
 and kick the tires of an AI opponent), but this can be barebones as it's not the main goal.
 Just enough for to QA the system.
 
-The first learned baseline: a viewpoint-relative flat observation encoder, a small
-PyTorch value network, terminal-outcome training from compact replay data, information-safe
-one-ply afterstate selection, frozen-checkpoint iterative self-play, and statistically grounded
-arena evaluation. It must run usefully on a CPU-only exe.dev development box while retaining clean
-paths to parallel actors and GPU-backed training or inference.
+The first learned baseline: a viewpoint-relative flat observation-and-action encoder, a small
+PyTorch candidate-value network, terminal-outcome training from compact replay data,
+information-safe one-ply candidate selection, frozen-checkpoint iterative self-play, and
+statistically grounded arena evaluation. It must run usefully on a CPU-only exe.dev development box
+while retaining clean paths to parallel actors and GPU-backed training or inference. The research
+review and implementation breakdown are in
+[`docs/NEURAL_AI_RESEARCH.md`](docs/NEURAL_AI_RESEARCH.md) and
+[`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md).
 
 Preserve the engine as an explicit state machine. Every player choice remains a semantic
 `Decision`, and applying one semantic `Action` advances to the next decision or terminal result.

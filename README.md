@@ -1,5 +1,8 @@
 # agent-avenue-ai
-[Agent Avenue](https://boardgamegeek.com/boardgame/422732/agent-avenue) AI experiments
+[Agent Avenue](https://boardgamegeek.com/boardgame/422732/agent-avenue) AI experiments.
+
+All gameplay content is copyright Nerdlab Games. This is just an ML research project and
+I don't intend to host the game as a playable app.
 
 ## Project goal
 Build a strong, reproducible, and inspectable AI for the two-player base game of **Agent Avenue**—not

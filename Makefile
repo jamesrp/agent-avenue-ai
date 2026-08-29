@@ -1,10 +1,10 @@
-.PHONY: setup run web test test-web lint format typecheck check clean
+.PHONY: setup run web test test-web lint format typecheck check arena-smoke clean
 
 setup:
 	uv sync
 
 run:
-	uv run python -m agent_avenue
+	uv run python -m agent_avenue game
 
 web:
 	uv run python -m agent_avenue.web
@@ -25,6 +25,10 @@ typecheck:
 	uv run mypy
 
 check: lint typecheck test
+
+arena-smoke:
+	uv run python -m agent_avenue arena --agent-a random --agent-b random --pairs 10 --seed 20260829 --run-id smoke-random-fairness
+	uv run python -m agent_avenue arena --agent-a heuristic --agent-b random --pairs 10 --seed 20260829 --run-id smoke-heuristic-baseline
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov build dist

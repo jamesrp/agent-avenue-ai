@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "name": "milestone3-cpu-smoke",
+  "master_seed": 20260829,
+  "paired_seed_count": 10,
+  "arenas": [
+    {
+      "run_id": "smoke-random-fairness",
+      "agent_a": "random",
+      "agent_b": "random"
+    },
+    {
+      "run_id": "smoke-heuristic-baseline",
+      "agent_a": "heuristic",
+      "agent_b": "random"
+    }
+  ]
+}

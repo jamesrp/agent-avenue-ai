@@ -59,3 +59,32 @@ make run
 
 Optional dependencies can be installed with `uv sync --extra web`, `uv sync --extra rl`, or both.
 See `AGENTS.md` for architecture, reproducibility, testing, and contribution conventions.
+
+## Deterministic rules engine
+
+Milestone 1 provides a typed, immutable two-player base-game engine in
+`agent_avenue.engine` and a separate player-safe observation boundary in
+`agent_avenue.observation`.
+
+```python
+from agent_avenue.engine import apply_action, legal_actions, new_game
+
+state = new_game(seed=17)
+state = apply_action(state, legal_actions(state)[0])
+```
+
+Run a deterministic scripted game, save its semantic replay, or verify a saved replay:
+
+```bash
+uv run python -m agent_avenue demo --seed 17 --save game.replay.json
+uv run python -m agent_avenue replay game.replay.json
+```
+
+Replay files contain normalized configuration, seed, semantic actions, versions, and verification
+fingerprints. They do not contain hidden-state snapshots. The committed
+`tests/fixtures/scripted_seed17.replay.json` is a small compatibility fixture.
+
+The canonical 38-card deck cannot naturally reach the deck-exhaustion adjudication: once all six
+Codebreakers have been recruited, at least one of two players necessarily has the three copies
+required for an earlier instant win. The exhaustion rule is nevertheless implemented and tested as
+an isolated adjudication rule, matching the published base rules.

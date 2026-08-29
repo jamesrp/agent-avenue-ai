@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Request error · Agent Avenue QA{% endblock %}
+{% block content %}
+<section class="panel narrow">
+  <p class="eyebrow">Error {{ status_code }}</p>
+  <h1>Request could not be completed</h1>
+  <p>{{ message }}</p>
+  <a class="button" href="/">Return to start</a>
+</section>
+{% endblock %}

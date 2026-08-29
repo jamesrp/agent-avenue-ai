@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ outcome.winner }} wins · Agent Avenue QA{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">Game complete</p>
+  <h1>{{ outcome.winner }} wins</h1>
+  <p>Reason: {{ outcome.reason }}. Resolution: {{ outcome.resolution }}. The game ended on turn {{ outcome.turn }}.</p>
+  <div class="button-row"><a class="button" href="/">Start another game</a></div>
+  <form method="post" action="/games" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="seed" value="{{ metadata.seed }}">
+    <button type="submit" class="secondary">Replay this seed</button>
+  </form>
+</section>
+{% include "_board.html" %}
+{% set history = board.history %}{% include "_history.html" %}
+{% include "_metadata.html" %}
+{% endblock %}

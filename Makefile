@@ -1,4 +1,4 @@
-.PHONY: setup run test lint format typecheck check clean
+.PHONY: setup run web test test-web lint format typecheck check clean
 
 setup:
 	uv sync
@@ -6,8 +6,14 @@ setup:
 run:
 	uv run python -m agent_avenue
 
+web:
+	uv run python -m agent_avenue.web
+
 test:
 	uv run pytest
+
+test-web:
+	uv run pytest tests/web
 
 lint:
 	uv run ruff check .

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Turn {{ summary.turn }} result · Agent Avenue QA{% endblock %}
+{% block content %}
+<section class="hero compact">
+  <p class="eyebrow">Recruitment resolved</p>
+  <h1>Turn {{ summary.turn }} result</h1>
+  <p>{{ summary.chooser }} chose the {{ summary.chosen_slot }} card and recruited <strong>{{ summary.opponent_recruited }}</strong>. {{ summary.active_player }} recruited <strong>{{ summary.active_recruited }}</strong>.</p>
+  <p>Score changes: Player One {{ "%+d"|format(summary.score_changes[0]) }}; Player Two {{ "%+d"|format(summary.score_changes[1]) }}.</p>
+  <form method="post" action="/games/{{ game_id }}/turn-result/continue">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">{% if terminal %}View final result{% else %}Continue to next turn{% endif %}</button>
+  </form>
+</section>
+{% include "_board.html" %}
+{% set history = board.history %}{% include "_history.html" %}
+{% include "_metadata.html" %}
+{% endblock %}

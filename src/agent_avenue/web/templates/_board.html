@@ -1,0 +1,18 @@
+<section aria-labelledby="board-heading">
+  <h2 id="board-heading">Public board</h2>
+  <div class="score-grid">
+  {% for player in board.players %}
+    <article class="player-panel">
+      <h3>{{ player.label }}</h3>
+      <p class="score">{{ player.score }} points</p>
+      <p>{{ player.hand_size }} cards in hand</p>
+      <h4>Recruited agents</h4>
+      {% if player.recruited %}
+      <ul class="compact-list">
+        {% for card in player.recruited %}<li>{{ card.label }} × {{ card.count }}</li>{% endfor %}
+      </ul>
+      {% else %}<p>None yet.</p>{% endif %}
+    </article>
+  {% endfor %}
+  </div>
+</section>

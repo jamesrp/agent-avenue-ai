@@ -1,0 +1,17 @@
+<section aria-labelledby="history-heading">
+  <h2 id="history-heading">Public history</h2>
+  {% if history %}
+  <ol class="history">
+  {% for item in history|reverse %}
+    <li>
+      <strong>Turn {{ item.turn }}:</strong> {{ item.active_player }} offered
+      {{ item.face_up }} face up and {{ item.face_down }} face down.
+      {{ item.chooser }} chose {{ item.chosen_slot }} and recruited {{ item.opponent_recruited }};
+      {{ item.active_player }} recruited {{ item.active_recruited }}.
+      Score changes: Player One {{ "%+d"|format(item.score_changes[0]) }},
+      Player Two {{ "%+d"|format(item.score_changes[1]) }}.
+    </li>
+  {% endfor %}
+  </ol>
+  {% else %}<p>No completed turns.</p>{% endif %}
+</section>

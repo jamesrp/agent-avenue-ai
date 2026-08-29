@@ -60,6 +60,23 @@ make run
 Optional dependencies can be installed with `uv sync --extra web`, `uv sync --extra rl`, or both.
 See `AGENTS.md` for architecture, reproducibility, testing, and contribution conventions.
 
+## Lightweight web QA interface
+
+Milestone 2 provides a private, server-rendered hot-seat interface for checking game rules and
+hidden-information behavior. It is a QA tool for this research project, not a public hosted copy of
+the game. Install the optional dependencies and start the single-process in-memory server:
+
+```bash
+uv sync --extra web
+make web
+# serves http://0.0.0.0:8000
+```
+
+The interface supports explicit or generated seeds, pass-device handoffs, semantic form actions,
+public turn summaries, terminal results, and reproduction metadata. Active games are intentionally
+lost when the process restarts. Run its focused tests with `make test-web`; see
+[`docs/WEB_QA.md`](docs/WEB_QA.md) for the manual smoke checklist.
+
 ## Deterministic rules engine
 
 Milestone 1 provides a typed, immutable two-player base-game engine in

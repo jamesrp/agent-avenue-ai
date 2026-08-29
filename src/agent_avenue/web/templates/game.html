@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Turn {{ view.turn }} · {{ view.viewer }}{% endblock %}
+{% block content %}
+<section class="turn-header">
+  <div><p class="eyebrow">Turn {{ view.turn }} · {{ view.phase }} phase</p><h1>{{ view.viewer }}’s decision</h1></div>
+  <p><strong>Active player:</strong> {{ view.active_player }}<br><strong>Deck:</strong> {{ view.remaining_deck_count }} cards</p>
+</section>
+{% set board = view %}{% include "_board.html" %}
+{% if view.decision.kind == "play" %}
+<section aria-labelledby="decision-heading">
+  <h2 id="decision-heading">Choose an offer</h2>
+  <p>Select an ordered pair: one card will be face up and one face down.</p>
+  <div class="hand" aria-label="Your hand">
+  {% for card in view.own_hand %}
+    <article class="card"><h3>{{ card.label }}</h3><p>{{ card.effect }}</p></article>
+  {% endfor %}
+  </div>
+  <div class="actions">
+  {% for action in actions %}
+    <form method="post" action="/games/{{ game_id }}/actions">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="revision" value="{{ action.revision }}">
+      <input type="hidden" name="face_up" value="{{ action.face_up.value }}">
+      <input type="hidden" name="face_down" value="{{ action.face_down.value }}">
+      <button type="submit"><strong>Face up:</strong> {{ action.face_up.value|replace('_', ' ')|title }}<br><strong>Face down:</strong> {{ action.face_down.value|replace('_', ' ')|title }}</button>
+    </form>
+  {% endfor %}
+  </div>
+</section>
+{% else %}
+<section aria-labelledby="decision-heading">
+  <h2 id="decision-heading">Recruit one offer slot</h2>
+  <p>The other card goes to {{ view.active_player }}. The face-down identity remains hidden until recruitment resolves.</p>
+  <div class="offer-grid">
+    <article class="card face-up"><p class="eyebrow">Face up</p><h3>{{ view.offer.face_up.label }}</h3><p>{{ view.offer.face_up.effect }}</p></article>
+    <article class="card face-down"><p class="eyebrow">Face down</p><h3>Hidden agent</h3><p>Identity unrevealed</p></article>
+  </div>
+  <div class="actions two">
+  {% for action in actions %}
+    <form method="post" action="/games/{{ game_id }}/actions">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="revision" value="{{ action.revision }}">
+      <input type="hidden" name="slot" value="{{ action.slot.value }}">
+      <button type="submit">Recruit {{ action.slot.value|replace('_', ' ')|title }}</button>
+    </form>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% set history = view.history %}{% include "_history.html" %}
+{% include "_metadata.html" %}
+{% endblock %}

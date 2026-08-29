@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Pass to {{ player }} · Agent Avenue QA{% endblock %}
+{% block content %}
+<section class="handoff panel narrow">
+  <p class="eyebrow">Pass the device</p>
+  <h1>{{ player }}, take control</h1>
+  <p>No private cards are shown on this screen. Make sure the other player has looked away before continuing.</p>
+  <form method="post" action="/games/{{ game_id }}/pass/reveal">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Show {{ player }}’s view</button>
+  </form>
+</section>
+{% include "_metadata.html" %}
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Start game · Agent Avenue QA{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">Rules-engine verification</p>
+  <h1>Start a hot-seat game</h1>
+  <p>This deliberately small interface is for private research QA. It uses textual card information and is not a public hosted copy of the game.</p>
+</section>
+<section class="panel narrow">
+  <h2>New two-player game</h2>
+  <form method="post" action="/games">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="seed">Seed <span class="optional">(optional)</span></label>
+    <input id="seed" name="seed" inputmode="numeric" pattern="[0-9]*" placeholder="Generated when blank">
+    <p class="hint">Use a value from 0 through 18446744073709551615.</p>
+    <button type="submit">Create game</button>
+  </form>
+</section>
+{% endblock %}

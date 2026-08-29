@@ -37,7 +37,7 @@ If you have only 1, look at its 1st icon on the top.
 If you have 2, look at its 2nd icon in the center instead.
 If you have 3 or more, look at its 3rd icon on the bottom instead.
 
-## End
+### End
 After both meeples have moved, check whether any player fulfills a
 condition to win or lose the game. If that is not the case, the game
 continues, your turn ends, and your opponent’s turn begins.
@@ -56,3 +56,24 @@ wins the game. This occurs in the following cases:
 * Both players fulfill a condition to lose the game.
 * Any player fulfills a condition to win the game and a condition to lose the game.
 * Players run out of cards (see above) and have the same score.
+
+## Card Contents
+The deck has 38 agent cards. There are 6 each of:
+* Double Agent (-1, 6, -1)
+* Enforcer (1, 2, 3)
+* Codebreaker (0, 0, WIN)
+* Daredevil (2, 3, LOSE)
+* Saboteur (-1, -1, -2)
+* Sentinel (0, 2, 6)
+
+The tuple indicates the effect on first, second, or third+ copy.
+For instance, Sentinel (0, 2, 6) means:
+* First copy gains 0 points
+* Second copy gains 2 points
+* Third copy (or fourth etc) gains 6 points
+
+There are also 1 each of:
+* Sidekick (4)
+* Mole (-3)
+
+Since there is only one each of these, they don't have a 2nd-copy or 3rd-copy effect.

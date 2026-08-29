@@ -2,10 +2,13 @@
 
 import argparse
 import json
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 from .agents import (
     SEED_DERIVATION,
+    EpsilonConfig,
+    EpsilonGreedyAgent,
     GreedyHeuristicAgent,
     GreedyHeuristicConfig,
     RandomAgent,
@@ -62,6 +65,38 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="verify replay semantics while ignoring the source fingerprint",
     )
+
+    corpus = subparsers.add_parser(
+        "corpus-generate", help="generate a verified heuristic self-play corpus"
+    )
+    corpus.add_argument("output", type=Path)
+    corpus.add_argument("--games", type=int, default=100)
+    corpus.add_argument("--seed", type=int, default=0, help="corpus root seed")
+    corpus.add_argument("--run-id", default="heuristic-bootstrap")
+
+    dataset = subparsers.add_parser(
+        "dataset-build", help="extract safe samples from a verified corpus"
+    )
+    dataset.add_argument("corpus", type=Path)
+    dataset.add_argument("output", type=Path)
+    dataset.add_argument("--split-seed", type=int, default=0)
+    dataset.add_argument("--allow-code-mismatch", action="store_true")
+
+    train = subparsers.add_parser("train", help="train candidate-mlp-v1 and save a checkpoint")
+    train.add_argument("dataset", type=Path)
+    train.add_argument("output", type=Path)
+    train.add_argument("--seed", type=int, default=0)
+    train.add_argument("--max-epochs", type=int, default=50)
+    train.add_argument("--batch-size", type=int, default=1024)
+    train.add_argument("--learning-rate", type=float, default=1e-3)
+    train.add_argument("--weight-decay", type=float, default=1e-4)
+    train.add_argument("--patience", type=int, default=8)
+    train.add_argument("--cpu-threads", type=int, default=1)
+
+    checkpoint = subparsers.add_parser(
+        "checkpoint-inspect", help="validate and inspect an immutable neural checkpoint"
+    )
+    checkpoint.add_argument("path", type=Path)
     return parser
 
 
@@ -139,12 +174,141 @@ def _run_replay_command(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
+    if args.games < 2:
+        raise ValueError("corpus generation requires at least two games")
+    from .runners import iter_games
+    from .storage import write_corpus
+
+    base_config = GreedyHeuristicConfig()
+    epsilon = EpsilonConfig(1, 5)
+    wrapped_config = {
+        "version": "epsilon-wrapper-v1",
+        "base": base_config.to_data(),
+        "epsilon": epsilon.to_data(),
+    }
+    agent = AgentSpec(
+        "epsilon-heuristic-v1",
+        wrapped_config,
+        lambda: EpsilonGreedyAgent(GreedyHeuristicAgent(), epsilon),
+    )
+
+    def specs() -> Iterator[GameSpec]:
+        for index in range(args.games):
+            domain = f"corpus:game:{index}"
+            setup_seed = derive_seed(args.seed, f"{domain}:setup") & ((1 << 64) - 1)
+            yield GameSpec(
+                args.run_id,
+                f"game-{index:06d}",
+                None,
+                GameConfig(),
+                setup_seed,
+                (agent, agent),
+                (
+                    derive_seed(args.seed, f"{domain}:player-one"),
+                    derive_seed(args.seed, f"{domain}:player-two"),
+                ),
+                (SEED_DERIVATION, SEED_DERIVATION),
+            )
+
+    manifest = write_corpus(
+        args.output,
+        iter_games(specs()),
+        run_id=args.run_id,
+        behavior_policy="epsilon-1/5-greedy-public-v1",
+        root_seed=args.seed,
+        generation=0,
+    )
+    return manifest.to_data()
+
+
+def _run_dataset_build_command(args: argparse.Namespace) -> dict[str, object]:
+    from .learning.dataset import materialize_dataset, save_dataset
+    from .storage import load_corpus
+
+    manifest, records = load_corpus(args.corpus, verify_code=not args.allow_code_mismatch)
+    dataset = materialize_dataset(
+        records,
+        split_seed=args.split_seed,
+        verify_code=not args.allow_code_mismatch,
+        source_corpus_fingerprint=manifest.corpus_fingerprint,
+    )
+    arrays, manifest_path = save_dataset(dataset, args.output)
+    return {
+        "dataset_fingerprint": dataset.fingerprint,
+        "arrays": str(arrays),
+        "manifest": str(manifest_path),
+        "counts": dataset.manifest["counts"],
+    }
+
+
+def _run_train_command(args: argparse.Namespace) -> dict[str, object]:
+    from .learning import TrainingConfig, load_dataset, save_checkpoint, train_model
+
+    dataset = load_dataset(args.dataset)
+    config = TrainingConfig(
+        seed=args.seed,
+        max_epochs=args.max_epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        early_stopping_patience=args.patience,
+        cpu_threads=args.cpu_threads,
+    )
+    result = train_model(dataset, config=config)
+    source_corpus = dataset.manifest.get("source_corpus_fingerprint")
+    source_corpora = (source_corpus,) if isinstance(source_corpus, str) else ()
+    saved = save_checkpoint(
+        args.output,
+        result.model,
+        metrics=result.metrics_dict(),
+        training_config=config.normalized(),
+        training_seeds={"root": args.seed},
+        dataset_fingerprint=dataset.fingerprint,
+        source_corpus_fingerprints=source_corpora,
+    )
+    return {
+        "checkpoint_fingerprint": saved.checkpoint_fingerprint,
+        "path": str(saved.path),
+        "best_epoch": result.best_epoch,
+        "validation_loss": result.validation_metrics.equal_game_loss,
+    }
+
+
+def _json_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_json_value(item) for item in value]
+    return value
+
+
+def _run_checkpoint_inspect_command(args: argparse.Namespace) -> dict[str, object]:
+    from .learning import inspect_checkpoint
+
+    result = inspect_checkpoint(args.path)
+    return {
+        "checkpoint_fingerprint": result.checkpoint_fingerprint,
+        "tensor_digest": result.tensor_digest,
+        "path": str(result.path),
+        "manifest": _json_value(result.manifest),
+    }
+
+
 def main() -> None:
     args = _parser().parse_args()
     if args.command == "game":
         result = _run_game_command(args)
     elif args.command == "arena":
         result = _run_arena_command(args)
-    else:
+    elif args.command == "replay":
         result = _run_replay_command(args)
+    elif args.command == "corpus-generate":
+        result = _run_corpus_generate_command(args)
+    elif args.command == "dataset-build":
+        result = _run_dataset_build_command(args)
+    elif args.command == "train":
+        result = _run_train_command(args)
+    else:
+        result = _run_checkpoint_inspect_command(args)
     print(json.dumps(result, sort_keys=True))

@@ -5,6 +5,8 @@ import pytest
 from agent_avenue.agents import (
     AgentTurn,
     DeterministicRandom,
+    EpsilonConfig,
+    EpsilonGreedyAgent,
     GreedyHeuristicAgent,
     GreedyHeuristicConfig,
     RandomAgent,
@@ -38,6 +40,18 @@ class IndexedRandom:
         self.bounds.append(upper_bound)
         assert 0 <= self.index < upper_bound
         return self.index
+
+
+class SequenceRandom:
+    def __init__(self, values: list[int]) -> None:
+        self.values = iter(values)
+        self.bounds: list[int] = []
+
+    def randbelow(self, upper_bound: int) -> int:
+        self.bounds.append(upper_bound)
+        value = next(self.values)
+        assert 0 <= value < upper_bound
+        return value
 
 
 def play_observation(
@@ -107,6 +121,42 @@ def recruit_observation(
         ),
         legal_actions=actions,
     )
+
+
+def test_epsilon_wrapper_has_explicit_rng_consumption() -> None:
+    observation = recruit_observation()
+
+    class FirstAgent:
+        def choose_action(self, observation, decision, legal_actions, rng):  # type: ignore[no-untyped-def]
+            return legal_actions[0]
+
+    base = FirstAgent()
+
+    zero_rng = SequenceRandom([])
+    zero = EpsilonGreedyAgent(base, EpsilonConfig(0, 1))
+    assert (
+        zero.choose_action(observation, observation.decision, observation.legal_actions, zero_rng)
+        in observation.legal_actions
+    )
+    assert zero_rng.bounds == []
+
+    one_rng = SequenceRandom([1])
+    one = EpsilonGreedyAgent(base, EpsilonConfig(1, 1))
+    assert (
+        one.choose_action(observation, observation.decision, observation.legal_actions, one_rng)
+        == observation.legal_actions[1]
+    )
+    assert one_rng.bounds == [2]
+
+    explore_rng = SequenceRandom([0, 1])
+    exploratory = EpsilonGreedyAgent(base, EpsilonConfig(1, 5))
+    assert (
+        exploratory.choose_action(
+            observation, observation.decision, observation.legal_actions, explore_rng
+        )
+        == observation.legal_actions[1]
+    )
+    assert explore_rng.bounds == [5, 2]
 
 
 def test_rng_is_versioned_domain_separated_and_reproducible() -> None:

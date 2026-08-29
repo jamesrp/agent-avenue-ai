@@ -1,6 +1,7 @@
 """Information-safe automated action choosers."""
 
 from .base import Agent, AgentTurn, PublicDecision, choose_agent_action
+from .exploration import EpsilonConfig, EpsilonGreedyAgent
 from .heuristic import (
     HEURISTIC_VERSION,
     GreedyHeuristicAgent,
@@ -25,6 +26,8 @@ __all__ = [
     "Agent",
     "AgentTurn",
     "DeterministicRandom",
+    "EpsilonConfig",
+    "EpsilonGreedyAgent",
     "GreedyHeuristicAgent",
     "GreedyHeuristicConfig",
     "PublicDecision",

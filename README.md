@@ -63,6 +63,38 @@ make run
 Optional dependencies can be installed with `uv sync --extra web`, `uv sync --extra rl`, or both.
 See `AGENTS.md` for architecture, reproducibility, testing, and contribution conventions.
 
+## Neural training pipeline
+
+Milestone 4 provides the information-safe `candidate-public-v1` encoder, verified replay extraction,
+deterministic game-level dataset splits, the 87→128→1 `candidate-mlp-v1` PyTorch model, strict CPU
+training, and immutable validated checkpoints. The bootstrap corpus command uses the planned exact
+`1/5` epsilon exploration around `greedy-public-v1`.
+
+Install the RL dependencies and run a small end-to-end smoke test:
+
+```bash
+uv sync --extra rl
+make check-rl
+make neural-smoke
+```
+
+Start a full Generation 0 training run with separate artifact stages:
+
+```bash
+uv run python -m agent_avenue corpus-generate runs/q0-corpus \
+  --games 4000 --seed 20260829 --run-id q0-bootstrap
+uv run python -m agent_avenue dataset-build runs/q0-corpus runs/q0-dataset.npz \
+  --split-seed 20260830
+uv run python -m agent_avenue train runs/q0-dataset.npz checkpoints/q0 \
+  --seed 20260831
+uv run python -m agent_avenue checkpoint-inspect checkpoints/q0
+```
+
+Corpora, datasets, and checkpoints are ignored by Git. Training consumes only encoded
+`PlayerObservation + Action` candidates; authoritative replay state is used solely by trusted
+offline extraction and terminal labeling. Checkpoint gameplay integration and paired q0 arenas are
+the next milestone.
+
 ## Lightweight web QA interface
 
 Milestone 2 provides a private, server-rendered hot-seat interface for checking game rules and

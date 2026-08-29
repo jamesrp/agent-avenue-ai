@@ -10,6 +10,13 @@ from agent_avenue.engine import GameState, PlayerId
 from .controllers import HumanController, SeatController
 
 
+def _human_controllers() -> tuple[SeatController, SeatController]:
+    return (
+        HumanController(PlayerId.PLAYER_ONE),
+        HumanController(PlayerId.PLAYER_TWO),
+    )
+
+
 class WebStage(StrEnum):
     PASS = "pass"
     DECISION = "decision"
@@ -24,14 +31,12 @@ class WebGame:
     state: GameState
     stage: WebStage = WebStage.PASS
     revealed_actor: PlayerId | None = None
-    controllers: tuple[SeatController, SeatController] = field(init=False)
+    controllers: tuple[SeatController, SeatController] = field(default_factory=_human_controllers)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
     def __post_init__(self) -> None:
-        self.controllers = (
-            HumanController(PlayerId.PLAYER_ONE),
-            HumanController(PlayerId.PLAYER_TWO),
-        )
+        if tuple(controller.player for controller in self.controllers) != tuple(PlayerId):
+            raise ValueError("controllers must be ordered player one, player two")
 
 
 @dataclass(slots=True)
@@ -60,9 +65,19 @@ class SessionRepository:
         with self._lock:
             return self._sessions.get(session_id)
 
-    def create_game(self, session: BrowserSession, state: GameState) -> WebGame:
+    def create_game(
+        self,
+        session: BrowserSession,
+        state: GameState,
+        controllers: tuple[SeatController, SeatController] | None = None,
+    ) -> WebGame:
         with self._lock:
-            game = WebGame(secrets.token_urlsafe(18), secrets.token_urlsafe(18), state)
+            game = WebGame(
+                secrets.token_urlsafe(18),
+                secrets.token_urlsafe(18),
+                state,
+                controllers=controllers or _human_controllers(),
+            )
             session.games[game.game_id] = game
             return game
 

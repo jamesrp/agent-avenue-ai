@@ -9,6 +9,15 @@ from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from agent_avenue.agents import (
+    Agent,
+    DeterministicRandom,
+    GreedyHeuristicAgent,
+    GreedyHeuristicConfig,
+    RandomAgent,
+    RandomAgentConfig,
+    derive_seed,
+)
 from agent_avenue.engine import (
     Action,
     CardName,
@@ -25,6 +34,14 @@ from agent_avenue.engine import (
 from agent_avenue.engine.setup import RULES_VERSION, SHUFFLE_VERSION
 from agent_avenue.observation import observe
 from agent_avenue.observation.model import PlayContext, RecruitContext
+from agent_avenue.runners import (
+    AgentController,
+    GameSession,
+    HumanController,
+    advance_until_human_or_terminal,
+    decision_actor,
+)
+from agent_avenue.runners.game import Controller
 
 from .presenters import (
     PLAYER_LABELS,
@@ -55,7 +72,42 @@ def _csrf(request: Request, submitted: str) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid form token")
 
 
+def _is_hot_seat(game: WebGame) -> bool:
+    return all(isinstance(controller, HumanController) for controller in game.controllers)
+
+
+def _current_is_human(game: WebGame) -> bool:
+    actor = decision_actor(game.state)
+    if actor is None:
+        return False
+    index = 0 if actor is PlayerId.PLAYER_ONE else 1
+    return isinstance(game.controllers[index], HumanController)
+
+
+def _advance_agents(game: WebGame) -> None:
+    session = GameSession(game.state, game.controllers)
+    advance_until_human_or_terminal(session)
+    game.state = session.state
+
+
+def _controller_metadata(game: WebGame) -> tuple[str, str, str]:
+    if _is_hot_seat(game):
+        return ("human-human", PlayerId.PLAYER_ONE.value, "Human versus human")
+    human = next(
+        controller for controller in game.controllers if isinstance(controller, HumanController)
+    )
+    automated = next(
+        controller for controller in game.controllers if isinstance(controller, AgentController)
+    )
+    return (
+        f"human-{automated.agent_id}",
+        human.player.value,
+        f"Human ({PLAYER_LABELS[human.player]}) versus {automated.agent_id.title()}",
+    )
+
+
 def _metadata(game: WebGame) -> dict[str, object]:
+    mode, human_seat, controller_label = _controller_metadata(game)
     return {
         "seed": game.state.seed,
         "starting_player": PLAYER_LABELS[game.state.config.starting_player],
@@ -63,6 +115,10 @@ def _metadata(game: WebGame) -> dict[str, object]:
         "shuffle_version": SHUFFLE_VERSION,
         "replay_id": game.replay_id,
         "public_fingerprint": public_fingerprint(game.state.seed, game.state.history),
+        "controllers": [controller.kind for controller in game.controllers],
+        "mode": mode,
+        "human_seat": human_seat,
+        "controller_label": controller_label,
     }
 
 
@@ -86,23 +142,76 @@ def build_router(repository: SessionRepository) -> APIRouter:
         request: Request,
         csrf_token: Annotated[str, Form()],
         seed: Annotated[str, Form()] = "",
+        mode: Annotated[str, Form()] = "human-human",
+        human_seat: Annotated[str, Form()] = PlayerId.PLAYER_ONE.value,
     ) -> RedirectResponse:
         _csrf(request, csrf_token)
         try:
             actual_seed = secrets.randbits(64) if not seed.strip() else int(seed, 10)
             state = new_game(GameConfig(), actual_seed)
+            controllers: tuple[Controller, Controller]
+            if mode == "human-human":
+                controllers = (
+                    HumanController(PlayerId.PLAYER_ONE),
+                    HumanController(PlayerId.PLAYER_TWO),
+                )
+            else:
+                human = PlayerId(human_seat)
+                agent: Agent
+                if mode == "human-random":
+                    random_config = RandomAgentConfig()
+                    agent_id = "random"
+                    agent = RandomAgent(random_config)
+                    agent_config = random_config.to_data()
+                elif mode == "human-heuristic":
+                    heuristic_config = GreedyHeuristicConfig()
+                    agent_id = "heuristic"
+                    agent = GreedyHeuristicAgent(heuristic_config)
+                    agent_config = heuristic_config.to_data()
+                else:
+                    raise ValueError
+                automated = human.other()
+                agent_seed = derive_seed(actual_seed, f"web:{automated.value}:{agent_id}")
+                agent_controller = AgentController(
+                    automated,
+                    agent_id,
+                    agent_config,
+                    agent_seed,
+                    agent,
+                    DeterministicRandom(agent_seed, f"web:{automated.value}:{agent_id}"),
+                )
+                by_player: dict[PlayerId, Controller] = {
+                    human: HumanController(human),
+                    automated: agent_controller,
+                }
+                controllers = (
+                    by_player[PlayerId.PLAYER_ONE],
+                    by_player[PlayerId.PLAYER_TWO],
+                )
         except (ValueError, EngineError) as exc:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                "Seed must be an unsigned 64-bit integer",
+                "Seed, mode, or human seat is invalid",
             ) from exc
-        game = repository.create_game(_session(request), state)
-        return _redirect(f"/games/{game.game_id}/pass")
+        game = repository.create_game(_session(request), state, controllers)
+        if _is_hot_seat(game):
+            return _redirect(f"/games/{game.game_id}/pass")
+        _advance_agents(game)
+        if game.state.phase is Phase.TERMINAL:
+            game.stage = WebStage.TERMINAL
+            return _redirect(f"/games/{game.game_id}/result")
+        game.revealed_actor = decision_actor(game.state)
+        game.stage = WebStage.DECISION
+        return _redirect(f"/games/{game.game_id}")
 
     @router.get("/games/{game_id}/pass", response_class=HTMLResponse)
     def pass_device(request: Request, game_id: str) -> Response:
         game = _game(request, repository, game_id)
         with game.lock:
+            if not _is_hot_seat(game):
+                if game.state.phase is Phase.TERMINAL:
+                    return _redirect(f"/games/{game_id}/result")
+                return _redirect(f"/games/{game_id}")
             if game.stage is WebStage.DECISION:
                 return _redirect(f"/games/{game_id}")
             if game.stage is WebStage.SUMMARY:
@@ -139,6 +248,8 @@ def build_router(repository: SessionRepository) -> APIRouter:
                 if game.state.phase is Phase.PLAY
                 else game.state.active_player.other()
             )
+            if not _current_is_human(game):
+                raise HTTPException(status.HTTP_409_CONFLICT, "Current controller is automated")
             game.revealed_actor = actor
             game.stage = WebStage.DECISION
         return _redirect(f"/games/{game_id}")
@@ -153,8 +264,8 @@ def build_router(repository: SessionRepository) -> APIRouter:
                 return _redirect(f"/games/{game_id}/turn-result")
             if game.stage is WebStage.TERMINAL:
                 return _redirect(f"/games/{game_id}/result")
-            if game.revealed_actor is None:
-                raise HTTPException(status.HTTP_409_CONFLICT, "No player has taken control")
+            if game.revealed_actor is None or not _current_is_human(game):
+                raise HTTPException(status.HTTP_409_CONFLICT, "No human player has taken control")
             observation = observe(game.state, game.revealed_actor)
             return TEMPLATES.TemplateResponse(
                 request=request,
@@ -178,7 +289,11 @@ def build_router(repository: SessionRepository) -> APIRouter:
         _csrf(request, submitted_csrf)
         game = _game(request, repository, game_id)
         with game.lock:
-            if game.stage is not WebStage.DECISION or game.revealed_actor is None:
+            if (
+                game.stage is not WebStage.DECISION
+                or game.revealed_actor is None
+                or not _current_is_human(game)
+            ):
                 raise HTTPException(status.HTTP_409_CONFLICT, "This decision is no longer current")
             try:
                 revision_value = values.get("revision")
@@ -211,6 +326,14 @@ def build_router(repository: SessionRepository) -> APIRouter:
             was_recruit = game.state.phase is Phase.RECRUIT
             game.state = next_state
             game.revealed_actor = None
+            if not _is_hot_seat(game):
+                _advance_agents(game)
+                if game.state.phase is Phase.TERMINAL:
+                    game.stage = WebStage.TERMINAL
+                    return _redirect(f"/games/{game_id}/result")
+                game.revealed_actor = decision_actor(game.state)
+                game.stage = WebStage.DECISION
+                return _redirect(f"/games/{game_id}")
             if was_recruit:
                 game.stage = WebStage.SUMMARY
                 return _redirect(f"/games/{game_id}/turn-result")

@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from fastapi.testclient import TestClient
 
-from agent_avenue.engine import Phase, PlayOfferAction, RecruitAction, legal_actions
+from agent_avenue.engine import Phase, PlayerId, PlayOfferAction, RecruitAction, legal_actions
 from agent_avenue.web import create_app
 from agent_avenue.web.sessions import BrowserSession, SessionRepository, WebGame
 
@@ -17,12 +17,22 @@ def _csrf(body: str) -> str:
     return match.group(1)
 
 
-def _new_game(client: TestClient, seed: str = "17") -> tuple[str, str]:
+def _new_game(
+    client: TestClient,
+    seed: str = "17",
+    mode: str = "human-human",
+    human_seat: str = "player_one",
+) -> tuple[str, str]:
     landing = client.get("/")
     token = _csrf(landing.text)
     response = client.post(
         "/games",
-        data={"csrf_token": token, "seed": seed},
+        data={
+            "csrf_token": token,
+            "seed": seed,
+            "mode": mode,
+            "human_seat": human_seat,
+        },
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -164,6 +174,104 @@ def test_complete_hot_seat_game_uses_prg_and_public_summary() -> None:
     assert game.state.outcome.winner.value.replace("_", " ").title() in result.text
     assert "Your hand" not in result.text
     assert "Replay this seed" in result.text
+
+
+def test_human_can_play_random_or_heuristic_from_either_seat() -> None:
+    for mode, human_seat in (
+        ("human-random", "player_one"),
+        ("human-heuristic", "player_two"),
+    ):
+        app = create_app()
+        client = TestClient(app)
+        game_id, token = _new_game(client, "23", mode, human_seat)
+        game = _stored_game(client, app, game_id)
+        page = client.get(f"/games/{game_id}")
+        assert page.status_code == 200
+        assert game.revealed_actor is not None
+        assert game.revealed_actor.value == human_seat
+        assert "decision</h1>" in page.text
+        assert f"/games/{game_id}/actions" in page.text
+        action = legal_actions(game.state)[0]
+        response = client.post(
+            f"/games/{game_id}/actions",
+            data=_action_data(action, token),
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] in {
+            f"/games/{game_id}",
+            f"/games/{game_id}/result",
+        }
+        assert game.state.revision >= action.revision + 1
+        if game.state.phase is not Phase.TERMINAL:
+            assert game.revealed_actor is not None
+            assert game.revealed_actor.value == human_seat
+        assert all(controller.kind in {"human", "agent"} for controller in game.controllers)
+
+
+def test_agent_web_flow_never_renders_hidden_face_down_or_diagnostics() -> None:
+    app = create_app()
+    client = TestClient(app)
+    game_id, token = _new_game(client, "31", "human-random", "player_one")
+    game = _stored_game(client, app, game_id)
+    play = legal_actions(game.state)[0]
+    assert isinstance(play, PlayOfferAction)
+    response = client.post(
+        f"/games/{game_id}/actions",
+        data=_action_data(play, token),
+        follow_redirects=False,
+    )
+    assert response.headers["location"] == f"/games/{game_id}"
+    page = client.get(response.headers["location"])
+    assert page.status_code == 200
+    assert "Hidden agent" in page.text
+    assert "heuristic" not in page.text.lower()
+    assert "agent_seed" not in page.text
+    assert "known_face_down" not in page.text
+
+
+def test_ai_result_replay_preserves_mode_and_human_seat() -> None:
+    app = create_app()
+    client = TestClient(app)
+    game_id, token = _new_game(client, "4", "human-random", "player_two")
+    game = _stored_game(client, app, game_id)
+    for _ in range(100):
+        if game.state.phase is Phase.TERMINAL:
+            break
+        action = legal_actions(game.state)[0]
+        response = client.post(
+            f"/games/{game_id}/actions",
+            data=_action_data(action, token),
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+    assert game.state.phase is Phase.TERMINAL
+    result = client.get(f"/games/{game_id}/result")
+    assert 'name="mode" value="human-random"' in result.text
+    assert 'name="human_seat" value="player_two"' in result.text
+    assert "Human (Player Two) versus Random" in result.text
+
+
+def test_ai_action_can_end_web_game() -> None:
+    app = create_app()
+    client = TestClient(app)
+    game_id, token = _new_game(client, "0", "human-random", "player_one")
+    game = _stored_game(client, app, game_id)
+    last_response = None
+    for _ in range(100):
+        if game.state.phase is Phase.TERMINAL:
+            break
+        action = legal_actions(game.state)[0]
+        last_response = client.post(
+            f"/games/{game_id}/actions",
+            data=_action_data(action, token),
+            follow_redirects=False,
+        )
+    assert game.state.phase is Phase.TERMINAL
+    assert game.state.actions[-1].actor is PlayerId.PLAYER_TWO
+    assert last_response is not None
+    assert last_response.headers["location"] == f"/games/{game_id}/result"
+    assert client.get(last_response.headers["location"]).status_code == 200
 
 
 def test_repeated_stale_illegal_and_malformed_actions_are_safe() -> None:

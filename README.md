@@ -72,9 +72,11 @@ make web
 # serves http://0.0.0.0:8000
 ```
 
-The interface supports explicit or generated seeds, pass-device handoffs, semantic form actions,
-public turn summaries, terminal results, and reproduction metadata. Active games are intentionally
-lost when the process restarts. Run its focused tests with `make test-web`; see
+The interface supports explicit or generated seeds, human-versus-human play, human-versus-random
+and human-versus-heuristic games from either seat, semantic form actions, public turn summaries,
+terminal results, and reproduction metadata. Automated controllers advance only until the next
+human decision and receive the same player-safe observations as every other agent. Active games are
+intentionally lost when the process restarts. Run its focused tests with `make test-web`; see
 [`docs/WEB_QA.md`](docs/WEB_QA.md) for the manual smoke checklist.
 
 ## Deterministic rules engine
@@ -90,15 +92,24 @@ state = new_game(seed=17)
 state = apply_action(state, legal_actions(state)[0])
 ```
 
-Run a deterministic scripted game, save its semantic replay, or verify a saved replay:
+Run a seeded automated game, save its completed-game record, verify it, or execute a paired arena:
 
 ```bash
-uv run python -m agent_avenue demo --seed 17 --save game.replay.json
-uv run python -m agent_avenue replay game.replay.json
+uv run python -m agent_avenue game --seed 17 \
+  --player-one heuristic --player-two random --output game.json
+uv run python -m agent_avenue replay game.json
+uv run python -m agent_avenue arena \
+  --agent-a heuristic --agent-b random --pairs 10 --seed 17
 ```
 
-Replay files contain normalized configuration, seed, semantic actions, versions, and verification
-fingerprints. They do not contain hidden-state snapshots. The committed
+Completed-game records contain normalized engine and agent configurations, independently derived
+setup/agent seeds, semantic actions, terminal metadata, versions, and code/rules fingerprints.
+Arena reports alternate seats for every paired setup seed and include Wilson 95% confidence
+intervals, seat splits, score margins, terminal reasons, and throughput. See
+[`docs/MILESTONE3_RESULTS.md`](docs/MILESTONE3_RESULTS.md) for the checked baseline and
+`benchmarks/milestone3-smoke.json` for the fast smoke configuration.
+
+The Milestone 1 engine replay format remains supported by the `replay` command. The committed
 `tests/fixtures/scripted_seed17.replay.json` is a small compatibility fixture.
 
 The canonical 38-card deck cannot naturally reach the deck-exhaustion adjudication: once all six

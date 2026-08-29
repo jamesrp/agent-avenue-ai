@@ -3,13 +3,25 @@
 {% block content %}
 <section class="hero">
   <p class="eyebrow">Rules-engine verification</p>
-  <h1>Start a hot-seat game</h1>
+  <h1>Start a QA game</h1>
   <p>This deliberately small interface is for private research QA. It uses textual card information and is not a public hosted copy of the game.</p>
 </section>
 <section class="panel narrow">
   <h2>New two-player game</h2>
   <form method="post" action="/games">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="mode">Controllers</label>
+    <select id="mode" name="mode">
+      <option value="human-human">Human versus human</option>
+      <option value="human-random">Human versus random agent</option>
+      <option value="human-heuristic">Human versus greedy heuristic</option>
+    </select>
+    <label for="human-seat">Human seat</label>
+    <select id="human-seat" name="human_seat">
+      <option value="player_one">Player One</option>
+      <option value="player_two">Player Two</option>
+    </select>
+    <p class="hint">The seat choice is ignored for human-versus-human games.</p>
     <label for="seed">Seed <span class="optional">(optional)</span></label>
     <input id="seed" name="seed" inputmode="numeric" pattern="[0-9]*" placeholder="Generated when blank">
     <p class="hint">Use a value from 0 through 18446744073709551615.</p>

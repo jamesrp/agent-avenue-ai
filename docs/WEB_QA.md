@@ -29,6 +29,12 @@ active sessions are in memory.
 - [ ] Finish the game and verify winner, reason, resolution, seed, replay ID, rules/shuffle versions,
       and public fingerprint.
 - [ ] Use **Replay this seed** and confirm the initial hand matches.
+- [ ] Start human-versus-random and human-versus-heuristic games with the human in each seat;
+      confirm an AI opening advances directly to the first human decision.
+- [ ] After each human action in an AI game, confirm automated decisions advance only until the
+      next human decision or terminal result and resolved actions appear in public history.
+- [ ] Inspect AI-game responses and confirm they contain no agent RNG seed, heuristic score,
+      opposing hand, deck order, or unrevealed face-down identity.
 
 ## Security and responsive checks
 

@@ -9,6 +9,8 @@
   <form method="post" action="/games" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="seed" value="{{ metadata.seed }}">
+    <input type="hidden" name="mode" value="{{ metadata.mode }}">
+    <input type="hidden" name="human_seat" value="{{ metadata.human_seat }}">
     <button type="submit" class="secondary">Replay this seed</button>
   </form>
 </section>

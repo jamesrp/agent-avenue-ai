@@ -45,3 +45,17 @@ fingerprints, seeds, and configuration to reject incompatible inputs and reprodu
 The long-term measure of success is an AI that becomes meaningfully stronger through
 iterative self-play while remaining fair, testable, auditable, and practical to run—not merely a
 neural-network demo attached to the rules engine.
+
+## Development
+
+This repository targets Python 3.12 and uses [uv](https://docs.astral.sh/uv/) for environments and
+dependency locking.
+
+```bash
+make setup
+make check
+make run
+```
+
+Optional dependencies can be installed with `uv sync --extra web`, `uv sync --extra rl`, or both.
+See `AGENTS.md` for architecture, reproducibility, testing, and contribution conventions.

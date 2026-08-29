@@ -1,0 +1,53 @@
+[project]
+name = "agent-avenue-ai"
+version = "0.1.0"
+description = "A reproducible Agent Avenue rules engine and self-play research lab"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Research use only; game content belongs to Nerdlab Games" }
+authors = [{ name = "James Pfeiffer" }]
+dependencies = []
+
+[project.optional-dependencies]
+web = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+]
+rl = [
+  "numpy>=2.1,<3",
+  "torch>=2.6,<3",
+]
+
+[dependency-groups]
+dev = [
+  "hypothesis>=6.125,<7",
+  "mypy>=1.15,<2",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<7",
+  "ruff>=0.9,<1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_avenue"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["agent_avenue"]
+mypy_path = "src"

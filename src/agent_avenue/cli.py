@@ -27,13 +27,26 @@ from .storage import (
 )
 
 
-def _agent_spec(kind: str, agent_id: str) -> AgentSpec:
+def _agent_spec(kind: str, agent_id: str, checkpoint: Path | None = None) -> AgentSpec:
     if kind == "random":
+        if checkpoint is not None:
+            raise ValueError("checkpoint path is only valid for a learned agent")
         random_config = RandomAgentConfig()
         return AgentSpec(agent_id, random_config.to_data(), RandomAgent)
     if kind == "heuristic":
+        if checkpoint is not None:
+            raise ValueError("checkpoint path is only valid for a learned agent")
         heuristic_config = GreedyHeuristicConfig()
         return AgentSpec(agent_id, heuristic_config.to_data(), GreedyHeuristicAgent)
+    if kind == "learned":
+        if checkpoint is None:
+            raise ValueError("learned agents require a checkpoint path")
+        from .agents.learned import LearnedValueAgent
+        from .learning import load_checkpoint
+
+        loaded = load_checkpoint(checkpoint)
+        agent = LearnedValueAgent.from_checkpoint(loaded)
+        return AgentSpec(agent_id, agent.config.to_data(), lambda: agent)
     raise ValueError(f"unsupported agent kind: {kind}")
 
 
@@ -43,15 +56,21 @@ def _parser() -> argparse.ArgumentParser:
 
     game = subparsers.add_parser("game", help="run one seeded agent-versus-agent game")
     game.add_argument("--seed", type=int, default=0, help="setup seed")
-    game.add_argument("--player-one", choices=("random", "heuristic"), default="heuristic")
-    game.add_argument("--player-two", choices=("random", "heuristic"), default="random")
+    game.add_argument(
+        "--player-one", choices=("random", "heuristic", "learned"), default="heuristic"
+    )
+    game.add_argument("--player-two", choices=("random", "heuristic", "learned"), default="random")
+    game.add_argument("--player-one-checkpoint", type=Path)
+    game.add_argument("--player-two-checkpoint", type=Path)
     game.add_argument("--player-one-seed", type=int)
     game.add_argument("--player-two-seed", type=int)
     game.add_argument("--output", type=Path, help="write a completed-game JSON record")
 
     arena = subparsers.add_parser("arena", help="run a paired, seat-balanced deterministic arena")
-    arena.add_argument("--agent-a", choices=("random", "heuristic"), default="heuristic")
-    arena.add_argument("--agent-b", choices=("random", "heuristic"), default="random")
+    arena.add_argument("--agent-a", choices=("random", "heuristic", "learned"), default="heuristic")
+    arena.add_argument("--agent-b", choices=("random", "heuristic", "learned"), default="random")
+    arena.add_argument("--agent-a-checkpoint", type=Path)
+    arena.add_argument("--agent-b-checkpoint", type=Path)
     arena.add_argument("--pairs", type=int, default=10)
     arena.add_argument("--seed", type=int, default=0, help="arena master seed")
     arena.add_argument("--run-id", default="cli-arena")
@@ -101,8 +120,16 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _run_game_command(args: argparse.Namespace) -> dict[str, object]:
-    first = _agent_spec(args.player_one, f"player-one-{args.player_one}")
-    second = _agent_spec(args.player_two, f"player-two-{args.player_two}")
+    first = _agent_spec(
+        args.player_one,
+        f"player-one-{args.player_one}",
+        args.player_one_checkpoint,
+    )
+    second = _agent_spec(
+        args.player_two,
+        f"player-two-{args.player_two}",
+        args.player_two_checkpoint,
+    )
     first_seed = args.player_one_seed
     first_derivation = "supplied"
     if first_seed is None:
@@ -132,8 +159,8 @@ def _run_game_command(args: argparse.Namespace) -> dict[str, object]:
 def _run_arena_command(args: argparse.Namespace) -> dict[str, object]:
     config = ArenaConfig(
         args.run_id,
-        _agent_spec(args.agent_a, f"agent-a-{args.agent_a}"),
-        _agent_spec(args.agent_b, f"agent-b-{args.agent_b}"),
+        _agent_spec(args.agent_a, f"agent-a-{args.agent_a}", args.agent_a_checkpoint),
+        _agent_spec(args.agent_b, f"agent-b-{args.agent_b}", args.agent_b_checkpoint),
         args.pairs,
         args.seed,
     )

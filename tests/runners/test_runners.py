@@ -26,6 +26,8 @@ from agent_avenue.runners import (
     InvalidAgentActionError,
     advance_until_human_or_terminal,
     iter_games,
+    paired_bootstrap_interval,
+    run_arena,
     run_game,
     schedule_arena,
     step_agent,
@@ -227,6 +229,31 @@ def test_arena_schedule_is_independent_of_run_label() -> None:
     second_games = tuple(schedule_arena(second))
     assert [game.setup_seed for game in first_games] == [game.setup_seed for game in second_games]
     assert [game.agent_seeds for game in first_games] == [game.agent_seeds for game in second_games]
+
+
+def test_paired_bootstrap_matches_declared_fixture() -> None:
+    result = paired_bootstrap_interval((0, 0, 0, 1, 1, 1, 2, 2, 2, 2), 17)
+    assert result.interval == (0.3, 0.8)
+    assert result.point_estimate == 0.55
+    assert paired_bootstrap_interval((0, 0), 17).interval == (0.0, 0.0)
+    assert paired_bootstrap_interval((2, 2), 17).interval == (1.0, 1.0)
+    with pytest.raises(ValueError):
+        paired_bootstrap_interval((), 17)
+    with pytest.raises(ValueError):
+        paired_bootstrap_interval((3,), 17)
+
+
+def test_arena_report_contains_reproducible_paired_outcomes() -> None:
+    report = run_arena(ArenaConfig("paired", _random_spec("a"), _random_spec("b"), 2, 41))
+    assert len(report.paired_seed_outcomes) == 2
+    assert (
+        sum(outcome.agent_a_wins for outcome in report.paired_seed_outcomes) == report.agent_a_wins
+    )
+    data = report.to_data()
+    bootstrap = data["paired_bootstrap_confidence_interval_95"]
+    assert isinstance(bootstrap, dict)
+    assert bootstrap["method"] == "paired-percentile-bootstrap-v1"
+    assert data["wilson_confidence_interval_95"] == data["confidence_interval_95"]
 
 
 def test_wilson_interval_matches_known_fixture() -> None:

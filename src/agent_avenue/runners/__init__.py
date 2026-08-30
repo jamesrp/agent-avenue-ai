@@ -1,6 +1,16 @@
 """Trusted game, batch, and arena orchestration."""
 
-from .arena import ArenaConfig, ArenaReport, SeatStats, run_arena, schedule_arena, wilson_interval
+from .arena import (
+    ArenaConfig,
+    ArenaReport,
+    PairedBootstrapInterval,
+    PairedSeedOutcome,
+    SeatStats,
+    paired_bootstrap_interval,
+    run_arena,
+    schedule_arena,
+    wilson_interval,
+)
 from .batch import iter_games
 from .game import (
     AdvanceResult,
@@ -28,11 +38,14 @@ __all__ = [
     "GameSpec",
     "HumanController",
     "InvalidAgentActionError",
+    "PairedBootstrapInterval",
+    "PairedSeedOutcome",
     "SeatStats",
     "advance_until_human_or_terminal",
     "create_agent_session",
     "decision_actor",
     "iter_games",
+    "paired_bootstrap_interval",
     "run_arena",
     "run_game",
     "schedule_arena",

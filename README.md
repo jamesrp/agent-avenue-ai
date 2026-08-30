@@ -90,10 +90,21 @@ uv run python -m agent_avenue train runs/q0-dataset.npz checkpoints/q0 \
 uv run python -m agent_avenue checkpoint-inspect checkpoints/q0
 ```
 
-Corpora, datasets, and checkpoints are ignored by Git. Training consumes only encoded
-`PlayerObservation + Action` candidates; authoritative replay state is used solely by trusted
-offline extraction and terminal labeling. Checkpoint gameplay integration and paired q0 arenas are
-the next milestone.
+Corpora, datasets, checkpoints, and full arena reports are ignored by Git. Training consumes only
+encoded `PlayerObservation + Action` candidates; authoritative replay state is used solely by trusted
+offline extraction and terminal labeling. Checkpoint-backed play is available through the optional
+RL extra:
+
+```bash
+uv run python -m agent_avenue game --player-one learned \
+  --player-one-checkpoint checkpoints/q0 --player-two heuristic --seed 17
+uv run python -m agent_avenue arena --agent-a learned \
+  --agent-a-checkpoint checkpoints/q0 --agent-b random --pairs 400 --seed 2026083001
+```
+
+Arena reports retain the game-level Wilson interval and add the claim-generating deterministic
+20,000-resample paired-seed bootstrap interval. The completed q0 evaluation is summarized in
+[`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md).
 
 ## Lightweight web QA interface
 
@@ -139,8 +150,8 @@ uv run python -m agent_avenue arena \
 
 Completed-game records contain normalized engine and agent configurations, independently derived
 setup/agent seeds, semantic actions, terminal metadata, versions, and code/rules fingerprints.
-Arena reports alternate seats for every paired setup seed and include Wilson 95% confidence
-intervals, seat splits, score margins, terminal reasons, and throughput. See
+Arena reports alternate seats for every paired setup seed and include Wilson and paired-bootstrap
+95% confidence intervals, seat splits, score margins, terminal reasons, and throughput. See
 [`docs/MILESTONE3_RESULTS.md`](docs/MILESTONE3_RESULTS.md) for the checked baseline and
 `benchmarks/milestone3-smoke.json` for the fast smoke configuration.
 

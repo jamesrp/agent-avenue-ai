@@ -2,22 +2,12 @@
 
 from dataclasses import dataclass
 
-from agent_avenue.engine.cards import CardName
-from agent_avenue.engine.model import Action, OfferSlot, PlayOfferAction, RecruitAction
+from agent_avenue.engine.model import Action
 from agent_avenue.observation.model import ObservationDecision, PlayerObservation
 
 from .base import Agent
+from .ordering import semantic_action_key
 from .random_source import RandomSource
-
-_CARD_ORDER = tuple(CardName)
-
-
-def _semantic_key(action: Action) -> tuple[int, int, int]:
-    if isinstance(action, PlayOfferAction):
-        return (0, _CARD_ORDER.index(action.face_up), _CARD_ORDER.index(action.face_down))
-    if isinstance(action, RecruitAction):
-        return (1, 0 if action.slot is OfferSlot.FACE_UP else 1, 0)
-    raise TypeError("unsupported semantic action")
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +59,7 @@ class EpsilonGreedyAgent:
     ) -> Action:
         if not legal_actions:
             raise ValueError("epsilon agent requires legal actions")
-        candidates = tuple(sorted(legal_actions, key=_semantic_key))
+        candidates = tuple(sorted(legal_actions, key=semantic_action_key))
         if self.epsilon.numerator == self.epsilon.denominator:
             return candidates[rng.randbelow(len(candidates))]
         if self.epsilon.numerator > 0 and (

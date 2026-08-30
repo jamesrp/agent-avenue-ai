@@ -7,12 +7,94 @@ from collections import Counter
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
-from agent_avenue.agents import RNG_ALGORITHM, SEED_DERIVATION, derive_seed
+from agent_avenue.agents import (
+    RNG_ALGORITHM,
+    SEED_DERIVATION,
+    DeterministicRandom,
+    derive_seed,
+)
 from agent_avenue.engine import GameConfig, PlayerId
 from agent_avenue.storage import GameRecord, code_fingerprint, rules_fingerprint
 
 from .batch import iter_games
 from .game import AgentSpec, GameSpec
+
+PAIRED_BOOTSTRAP_METHOD = "paired-percentile-bootstrap-v1"
+PAIRED_BOOTSTRAP_RESAMPLES = 20_000
+PAIRED_BOOTSTRAP_DOMAIN = "arena:paired-bootstrap:agent-a-win-rate:v1"
+PAIRED_BOOTSTRAP_LOWER_INDEX = 499
+PAIRED_BOOTSTRAP_UPPER_INDEX = 19_499
+ARENA_REPORT_SCHEMA_VERSION = 1
+
+
+@dataclass(frozen=True, slots=True)
+class PairedSeedOutcome:
+    pair_id: str
+    agent_a_wins: int
+
+    def __post_init__(self) -> None:
+        if (
+            not self.pair_id
+            or type(self.agent_a_wins) is not int
+            or not 0 <= self.agent_a_wins <= 2
+        ):
+            raise ValueError("paired outcome must identify a pair with zero, one, or two wins")
+
+
+@dataclass(frozen=True, slots=True)
+class PairedBootstrapInterval:
+    interval: tuple[float, float]
+    point_estimate: float
+    pair_count: int
+    bootstrap_seed: int
+
+    def to_data(self) -> dict[str, object]:
+        return {
+            "method": PAIRED_BOOTSTRAP_METHOD,
+            "statistic": "agent_a_win_rate",
+            "unit": "two-game paired seed block",
+            "confidence_level": 0.95,
+            "point_estimate": self.point_estimate,
+            "pair_count": self.pair_count,
+            "resample_count": PAIRED_BOOTSTRAP_RESAMPLES,
+            "order_statistic_indices": {
+                "lower": PAIRED_BOOTSTRAP_LOWER_INDEX,
+                "upper": PAIRED_BOOTSTRAP_UPPER_INDEX,
+            },
+            "interval": list(self.interval),
+            "bootstrap_seed": self.bootstrap_seed,
+            "bootstrap_rng_domain": PAIRED_BOOTSTRAP_DOMAIN,
+            "rng_algorithm": RNG_ALGORITHM,
+            "seed_derivation": SEED_DERIVATION,
+        }
+
+
+def paired_bootstrap_interval(
+    pair_wins: tuple[int, ...], master_seed: int
+) -> PairedBootstrapInterval:
+    """Bootstrap paired two-game seed blocks with the project deterministic RNG."""
+    if not pair_wins:
+        raise ValueError("paired bootstrap requires at least one pair")
+    if any(type(wins) is not int or not 0 <= wins <= 2 for wins in pair_wins):
+        raise ValueError("each paired outcome must contain zero, one, or two wins")
+    bootstrap_seed = derive_seed(master_seed, PAIRED_BOOTSTRAP_DOMAIN)
+    rng = DeterministicRandom(bootstrap_seed, PAIRED_BOOTSTRAP_DOMAIN)
+    pair_count = len(pair_wins)
+    totals = [
+        sum(pair_wins[rng.randbelow(pair_count)] for _ in range(pair_count))
+        for _ in range(PAIRED_BOOTSTRAP_RESAMPLES)
+    ]
+    totals.sort()
+    denominator = 2 * pair_count
+    return PairedBootstrapInterval(
+        interval=(
+            totals[PAIRED_BOOTSTRAP_LOWER_INDEX] / denominator,
+            totals[PAIRED_BOOTSTRAP_UPPER_INDEX] / denominator,
+        ),
+        point_estimate=sum(pair_wins) / denominator,
+        pair_count=pair_count,
+        bootstrap_seed=bootstrap_seed,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +131,8 @@ class ArenaReport:
     agent_b_wins: int
     agent_a_win_rate: float
     confidence_interval_95: tuple[float, float]
+    paired_seed_outcomes: tuple[PairedSeedOutcome, ...]
+    paired_bootstrap_confidence_interval_95: PairedBootstrapInterval
     agent_a_by_seat: dict[str, SeatStats]
     terminal_reasons: dict[str, int]
     average_score_margin: float
@@ -67,6 +151,7 @@ class ArenaReport:
 
     def to_data(self) -> dict[str, object]:
         return {
+            "arena_report_schema_version": ARENA_REPORT_SCHEMA_VERSION,
             "run_id": self.run_id,
             "agents": {
                 "a": {
@@ -83,6 +168,14 @@ class ArenaReport:
             "wins": {"a": self.agent_a_wins, "b": self.agent_b_wins},
             "agent_a_win_rate": self.agent_a_win_rate,
             "confidence_interval_95": list(self.confidence_interval_95),
+            "wilson_confidence_interval_95": list(self.confidence_interval_95),
+            "paired_seed_outcomes": [
+                {"pair_id": outcome.pair_id, "agent_a_wins": outcome.agent_a_wins}
+                for outcome in self.paired_seed_outcomes
+            ],
+            "paired_bootstrap_confidence_interval_95": (
+                self.paired_bootstrap_confidence_interval_95.to_data()
+            ),
             "agent_a_by_seat": {
                 seat: {"games": stats.games, "wins": stats.wins, "win_rate": stats.win_rate}
                 for seat, stats in self.agent_a_by_seat.items()
@@ -157,6 +250,8 @@ def run_arena(
     terminal_reasons = Counter[str]()
     seat_games = Counter[PlayerId]()
     seat_wins = Counter[PlayerId]()
+    pair_games = Counter[str]()
+    pair_wins = Counter[str]()
     margin_total = 0
     turns_total = 0
     decisions_total = 0
@@ -168,6 +263,11 @@ def run_arena(
             record_sink(record)
         winner_id = record.seats[0 if record.winner is PlayerId.PLAYER_ONE else 1].agent_id
         wins[winner_id] += 1
+        if record.pair_id is None:
+            raise ValueError("paired arena record is missing pair_id")
+        pair_games[record.pair_id] += 1
+        if winner_id == config.agent_a.agent_id:
+            pair_wins[record.pair_id] += 1
         terminal_reasons[record.terminal_reason] += 1
         a_seat = (
             PlayerId.PLAYER_ONE
@@ -182,6 +282,13 @@ def run_arena(
         turns_total += record.turn_count
         decisions_total += record.decision_count
     elapsed = time.perf_counter() - started
+    pair_ids = tuple(sorted(pair_games))
+    if len(pair_ids) != config.pair_count or any(pair_games[pair_id] != 2 for pair_id in pair_ids):
+        raise ValueError("arena did not produce exactly two games for every paired seed")
+    paired_outcomes = tuple(PairedSeedOutcome(pair_id, pair_wins[pair_id]) for pair_id in pair_ids)
+    paired_interval = paired_bootstrap_interval(
+        tuple(outcome.agent_a_wins for outcome in paired_outcomes), config.master_seed
+    )
     a_wins = wins[config.agent_a.agent_id]
     by_seat = {
         seat.value: SeatStats(
@@ -203,6 +310,8 @@ def run_arena(
         agent_b_wins=wins[config.agent_b.agent_id],
         agent_a_win_rate=a_wins / total,
         confidence_interval_95=wilson_interval(a_wins, total),
+        paired_seed_outcomes=paired_outcomes,
+        paired_bootstrap_confidence_interval_95=paired_interval,
         agent_a_by_seat=by_seat,
         terminal_reasons=dict(sorted(terminal_reasons.items())),
         average_score_margin=margin_total / total,

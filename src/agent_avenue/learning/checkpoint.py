@@ -295,8 +295,15 @@ def _identity_payload(manifest: Mapping[str, object]) -> dict[str, object]:
         "environment",
         "output_path",
         "elapsed_seconds",
+        "files",
     }
-    return {key: value for key, value in manifest.items() if key not in excluded}
+    payload = {key: value for key, value in manifest.items() if key not in excluded}
+    metrics = payload.get("metrics_summary")
+    if isinstance(metrics, Mapping):
+        payload["metrics_summary"] = {
+            key: value for key, value in metrics.items() if key != "runtime"
+        }
+    return payload
 
 
 def _checkpoint_fingerprint(manifest: Mapping[str, object]) -> str:

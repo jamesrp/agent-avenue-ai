@@ -121,8 +121,27 @@ uv run python -m agent_avenue train runs/q1-dataset.npz checkpoints/q1-attempt1 
 
 Generation epsilons default to the predeclared `1/10`, `3/40`, `1/20`, and `1/40` schedule.
 Promotion and plateau primitives apply the fixed block-bootstrap gates documented in
-[`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md); full resumable iteration orchestration remains the
-next Milestone 6 implementation slice.
+[`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md). Corpus generation is restart-safe: each verified
+game is atomically sharded under a declaration fingerprint, interrupted runs generate only missing
+games, and the ordered gzip corpus plus manifest are finalized atomically.
+
+A complete generation can now be planned, run, and resumed with one command:
+
+```bash
+uv run python -m agent_avenue iterate runs/g1-attempt1 \
+  --incumbent checkpoints/q0 --generation 1 --attempt-id g1-attempt1 \
+  --seed 2026090100 --dry-run
+uv run python -m agent_avenue iterate runs/g1-attempt1 \
+  --incumbent checkpoints/q0 --generation 1 --attempt-id g1-attempt1 \
+  --seed 2026090100
+```
+
+The orchestrator freezes all attempt-specific seeds and paths in `plan.json`, resumes corpus
+collection, validates or creates the current-generation dataset and warm-started candidate, runs the
+primary and guardrail arenas, performs the one allowed confirmation block when required, and emits
+an immutable `promotion-decision.json`. That decision explicitly selects either the candidate or the
+retained incumbent; it does not silently mutate a global champion pointer. Re-running the command
+validates and reuses every completed artifact.
 
 ## Lightweight web QA interface
 

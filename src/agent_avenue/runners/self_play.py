@@ -38,12 +38,15 @@ class GenerationConfig:
     parent_tensor_digest: str
     epsilon: EpsilonConfig
     game_config: GameConfig = field(default_factory=GameConfig)
+    attempt_id: str = "attempt-1"
 
     def __post_init__(self) -> None:
         if self.generation < 1:
             raise ValueError("learned self-play generation must be at least one")
         if not self.run_id or self.game_count < 2:
             raise ValueError("generation requires a run id and at least two games")
+        if not self.attempt_id:
+            raise ValueError("generation attempt id must be non-empty")
         for label, digest in (
             ("parent checkpoint", self.parent_checkpoint_fingerprint),
             ("parent tensor", self.parent_tensor_digest),
@@ -60,6 +63,7 @@ class GenerationConfig:
             "version": GENERATION_CONFIG_VERSION,
             "generation": self.generation,
             "run_id": self.run_id,
+            "attempt_id": self.attempt_id,
             "game_count": self.game_count,
             "root_seed": self.root_seed,
             "parent_checkpoint_fingerprint": self.parent_checkpoint_fingerprint,
@@ -101,6 +105,7 @@ def generation_config_from_agent(
     agent: AgentSpec,
     epsilon: EpsilonConfig,
     game_config: GameConfig | None = None,
+    attempt_id: str = "attempt-1",
 ) -> GenerationConfig:
     base = agent.config.get("base")
     if not isinstance(base, Mapping):
@@ -118,6 +123,7 @@ def generation_config_from_agent(
         parent_tensor_digest=tensor,
         epsilon=epsilon,
         game_config=game_config or GameConfig(),
+        attempt_id=attempt_id,
     )
 
 
@@ -132,7 +138,7 @@ def schedule_generation(config: GenerationConfig, agent: AgentSpec) -> Iterator[
     if agent.config.get("epsilon") != config.epsilon.to_data():
         raise ValueError("behavior agent does not match the generation epsilon")
     for index in range(config.game_count):
-        domain = f"self-play:g{config.generation}:game:{index}"
+        domain = f"self-play:g{config.generation}:attempt:{config.attempt_id}:game:{index}"
         yield GameSpec(
             config.run_id,
             f"game-{index:06d}",

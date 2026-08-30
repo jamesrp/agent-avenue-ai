@@ -93,6 +93,23 @@ class PromotionPolicy:
     heuristic_max_regression: float = 0.05
     confirmation_lower_minimum: float = 0.49
 
+    def __post_init__(self) -> None:
+        probabilities = (
+            self.primary_threshold,
+            self.minimum_seat_win_rate,
+            self.random_threshold,
+            self.confirmation_lower_minimum,
+        )
+        if any(not math.isfinite(value) or not 0.0 <= value <= 1.0 for value in probabilities):
+            raise ValueError("promotion probability thresholds must be finite values in [0, 1]")
+        if (
+            not math.isfinite(self.heuristic_max_regression)
+            or not 0.0 <= self.heuristic_max_regression <= 1.0
+        ):
+            raise ValueError("heuristic regression allowance must be finite and in [0, 1]")
+        if self.confirmation_lower_minimum > self.primary_threshold:
+            raise ValueError("confirmation lower minimum cannot exceed the primary threshold")
+
 
 @dataclass(frozen=True, slots=True)
 class PromotionEvidence:

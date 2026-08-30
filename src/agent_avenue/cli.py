@@ -96,6 +96,7 @@ def _parser() -> argparse.ArgumentParser:
         "--checkpoint", type=Path, help="frozen incumbent checkpoint for generation > 0"
     )
     corpus.add_argument("--generation", type=int, default=0)
+    corpus.add_argument("--attempt-id", default="attempt-1")
     corpus.add_argument("--epsilon-numerator", type=int)
     corpus.add_argument("--epsilon-denominator", type=int)
 
@@ -124,6 +125,26 @@ def _parser() -> argparse.ArgumentParser:
         "checkpoint-inspect", help="validate and inspect an immutable neural checkpoint"
     )
     checkpoint.add_argument("path", type=Path)
+
+    iterate = subparsers.add_parser(
+        "iterate", help="run or resume one complete frozen self-play generation"
+    )
+    iterate.add_argument("output", type=Path)
+    iterate.add_argument("--incumbent", type=Path, required=True)
+    iterate.add_argument("--generation", type=int, required=True)
+    iterate.add_argument("--attempt-id", required=True)
+    iterate.add_argument("--seed", type=int, required=True, help="iteration root seed")
+    iterate.add_argument("--games", type=int, default=4000)
+    iterate.add_argument("--primary-pairs", type=int, default=500)
+    iterate.add_argument("--guardrail-pairs", type=int, default=200)
+    iterate.add_argument("--confirmation-pairs", type=int, default=1000)
+    iterate.add_argument("--max-epochs", type=int, default=50)
+    iterate.add_argument("--batch-size", type=int, default=1024)
+    iterate.add_argument("--learning-rate", type=float, default=1e-3)
+    iterate.add_argument("--weight-decay", type=float, default=1e-4)
+    iterate.add_argument("--patience", type=int, default=8)
+    iterate.add_argument("--cpu-threads", type=int, default=1)
+    iterate.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -214,12 +235,11 @@ def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
         raise ValueError("corpus generation requires at least two games")
     from .runners import (
         generation_config_from_agent,
-        iter_games,
         learned_self_play_agent,
         planned_epsilon,
+        run_resumable_corpus,
         schedule_generation,
     )
-    from .storage import write_corpus
 
     if args.generation == 0:
         if args.checkpoint is not None:
@@ -239,9 +259,9 @@ def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
             lambda: EpsilonGreedyAgent(GreedyHeuristicAgent(), epsilon),
         )
 
-        def specs() -> Iterator[GameSpec]:
+        def bootstrap_specs() -> Iterator[GameSpec]:
             for index in range(args.games):
-                domain = f"corpus:game:{index}"
+                domain = f"corpus:attempt:{args.attempt_id}:game:{index}"
                 setup_seed = derive_seed(args.seed, f"{domain}:setup") & ((1 << 64) - 1)
                 yield GameSpec(
                     args.run_id,
@@ -257,8 +277,14 @@ def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
                     (SEED_DERIVATION, SEED_DERIVATION),
                 )
 
-        records = iter_games(specs())
+        scheduled_specs = tuple(bootstrap_specs())
         behavior_policy = "epsilon-1/5-greedy-public-v1"
+        configuration: dict[str, object] = {
+            "version": "heuristic-bootstrap-corpus-v1",
+            "attempt_id": args.attempt_id,
+            "epsilon": epsilon.to_data(),
+            "games": args.games,
+        }
     else:
         if args.generation < 1 or args.checkpoint is None:
             raise ValueError("learned self-play requires generation > 0 and --checkpoint")
@@ -277,17 +303,19 @@ def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
             root_seed=args.seed,
             agent=agent,
             epsilon=epsilon,
+            attempt_id=args.attempt_id,
         )
-        records = iter_games(schedule_generation(generation, agent))
+        scheduled_specs = tuple(schedule_generation(generation, agent))
         behavior_policy = f"{generation.fingerprint}:epsilon-frozen-incumbent-v1"
+        configuration = {"generation": generation.normalized()}
 
-    manifest = write_corpus(
+    manifest = run_resumable_corpus(
         args.output,
-        records,
-        run_id=args.run_id,
+        scheduled_specs,
         behavior_policy=behavior_policy,
         root_seed=args.seed,
         generation=args.generation,
+        configuration=configuration,
     )
     return manifest.to_data()
 
@@ -379,6 +407,32 @@ def _run_checkpoint_inspect_command(args: argparse.Namespace) -> dict[str, objec
     }
 
 
+def _run_iterate_command(args: argparse.Namespace) -> dict[str, object]:
+    from .runners import IterationConfig, resolve_iteration_plan, run_iteration
+
+    config = IterationConfig(
+        output=args.output,
+        incumbent_checkpoint=args.incumbent,
+        generation=args.generation,
+        attempt_id=args.attempt_id,
+        root_seed=args.seed,
+        game_count=args.games,
+        primary_pairs=args.primary_pairs,
+        guardrail_pairs=args.guardrail_pairs,
+        confirmation_pairs=args.confirmation_pairs,
+        max_epochs=args.max_epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        patience=args.patience,
+        cpu_threads=args.cpu_threads,
+    )
+    plan = resolve_iteration_plan(config)
+    if args.dry_run:
+        return plan.to_data()
+    return run_iteration(plan).to_data()
+
+
 def main() -> None:
     args = _parser().parse_args()
     if args.command == "game":
@@ -393,6 +447,8 @@ def main() -> None:
         result = _run_dataset_build_command(args)
     elif args.command == "train":
         result = _run_train_command(args)
-    else:
+    elif args.command == "checkpoint-inspect":
         result = _run_checkpoint_inspect_command(args)
+    else:
+        result = _run_iterate_command(args)
     print(json.dumps(result, sort_keys=True))

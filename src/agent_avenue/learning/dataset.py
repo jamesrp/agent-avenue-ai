@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -218,29 +220,64 @@ def materialize_dataset(
 
 
 def save_dataset(dataset: MaterializedDataset, path: Path) -> tuple[Path, Path]:
-    """Write compressed arrays and a canonical adjacent JSON manifest."""
+    """Atomically write compressed arrays followed by their canonical manifest."""
     path.parent.mkdir(parents=True, exist_ok=True)
     array_path = path if path.suffix == ".npz" else path.with_suffix(".npz")
     manifest_path = array_path.with_suffix(".json")
-    np.savez_compressed(
-        array_path,
-        train_features=dataset.train.features,
-        train_targets=dataset.train.targets,
-        train_game_index=dataset.train.game_index,
-        train_phase=dataset.train.phase,
-        validation_features=dataset.validation.features,
-        validation_targets=dataset.validation.targets,
-        validation_game_index=dataset.validation.game_index,
-        validation_phase=dataset.validation.phase,
+    if array_path.exists() != manifest_path.exists():
+        array_path.unlink(missing_ok=True)
+        manifest_path.unlink(missing_ok=True)
+    if array_path.exists() and manifest_path.exists():
+        existing = load_dataset(array_path)
+        if existing.fingerprint == dataset.fingerprint:
+            return array_path, manifest_path
+        raise DatasetError("dataset destination already contains a different artifact")
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{array_path.name}.tmp-", dir=array_path.parent
     )
-    dataset.manifest["files"] = {
-        array_path.name: {
-            "sha256": hashlib.sha256(array_path.read_bytes()).hexdigest(),
-            "size": array_path.stat().st_size,
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as destination:
+            np.savez_compressed(
+                destination,
+                train_features=dataset.train.features,
+                train_targets=dataset.train.targets,
+                train_game_index=dataset.train.game_index,
+                train_phase=dataset.train.phase,
+                validation_features=dataset.validation.features,
+                validation_targets=dataset.validation.targets,
+                validation_game_index=dataset.validation.game_index,
+                validation_phase=dataset.validation.phase,
+            )
+            destination.flush()
+            os.fsync(destination.fileno())
+        os.replace(temporary, array_path)
+        dataset.manifest["files"] = {
+            array_path.name: {
+                "sha256": hashlib.sha256(array_path.read_bytes()).hexdigest(),
+                "size": array_path.stat().st_size,
+            }
         }
-    }
-    manifest_path.write_bytes(_canonical_json(dataset.manifest) + b"\n")
-    return array_path, manifest_path
+        manifest_bytes = _canonical_json(dataset.manifest) + b"\n"
+        manifest_descriptor, manifest_name = tempfile.mkstemp(
+            prefix=f".{manifest_path.name}.tmp-", dir=manifest_path.parent
+        )
+        manifest_temporary = Path(manifest_name)
+        try:
+            with os.fdopen(manifest_descriptor, "wb") as destination:
+                destination.write(manifest_bytes)
+                destination.flush()
+                os.fsync(destination.fileno())
+            os.replace(manifest_temporary, manifest_path)
+        except Exception:
+            manifest_temporary.unlink(missing_ok=True)
+            raise
+        return array_path, manifest_path
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        if not manifest_path.exists():
+            array_path.unlink(missing_ok=True)
+        raise
 
 
 def load_dataset(path: Path) -> MaterializedDataset:

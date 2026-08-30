@@ -1,6 +1,7 @@
 # Neural AI implementation plan
 
-**Status:** Milestones 4–5 complete; Milestone 6 implementation in progress
+**Status:** Milestones 4–5 complete; Milestone 6 resumable iteration orchestration implemented,
+full generation runs pending
 **Date:** August 30, 2026
 **Latest result:** [`MILESTONE5_RESULTS.md`](MILESTONE5_RESULTS.md)
 **Companion research:** [`NEURAL_AI_RESEARCH.md`](NEURAL_AI_RESEARCH.md)
@@ -599,7 +600,7 @@ heuristic bootstrap corpus, train `q0`, and establish honest random/heuristic ar
    configuration.
 5. Add learned-agent factories to CLI/game/arena paths without eager Torch imports.
 6. Add corpus generation with deterministic game specifications, streaming record sink, resumable
-   manifest, and frozen agent configuration.
+   per-game shards, declaration fingerprint, exclusive writer lock, and atomic final manifest.
 7. Generate 4,000 epsilon-heuristic bootstrap games under a committed run specification.
 8. Build the dataset, train `q0`, and record train/validation/calibration results.
 9. Run paired q0-versus-random and q0-versus-heuristic arenas on disjoint declared seeds.

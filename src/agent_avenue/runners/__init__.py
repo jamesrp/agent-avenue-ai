@@ -12,6 +12,7 @@ from .arena import (
     wilson_interval,
 )
 from .batch import iter_games
+from .corpus import corpus_declaration, run_resumable_corpus
 from .game import (
     AdvanceResult,
     AgentController,
@@ -26,6 +27,14 @@ from .game import (
     run_game,
     step_agent,
     submit_human_action,
+)
+from .iteration import (
+    IterationConfig,
+    IterationError,
+    IterationPlan,
+    IterationResult,
+    resolve_iteration_plan,
+    run_iteration,
 )
 from .promotion import (
     AttemptAssessment,
@@ -62,6 +71,10 @@ __all__ = [
     "GenerationConfig",
     "HumanController",
     "InvalidAgentActionError",
+    "IterationConfig",
+    "IterationError",
+    "IterationPlan",
+    "IterationResult",
     "PairedBootstrapInterval",
     "PairedSeedOutcome",
     "PlateauDecision",
@@ -72,6 +85,7 @@ __all__ = [
     "advance_until_human_or_terminal",
     "assess_attempt",
     "bootstrap_mean_interval",
+    "corpus_declaration",
     "create_agent_session",
     "decision_actor",
     "detect_plateau",
@@ -81,8 +95,11 @@ __all__ = [
     "learned_self_play_agent",
     "paired_bootstrap_interval",
     "planned_epsilon",
+    "resolve_iteration_plan",
     "run_arena",
     "run_game",
+    "run_iteration",
+    "run_resumable_corpus",
     "schedule_arena",
     "schedule_generation",
     "step_agent",

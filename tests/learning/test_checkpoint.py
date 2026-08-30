@@ -69,6 +69,31 @@ def test_checkpoint_round_trip_is_safe_inference_only_and_immutable(tmp_path: Pa
         _save(path)
 
 
+def test_checkpoint_identity_excludes_runtime_diagnostics(tmp_path: Path) -> None:
+    model = CandidateMLP(seed=7)
+    common = {
+        "encoder_version": "candidate-public-v1",
+        "encoder_fingerprint": "e" * 64,
+        "feature_names": FEATURE_NAMES,
+        "training_config": {"batch_size": 8},
+        "training_seeds": {"model": 7},
+        "dataset_fingerprint": "d" * 64,
+    }
+    first = save_checkpoint(
+        tmp_path / "first",
+        model,
+        metrics={"validation": {"loss": 0.25}, "runtime": {"wall_clock_seconds": 1.0}},
+        **common,
+    )
+    second = save_checkpoint(
+        tmp_path / "second",
+        model,
+        metrics={"validation": {"loss": 0.25}, "runtime": {"wall_clock_seconds": 9.0}},
+        **common,
+    )
+    assert first.checkpoint_fingerprint == second.checkpoint_fingerprint
+
+
 def test_checkpoint_rejects_compatibility_and_digest_tampering(tmp_path: Path) -> None:
     path = tmp_path / "checkpoint"
     _save(path)

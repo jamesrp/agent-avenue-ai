@@ -81,6 +81,22 @@ def test_checkpoint_rejects_compatibility_and_digest_tampering(tmp_path: Path) -
         load_checkpoint(path, compatibility=_compatibility())
 
 
+def test_checkpoint_lineage_requires_parent_and_positive_generation(tmp_path: Path) -> None:
+    model = CandidateMLP(seed=1)
+    with pytest.raises(CheckpointError, match="provided together"):
+        save_checkpoint(
+            tmp_path / "missing-generation", model, metrics={}, parent_checkpoint="a" * 64
+        )
+    with pytest.raises(CheckpointError, match="valid parent"):
+        save_checkpoint(
+            tmp_path / "invalid-generation",
+            model,
+            metrics={},
+            parent_checkpoint="not-a-digest",
+            generation=1,
+        )
+
+
 def test_checkpoint_uses_weights_only_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "checkpoint"
     _save(path)

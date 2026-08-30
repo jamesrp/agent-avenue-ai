@@ -349,6 +349,13 @@ def save_checkpoint(
     if not _valid_digest(declared_rules) or not _valid_digest(declared_code):
         raise CheckpointError("rules and code fingerprints must be lowercase SHA-256 digests")
 
+    if (parent_checkpoint is None) != (generation is None):
+        raise CheckpointError("parent checkpoint and generation lineage must be provided together")
+    if generation is not None and (
+        type(generation) is not int or generation < 1 or not _valid_digest(parent_checkpoint)
+    ):
+        raise CheckpointError("learned generations require a valid parent checkpoint identity")
+
     encoder_data = _encoder_data(
         encoder,
         encoder_version=encoder_version,

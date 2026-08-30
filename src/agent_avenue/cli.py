@@ -86,12 +86,18 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     corpus = subparsers.add_parser(
-        "corpus-generate", help="generate a verified heuristic self-play corpus"
+        "corpus-generate", help="generate heuristic bootstrap or frozen-checkpoint self-play"
     )
     corpus.add_argument("output", type=Path)
     corpus.add_argument("--games", type=int, default=100)
     corpus.add_argument("--seed", type=int, default=0, help="corpus root seed")
     corpus.add_argument("--run-id", default="heuristic-bootstrap")
+    corpus.add_argument(
+        "--checkpoint", type=Path, help="frozen incumbent checkpoint for generation > 0"
+    )
+    corpus.add_argument("--generation", type=int, default=0)
+    corpus.add_argument("--epsilon-numerator", type=int)
+    corpus.add_argument("--epsilon-denominator", type=int)
 
     dataset = subparsers.add_parser(
         "dataset-build", help="extract safe samples from a verified corpus"
@@ -111,6 +117,8 @@ def _parser() -> argparse.ArgumentParser:
     train.add_argument("--weight-decay", type=float, default=1e-4)
     train.add_argument("--patience", type=int, default=8)
     train.add_argument("--cpu-threads", type=int, default=1)
+    train.add_argument("--parent-checkpoint", type=Path)
+    train.add_argument("--generation", type=int)
 
     checkpoint = subparsers.add_parser(
         "checkpoint-inspect", help="validate and inspect an immutable neural checkpoint"
@@ -204,47 +212,82 @@ def _run_replay_command(args: argparse.Namespace) -> dict[str, object]:
 def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
     if args.games < 2:
         raise ValueError("corpus generation requires at least two games")
-    from .runners import iter_games
+    from .runners import (
+        generation_config_from_agent,
+        iter_games,
+        learned_self_play_agent,
+        planned_epsilon,
+        schedule_generation,
+    )
     from .storage import write_corpus
 
-    base_config = GreedyHeuristicConfig()
-    epsilon = EpsilonConfig(1, 5)
-    wrapped_config = {
-        "version": "epsilon-wrapper-v1",
-        "base": base_config.to_data(),
-        "epsilon": epsilon.to_data(),
-    }
-    agent = AgentSpec(
-        "epsilon-heuristic-v1",
-        wrapped_config,
-        lambda: EpsilonGreedyAgent(GreedyHeuristicAgent(), epsilon),
-    )
+    if args.generation == 0:
+        if args.checkpoint is not None:
+            raise ValueError("generation zero uses the heuristic bootstrap, not a checkpoint")
+        if (args.epsilon_numerator, args.epsilon_denominator) not in {(None, None), (1, 5)}:
+            raise ValueError("generation zero epsilon is fixed at 1/5")
+        base_config = GreedyHeuristicConfig()
+        epsilon = EpsilonConfig(1, 5)
+        wrapped_config = {
+            "version": "epsilon-wrapper-v1",
+            "base": base_config.to_data(),
+            "epsilon": epsilon.to_data(),
+        }
+        agent = AgentSpec(
+            "epsilon-heuristic-v1",
+            wrapped_config,
+            lambda: EpsilonGreedyAgent(GreedyHeuristicAgent(), epsilon),
+        )
 
-    def specs() -> Iterator[GameSpec]:
-        for index in range(args.games):
-            domain = f"corpus:game:{index}"
-            setup_seed = derive_seed(args.seed, f"{domain}:setup") & ((1 << 64) - 1)
-            yield GameSpec(
-                args.run_id,
-                f"game-{index:06d}",
-                None,
-                GameConfig(),
-                setup_seed,
-                (agent, agent),
-                (
-                    derive_seed(args.seed, f"{domain}:player-one"),
-                    derive_seed(args.seed, f"{domain}:player-two"),
-                ),
-                (SEED_DERIVATION, SEED_DERIVATION),
-            )
+        def specs() -> Iterator[GameSpec]:
+            for index in range(args.games):
+                domain = f"corpus:game:{index}"
+                setup_seed = derive_seed(args.seed, f"{domain}:setup") & ((1 << 64) - 1)
+                yield GameSpec(
+                    args.run_id,
+                    f"game-{index:06d}",
+                    None,
+                    GameConfig(),
+                    setup_seed,
+                    (agent, agent),
+                    (
+                        derive_seed(args.seed, f"{domain}:player-one"),
+                        derive_seed(args.seed, f"{domain}:player-two"),
+                    ),
+                    (SEED_DERIVATION, SEED_DERIVATION),
+                )
+
+        records = iter_games(specs())
+        behavior_policy = "epsilon-1/5-greedy-public-v1"
+    else:
+        if args.generation < 1 or args.checkpoint is None:
+            raise ValueError("learned self-play requires generation > 0 and --checkpoint")
+        if (args.epsilon_numerator is None) != (args.epsilon_denominator is None):
+            raise ValueError("provide both epsilon numerator and denominator")
+        epsilon = (
+            planned_epsilon(args.generation)
+            if args.epsilon_numerator is None
+            else EpsilonConfig(args.epsilon_numerator, args.epsilon_denominator)
+        )
+        agent = learned_self_play_agent(args.checkpoint, epsilon)
+        generation = generation_config_from_agent(
+            generation=args.generation,
+            run_id=args.run_id,
+            game_count=args.games,
+            root_seed=args.seed,
+            agent=agent,
+            epsilon=epsilon,
+        )
+        records = iter_games(schedule_generation(generation, agent))
+        behavior_policy = f"{generation.fingerprint}:epsilon-frozen-incumbent-v1"
 
     manifest = write_corpus(
         args.output,
-        iter_games(specs()),
+        records,
         run_id=args.run_id,
-        behavior_policy="epsilon-1/5-greedy-public-v1",
+        behavior_policy=behavior_policy,
         root_seed=args.seed,
-        generation=0,
+        generation=args.generation,
     )
     return manifest.to_data()
 
@@ -270,8 +313,18 @@ def _run_dataset_build_command(args: argparse.Namespace) -> dict[str, object]:
 
 
 def _run_train_command(args: argparse.Namespace) -> dict[str, object]:
-    from .learning import TrainingConfig, load_dataset, save_checkpoint, train_model
+    from .learning import (
+        TrainingConfig,
+        load_checkpoint,
+        load_dataset,
+        save_checkpoint,
+        train_model,
+    )
 
+    if (args.parent_checkpoint is None) != (args.generation is None):
+        raise ValueError("--parent-checkpoint and --generation must be provided together")
+    if args.generation is not None and args.generation < 1:
+        raise ValueError("parent-initialized training requires generation at least one")
     dataset = load_dataset(args.dataset)
     config = TrainingConfig(
         seed=args.seed,
@@ -282,7 +335,9 @@ def _run_train_command(args: argparse.Namespace) -> dict[str, object]:
         early_stopping_patience=args.patience,
         cpu_threads=args.cpu_threads,
     )
-    result = train_model(dataset, config=config)
+    parent = load_checkpoint(args.parent_checkpoint) if args.parent_checkpoint is not None else None
+    initial_state = parent.model.state_dict() if parent is not None else None
+    result = train_model(dataset, config=config, initial_state_dict=initial_state)
     source_corpus = dataset.manifest.get("source_corpus_fingerprint")
     source_corpora = (source_corpus,) if isinstance(source_corpus, str) else ()
     saved = save_checkpoint(
@@ -293,6 +348,8 @@ def _run_train_command(args: argparse.Namespace) -> dict[str, object]:
         training_seeds={"root": args.seed},
         dataset_fingerprint=dataset.fingerprint,
         source_corpus_fingerprints=source_corpora,
+        parent_checkpoint=parent.checkpoint_fingerprint if parent is not None else None,
+        generation=args.generation,
     )
     return {
         "checkpoint_fingerprint": saved.checkpoint_fingerprint,

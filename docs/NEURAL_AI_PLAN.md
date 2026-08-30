@@ -1,7 +1,8 @@
 # Neural AI implementation plan
 
-**Status:** proposed plan after Milestones 1–3
-**Date:** August 29, 2026
+**Status:** Milestones 4–5 complete; Milestone 6 implementation in progress
+**Date:** August 30, 2026
+**Latest result:** [`MILESTONE5_RESULTS.md`](MILESTONE5_RESULTS.md)
 **Companion research:** [`NEURAL_AI_RESEARCH.md`](NEURAL_AI_RESEARCH.md)
 
 ## Goal
@@ -367,7 +368,10 @@ and ablation report.
 
 ### Generations 1–4: frozen checkpoint self-play
 
-For each generation `k`, let `c{k-1}` be the current incumbent:
+For each generation `k`, let `c{k-1}` be the current incumbent. A candidate name identifies a
+proposal, not automatically a champion: only a promoted `q{k,attempt}` may become the behavior
+checkpoint for later data. A failed attempt leaves the incumbent unchanged; a retry gets a distinct
+attempt ID and disjoint corpus, training, promotion, and bootstrap seed domains.
 
 1. freeze incumbent checkpoint `c{k-1}` for the entire generation;
 2. generate **4,000 games** with that checkpoint in both seats;
@@ -389,7 +393,9 @@ most 8,000 more, for a predeclared worst case of 43,400. The training budget its
 Current-generation-only fitting is the v1 rule so the sigmoid has a named behavior-policy target.
 Cumulative replay would instead learn a heterogeneous behavior-mixture outcome score; keep that as a
 separately named experiment rather than silently changing `Q^pi` semantics. Every sample retains its
-generating policy metadata.
+generating policy metadata. If tested, a replay-mixture ablation must predeclare per-generation
+weights or caps, report source-stratified validation metrics, and name its target as a behavior-policy
+mixture rather than the current incumbent's value.
 
 ### Promotion gate
 
@@ -426,6 +432,22 @@ A primary lower endpoint from 0.49 through 0.50 may trigger exactly one predecla
 1,000-pair confirmation block; promotion then requires its lower endpoint above 0.50. No other
 borderline reruns are allowed. Zero promotions is a valid research result. Keep the incumbent and
 report failure rather than weakening the gate after seeing results.
+
+### Plateau and return decision
+
+A failed promotion alone is not evidence that the recipe has capped out. Define a minimum practical
+paired advantage `delta = 0.05` and classify failed proposals with a predeclared 98.75% two-sided
+block-bootstrap interval (Bonferroni protection for the four planned looks):
+
+- **practical equivalence:** the whole interval lies within `[0.50 - delta, 0.50 + delta]`;
+- **regression:** the upper endpoint is below `0.50 - delta`; and
+- **inconclusive:** neither condition holds.
+
+Call the current recipe **operationally plateaued** only after the incumbent remains unchanged and
+two consecutive independently seeded proposals show practical equivalence. This means only “no
+detected practical improvement for this recipe and budget,” not optimal play or an architecture
+ceiling. If the four-generation budget ends without that evidence, report `budget exhausted,
+evidence inconclusive` rather than `capped out`.
 
 ### Final report
 
@@ -648,12 +670,18 @@ predeclared statistical gate.
 
 ### Out of scope
 
-- Requiring that a promotion occur, declaring equilibrium strength, distributed actors, GPU
-  training, or public hosting.
+- Requiring that a promotion occur, declaring equilibrium strength, continuously mutating actor
+  weights during collection, distributed actors, GPU training, or public hosting. Streaming record
+  I/O is allowed; streaming policy updates are not part of the reproducible baseline.
 
 ## Milestone 7 experiments: only after the MC baseline
 
-These are ordered experiments, not part of the initial implementation commitment.
+These are ordered experiments, not part of the initial implementation commitment. Architecture
+search operates over a bounded **recipe family**, not model shape alone. A recipe fixes the encoder,
+model, target semantics, exploration schedule, corpus size, optimizer/training defaults, and
+promotion/plateau rules. Each family gets a declared budget and fresh development seed domains; the
+locked final arena remains untouched until one family is selected. Shape-incompatible families
+bootstrap from the fixed heuristic corpus before beginning their own frozen-generation chain.
 
 1. **Public-history encoder v2:** add fixed padded history or compact recent-turn features; compare on
    exactly the same corpus and arenas.

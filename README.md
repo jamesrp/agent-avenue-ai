@@ -106,6 +106,24 @@ Arena reports retain the game-level Wilson interval and add the claim-generating
 20,000-resample paired-seed bootstrap interval. The completed q0 evaluation is summarized in
 [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md).
 
+Milestone 6 starts from discrete frozen generations. Generate and warm-start a Generation 1
+candidate with:
+
+```bash
+uv run python -m agent_avenue corpus-generate runs/q1-corpus \
+  --games 4000 --seed 2026090101 --run-id q1-self-play \
+  --checkpoint checkpoints/q0 --generation 1
+uv run python -m agent_avenue dataset-build runs/q1-corpus runs/q1-dataset.npz \
+  --split-seed 2026090102
+uv run python -m agent_avenue train runs/q1-dataset.npz checkpoints/q1-attempt1 \
+  --seed 2026090103 --parent-checkpoint checkpoints/q0 --generation 1
+```
+
+Generation epsilons default to the predeclared `1/10`, `3/40`, `1/20`, and `1/40` schedule.
+Promotion and plateau primitives apply the fixed block-bootstrap gates documented in
+[`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md); full resumable iteration orchestration remains the
+next Milestone 6 implementation slice.
+
 ## Lightweight web QA interface
 
 Milestone 2 provides a private, server-rendered hot-seat interface for checking game rules and

@@ -19,6 +19,7 @@ runs/
 artifacts/
 checkpoints/
 replays/
+logs/
 
 # Editors and OS
 .vscode/

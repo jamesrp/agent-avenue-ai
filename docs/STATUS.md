@@ -111,8 +111,9 @@ results and exact source revisions remain committed. See [the result](MILESTONE6
 
 ## Planned next work
 
-1. diagnose the measured self-play specialization/heuristic forgetting without changing the frozen
-   Milestone 6 result;
+1. run the declared [`terminal-safety-v1` hybrid-policy experiment](TERMINAL_SAFETY_EXPERIMENT.md),
+   retraining a separately named q0 snapshot and repeating q1–q4 without rewriting historical
+   artifacts;
 2. add q0/current-champion selection to the optional web QA UI; and
 3. begin the controlled replay, target, and environment-adapter experiments described in
    [Milestone 7](MILESTONE7.md).

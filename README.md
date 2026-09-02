@@ -266,4 +266,6 @@ match the published base rules.
 - [`docs/MILESTONE3_RESULTS.md`](docs/MILESTONE3_RESULTS.md),
   [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md), and
   [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md): completed benchmark reports.
+- [`docs/TERMINAL_SAFETY_EXPERIMENT.md`](docs/TERMINAL_SAFETY_EXPERIMENT.md): declared
+  zero-ply terminal-safety rerun and Milestone 6 failure analysis.
 - [`docs/WEB_QA.md`](docs/WEB_QA.md): manual web security and behavior checks.

@@ -118,6 +118,13 @@ every member against the embedded checksum manifest. A byte-identical secondary 
 `~/.local/share/agent-avenue-ai-archives/milestone6-baseline.tar.gz`. Generated artifacts remain
 ignored by Git.
 
+## Declared follow-up
+
+The next controlled experiment is the narrowly scoped
+[`terminal-safety-v1` hybrid-policy rerun](TERMINAL_SAFETY_EXPERIMENT.md): veto only publicly
+provable immediate losses, retrain a separately named q0 snapshot, and repeat q1–q4 with all other
+recipe and gate choices frozen. It does not alter this historical result.
+
 ## Reproduction commands
 
 Use the recorded implementation revision and lockfile:

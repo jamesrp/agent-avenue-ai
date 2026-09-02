@@ -36,16 +36,17 @@ claim-eligible.
 
 ## Promotion results
 
-Intervals below are deterministic 95% paired-block bootstrap intervals. “Heuristic difference” is
-candidate win rate minus q0 win rate on aligned paired setup blocks; promotion required its lower
-endpoint to be greater than -5 percentage points.
+Intervals below are deterministic 95% paired-block bootstrap intervals. Seat columns give the
+point estimate followed by a seat-specific 95% Wilson interval. “Heuristic difference” is candidate
+win rate minus q0 win rate on aligned paired setup blocks; promotion required its lower endpoint to
+be greater than -5 percentage points.
 
 | Candidate | vs q0 | Seat 1 | Seat 2 | vs random | vs heuristic | q0 vs heuristic | Heuristic difference | Decision |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| q1 | 77.9% [75.5, 80.3] | 77.0% | 78.8% | 77.0% [72.75, 81.0] | 45.75% | 54.5% | -8.75% [-14.25, -3.25] | Retain q0 |
-| q2 | 81.9% [79.5, 84.2] | 80.8% | 83.0% | 77.75% [73.5, 81.75] | 52.25% | 58.0% | -5.75% [-12.25, 0.75] | Retain q0 |
-| q3 | 82.4% [80.1, 84.6] | 79.2% | 85.6% | 72.0% [67.5, 76.25] | 37.5% | 59.25% | -21.75% [-28.0, -15.5] | Retain q0 |
-| q4 | 83.5% [81.2, 85.7] | 80.0% | 87.0% | 75.25% [71.25, 79.25] | 42.5% | 59.75% | -17.25% [-23.75, -10.75] | Retain q0 |
+| q1 | 77.9% [75.5, 80.3] | 77.0% [73.11, 80.47] | 78.8% [75.0, 82.16] | 77.0% [72.75, 81.0] | 45.75% | 54.5% | -8.75% [-14.25, -3.25] | Retain q0 |
+| q2 | 81.9% [79.5, 84.2] | 80.8% [77.12, 84.01] | 83.0% [79.46, 86.04] | 77.75% [73.5, 81.75] | 52.25% | 58.0% | -5.75% [-12.25, 0.75] | Retain q0 |
+| q3 | 82.4% [80.1, 84.6] | 79.2% [75.43, 82.53] | 85.6% [82.25, 88.41] | 72.0% [67.5, 76.25] | 37.5% | 59.25% | -21.75% [-28.0, -15.5] | Retain q0 |
+| q4 | 83.5% [81.2, 85.7] | 80.0% [76.27, 83.27] | 87.0% [83.77, 89.67] | 75.25% [71.25, 79.25] | 42.5% | 59.75% | -17.25% [-23.75, -10.75] | Retain q0 |
 
 Every random lower endpoint exceeded 50%, and every candidate exceeded the 45% primary seat
 minimum. The heuristic non-regression guardrail was the sole rejection reason in all four immutable
@@ -79,10 +80,10 @@ opponents were random and `greedy-public-v1`; duplicate q0/parent matchups were 
 
 | Matchup | Games | q0 win rate | Paired-bootstrap 95% interval | Seat 1 | Seat 2 | Avg margin | Avg turns |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| q0 vs random | 1,000 | 75.5% | 72.9%–78.1% | 72.0% | 79.0% | +4.071 | 6.312 |
-| q0 vs `greedy-public-v1` | 1,000 | 57.3% | 54.2%–60.4% | 56.8% | 57.8% | +3.271 | 7.190 |
+| q0 vs random | 1,000 | 75.5% | 72.9%–78.1% | 72.0% [67.91, 75.76] | 79.0% [75.22, 82.34] | +4.071 | 6.312 |
+| q0 vs `greedy-public-v1` | 1,000 | 57.3% | 54.2%–60.4% | 56.8% [52.42, 61.07] | 57.8% [53.43, 62.05] | +3.271 | 7.190 |
 
-The final result fingerprint is
+The final table's seat columns also report 95% Wilson intervals. The final result fingerprint is
 `85f42426cef0d5cc9b96ecbffa774688823d043de5a74bcc71945645eb9c3826`.
 
 ## Independent reproduction

@@ -2,7 +2,7 @@
 
 **As of:** September 2, 2026
 **Current learned incumbent:** q0
-**Latest completed learned result:** [Milestone 5 q0 evaluation](MILESTONE5_RESULTS.md)
+**Latest completed learned result:** [Milestone 6 frozen self-play](MILESTONE6_RESULTS.md)
 
 This document is the concise, living index of completed work and current next steps. Historical
 milestone documents describe the intended scope at the time; `README.md` and this file describe the
@@ -17,7 +17,7 @@ actual present state.
 | [3: baseline agents and arena](MILESTONE3.md) | Complete | [Random/heuristic baseline results](MILESTONE3_RESULTS.md) |
 | [4: neural foundation](NEURAL_AI_PLAN.md#milestone-4-safe-encoder-dataset-model-and-checkpoint) | Complete | Encoder, dataset, trainer, checkpoint, and compatibility tests |
 | [5: first learned checkpoint](NEURAL_AI_PLAN.md#milestone-5-learned-agent-and-first-usable-checkpoint) | Complete | [q0 result and reproduction contract](MILESTONE5_RESULTS.md) |
-| [6: frozen iterative self-play](MILESTONE6.md) | Core orchestration complete; production/archive work pending | Resumable `iterate` command and tiny end-to-end test |
+| [6: frozen iterative self-play](MILESTONE6.md) | Complete | [q1–q4 decisions, final evaluation, and archive](MILESTONE6_RESULTS.md) |
 | [7: controlled RL experiments](MILESTONE7.md) | Planned; not started | Ordered experiment plan only |
 
 ## Current measured policies
@@ -26,11 +26,11 @@ actual present state.
 | --- | --- | --- |
 | `random-v1` | None | Symmetry/control baseline |
 | `greedy-public-v1` | Hand-authored public heuristic | 86.25% vs random over 400 games |
-| q0 | 4,000 epsilon-heuristic games, 62,184 decisions | 75.375% vs random and 60.125% vs heuristic over 800 games each |
+| q0 | 4,000 epsilon-heuristic games, 62,184 decisions | Locked final: 75.5% vs random and 57.3% vs heuristic over 1,000 games each |
 
-The heuristic-versus-random and q0-versus-random arenas used different declared seed sets, so their
-percentages should not be treated as a transitive ranking. The direct q0-versus-heuristic arena is
-the relevant comparison and favored q0 with a paired-bootstrap 95% interval of 56.75%–63.50%.
+The locked final q0 intervals are 72.9%–78.1% against random and 54.2%–60.4% against the heuristic.
+The heuristic-versus-random baseline used a different seed set, so percentages should not be treated
+as a transitive ranking.
 
 Validation loss and accuracy measure outcome prediction on held-out games, not playing strength.
 Promotion and strength claims come from paired gameplay arenas.
@@ -63,11 +63,11 @@ loop to generations q1 through q4:
 5. enforce random, heuristic, seat, compatibility, and reproducibility guardrails; and
 6. either promote the candidate or explicitly retain the incumbent.
 
-The scheduling, restart-safe storage, training, arena, bootstrap, confirmation, and immutable
-decision machinery are implemented. Only tiny test iterations have run. Before a claim-generating
-q1 run, the iteration artifacts should also record the exact Git/lockfile revision and retain
-compressed individual arena game records under the new experiment protocol. There is no production
-q1 checkpoint or Milestone 6 result yet, so q0 remains the incumbent.
+The full q1–q4 chain ran on September 2, 2026. Each proposal beat q0 directly but failed the
+predeclared heuristic non-regression guardrail, so every immutable decision retained q0. The chain
+ended `budget_exhausted_inconclusive`; it did not meet the practical-equivalence plateau criterion.
+A separate q1 regeneration reproduced all semantic identities, and q0 completed a fresh locked final
+evaluation. See [the Milestone 6 result](MILESTONE6_RESULTS.md).
 
 ## Web status
 
@@ -94,11 +94,12 @@ The repository currently records:
 - paired, seat-swapped arena blocks; and
 - immutable promotion decisions.
 
-The q0 source corpus, dataset, checkpoint, logs, and reports are retained as an ignored archive with
-an external copy. The q0 arena aggregate reports are retained, but their individual semantic game
-records predate the current retention policy and were not written. Generated artifacts stay out of
-ordinary Git history; compact results and exact source revisions remain committed. See
-[the experiment protocol](EXPERIMENT_PROTOCOL.md) for the retention and reporting contract.
+The q0 source corpus, dataset, checkpoint, logs, and reports remain retained. The q0 historical arena
+aggregates predate the individual-record policy. Every Milestone 6 training and evaluation arena
+retains compressed semantic records, and the complete run is packaged in a verified ignored archive
+with an embedded checksum manifest. Generated artifacts stay out of ordinary Git history; compact
+results and exact source revisions remain committed. See [the result](MILESTONE6_RESULTS.md) and
+[the experiment protocol](EXPERIMENT_PROTOCOL.md).
 
 ## Verified source revisions
 
@@ -106,14 +107,12 @@ ordinary Git history; compact results and exact source revisions remain committe
 | --- | --- | --- |
 | q0 corpus, dataset, and training | `7fe2e5af6339efc86db285349043bb16b298eed1` | `b92b07727d89eb2f9471316fa44992a2eb337da2186a25f3bc4637404bb09d8d` |
 | q0 learned-agent arena evaluation | `d46350356a7bf461468ba33c6bf1f28b3231cd14` | `6909e9316510f48cad515b99a8f9b19288ee5c43d5925f84b88ad853479031bc` |
-| Milestone 6 iteration orchestration | `de5bb2a27f93b0d5fa31540a0dc6cec843c9fb7c` | `a679bc750f6c976e5ed39dec3166b9859a76b8141c50b3107d09feeea411950f` |
+| Milestone 6 production q1–q4 and final evaluation | `139318bad909438e8a3e1cb9dd962c80653875d0` | `5a66a4a63f7c5680f3db81e83dfebf53af63f73d29b653645850bb013a45ba0c` |
 
 ## Planned next work
 
-These items are intentionally not complete yet:
-
-1. add q0/current-champion selection to the web QA UI;
-2. run the first full q1 Milestone 6 iteration;
-3. record its promotion or retention result; and
-4. after the frozen-generation baseline is established, build the generic recipe and
-   Gymnasium/PettingZoo experiment layer described in [Milestone 7](MILESTONE7.md).
+1. diagnose the measured self-play specialization/heuristic forgetting without changing the frozen
+   Milestone 6 result;
+2. add q0/current-champion selection to the optional web QA UI; and
+3. begin the controlled replay, target, and environment-adapter experiments described in
+   [Milestone 7](MILESTONE7.md).

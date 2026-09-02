@@ -27,27 +27,28 @@ machine.
 | [3: baseline agents and arena](docs/MILESTONE3.md) | Complete | Random, scripted, and `greedy-public-v1`; paired arena |
 | 4: neural data/training foundation | Complete | Safe 87-feature encoder, datasets, model, and checkpoints |
 | 5: first learned checkpoint | Complete | q0 trained and evaluated against random and heuristic |
-| [6: frozen self-play and promotion](docs/MILESTONE6.md) | Core orchestration complete; production/archive work pending | Resumable one-generation orchestration and predeclared gates |
+| [6: frozen self-play and promotion](docs/MILESTONE6.md) | Complete | Four production generations, locked final evaluation, and verified archive |
 | [7: controlled RL experiments](docs/MILESTONE7.md) | Planned | Recipe abstraction, environment adapters, and measured ablations |
 
-The current learned incumbent is **q0**. It was trained from 4,000 epsilon-greedy heuristic
-self-play games and evaluated on fresh paired, seat-swapped arenas:
+The current learned champion is **q0**. Milestone 6 completed all four frozen self-play proposals;
+each candidate beat q0 head-to-head but failed the predeclared heuristic non-regression guardrail, so
+q0 was correctly retained. Its locked-final evaluation used fresh 500-pair blocks:
 
 | Matchup | Games | q0 win rate | Paired-bootstrap 95% interval |
 | --- | ---: | ---: | ---: |
-| q0 vs random | 800 | **75.375%** | 72.25%–78.375% |
-| q0 vs `greedy-public-v1` | 800 | **60.125%** | 56.75%–63.50% |
+| q0 vs random | 1,000 | **75.5%** | 72.9%–78.1% |
+| q0 vs `greedy-public-v1` | 1,000 | **57.3%** | 54.2%–60.4% |
 
-These results establish q0 as a reasonable first learned opponent, not optimal play. Full details,
-lineage, and reproduction commands are in
-[`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md). The living milestone/result index is
-[`docs/STATUS.md`](docs/STATUS.md).
+Full q1–q4 decisions, independent reproduction evidence, lineage, and archive checksums are in
+[`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md). The earlier q0 evaluation and training
+history remain in [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md). The living
+milestone/result index is [`docs/STATUS.md`](docs/STATUS.md).
 
-**Milestone 6 is a project milestone, not a sixth neural generation.** It covers generations q1–q4:
+**Milestone 6 is a project milestone, not a sixth neural generation.** It covered generations q1–q4:
 freeze the incumbent, collect one generation of self-play, warm-start a candidate, evaluate it
 against the incumbent and guardrails, and promote it only when the predeclared statistical gate
-passes. The complete one-generation `iterate` workflow is implemented and tested on a small fixture;
-no full 4,000-game q1 run has been executed yet, so q0 remains the incumbent.
+passes. The four-generation budget ended without a promotion or practical-equivalence plateau;
+this is reported as `budget_exhausted_inconclusive`, and q0 remains the incumbent.
 
 ## Research principles
 
@@ -160,29 +161,36 @@ uv run python -m agent_avenue arena --agent-a learned \
   --agent-a-checkpoint checkpoints/q0 --agent-b random --pairs 400 --seed 2026083001
 ```
 
-### Run or resume one frozen generation
+### Completed frozen generations
 
-Inspect the full plan without writing a run:
+Milestone 6 ran q1 through q4 at source revision
+`139318bad909438e8a3e1cb9dd962c80653875d0`. Each attempt retained q0 solely because the candidate
+failed the aligned heuristic non-regression guardrail. All attempts include compressed training and
+arena records, exact Git/lock identity, compatibility evidence, practical-effect assessment, and an
+immutable decision. A separate full q1 regeneration reproduced every semantic artifact identity.
+
+The exact commands, tables, and checksums are in
+[`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md). Inspect a plan without writing a run:
 
 ```bash
-uv run python -m agent_avenue iterate runs/g1-attempt1 \
-  --incumbent checkpoints/q0 --generation 1 --attempt-id g1-attempt1 \
+uv run python -m agent_avenue iterate runs/milestone6/q1-a1 \
+  --incumbent checkpoints/q0 --generation 1 --attempt-id q1-a1 \
   --seed 2026090100 --dry-run
 ```
 
-Execute or resume the same immutable plan:
+Execute or validate the same immutable plan:
 
 ```bash
-uv run python -m agent_avenue iterate runs/g1-attempt1 \
-  --incumbent checkpoints/q0 --generation 1 --attempt-id g1-attempt1 \
+uv run python -m agent_avenue iterate runs/milestone6/q1-a1 \
+  --incumbent checkpoints/q0 --generation 1 --attempt-id q1-a1 \
   --seed 2026090100
 ```
 
 The orchestrator freezes paths, seeds, corpus size, epsilon, training configuration, and promotion
 policy in `plan.json`. It validates and reuses completed artifacts, generates only missing games,
-trains a warm-started candidate, runs primary and guardrail arenas, performs the one allowed
-confirmation block if required, and emits an immutable `promotion-decision.json`. It never silently
-mutates a global champion pointer.
+trains a warm-started candidate, retains compressed semantic records for every arena, runs primary
+and guardrail comparisons, performs the one allowed confirmation block if required, and emits an
+immutable `promotion-decision.json`. It never silently mutates a global champion pointer.
 
 ## Lightweight web QA interface
 
@@ -250,11 +258,12 @@ match the published base rules.
 - [`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md): detailed neural implementation plan and gates.
 - [`docs/MILESTONE1.md`](docs/MILESTONE1.md), [`docs/MILESTONE2.md`](docs/MILESTONE2.md), and
   [`docs/MILESTONE3.md`](docs/MILESTONE3.md): completed foundational milestone references.
-- [`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md#milestone-4-safe-encoder-dataset-model-and-checkpoint)
-  and [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md): Milestones 4–5 implementation and
-  result references.
+- [`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md#milestone-4-safe-encoder-dataset-model-and-checkpoint),
+  [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md), and
+  [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md): neural foundation and measured results.
 - [`docs/MILESTONE6.md`](docs/MILESTONE6.md) and [`docs/MILESTONE7.md`](docs/MILESTONE7.md): current
   and planned self-play/RL milestone references.
-- [`docs/MILESTONE3_RESULTS.md`](docs/MILESTONE3_RESULTS.md) and
-  [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md): completed benchmark reports.
+- [`docs/MILESTONE3_RESULTS.md`](docs/MILESTONE3_RESULTS.md),
+  [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md), and
+  [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md): completed benchmark reports.
 - [`docs/WEB_QA.md`](docs/WEB_QA.md): manual web security and behavior checks.

@@ -1,9 +1,9 @@
 # Neural AI implementation plan
 
-**Status:** Milestones 4–5 complete; Milestone 6 core orchestration implemented and tested but a
-full generation plus production archival metadata/records are pending; Milestone 7 planned
+**Status:** Milestones 4–6 complete; q1–q4 retained q0 after heuristic guardrail failures;
+Milestone 7 planned
 **Date:** September 2, 2026
-**Latest result:** [`MILESTONE5_RESULTS.md`](MILESTONE5_RESULTS.md)
+**Latest result:** [`MILESTONE6_RESULTS.md`](MILESTONE6_RESULTS.md)
 **Per-milestone references:** [`MILESTONE6.md`](MILESTONE6.md),
 [`MILESTONE7.md`](MILESTONE7.md)
 **Companion research:** [`NEURAL_AI_RESEARCH.md`](NEURAL_AI_RESEARCH.md)
@@ -633,11 +633,11 @@ heuristic bootstrap corpus, train `q0`, and establish honest random/heuristic ar
 
 ## Milestone 6: Frozen iterative self-play and promotion
 
-**Current status:** The resumable one-generation orchestrator and promotion primitives are
-implemented and covered by a tiny end-to-end test. Before a claim-generating q1 run, add exact
-Git/lockfile identity to attempt artifacts and retain compressed individual arena game records. No
-full 4,000-game q1 run has been executed. See [`MILESTONE6.md`](MILESTONE6.md) for the concise
-standalone milestone reference.
+**Current status:** Complete. Four production generations ran with exact Git/lock identity,
+compressed arena records, immutable decisions, independent q1 reproduction, a locked final q0
+benchmark, and a verified archive. Every candidate failed only the heuristic non-regression
+guardrail, so q0 was retained and the budget ended inconclusively. See
+[`MILESTONE6_RESULTS.md`](MILESTONE6_RESULTS.md).
 
 ### Objective
 

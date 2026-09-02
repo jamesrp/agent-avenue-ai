@@ -1,7 +1,7 @@
 # Milestone 6: Frozen Iterative Self-Play and Promotion
 
-**Status:** Core orchestration implemented and tested; production archival additions and full q1–q4
-runs pending
+**Status:** Complete — q1–q4 executed, q0 retained, locked final evaluation archived
+**Result:** [Milestone 6 results](MILESTONE6_RESULTS.md)
 **Date:** September 2, 2026
 **Detailed specification:** [Neural AI plan — Milestone 6](NEURAL_AI_PLAN.md#milestone-6-frozen-iterative-self-play-and-promotion)
 
@@ -126,68 +126,43 @@ manifest when complete.
 Generated artifacts stay outside normal Git history but are retained according to
 [`EXPERIMENT_PROTOCOL.md`](EXPERIMENT_PROTOCOL.md).
 
-The current implementation emits aggregate arena reports but not `arena-records/`; that directory is
-part of the production artifact target rather than a description of current output.
+Every production attempt contains all listed artifacts, including compressed, schedule-validated
+semantic records under `arena-records/`. Aggregate reports are reproducible views over those records.
 
-## Current implementation
+## Completed implementation and runs
 
-The `iterate` command implements one complete declared generation:
+The `iterate` command records exact Git and lockfile identity, distinguishes production-eligible from
+custom/smoke plans, supports restart-safe collection and training, retains compressed arena records,
+and emits validation plus immutable promotion artifacts.
 
-```bash
-uv run python -m agent_avenue iterate runs/g1-attempt1 \
-  --incumbent checkpoints/q0 --generation 1 --attempt-id g1-attempt1 \
-  --seed 2026090100 --dry-run
+Milestone 6 ran q1 through q4 on September 2, 2026. Every candidate passed the direct parent,
+random, and primary-seat gates but failed the aligned heuristic non-regression guardrail. q0 was
+therefore retained after all four proposals. No proposal was classified as practically equivalent,
+so the stopping result is `budget_exhausted_inconclusive`, not a plateau claim.
 
-uv run python -m agent_avenue iterate runs/g1-attempt1 \
-  --incumbent checkpoints/q0 --generation 1 --attempt-id g1-attempt1 \
-  --seed 2026090100
-```
+A fresh-directory q1 rerun reproduced the plan, corpus, dataset, tensor, checkpoint, arena-record,
+aggregate, and decision identities. The selected q0 champion then completed a locked 500-pair final
+block against each unique applicable opponent: random and `greedy-public-v1`.
 
-Implemented and tested behavior includes:
-
-- deterministic attempt-specific seed domains;
-- incumbent replacement/tamper rejection;
-- restart-safe corpus collection;
-- current-generation dataset construction;
-- warm-started candidate training and lineage validation;
-- primary, random, and aligned heuristic arenas;
-- pair-aware promotion statistics and confirmation handling;
-- immutable promotion/retention decisions; and
-- full reuse/validation when an iteration command is rerun.
-
-A tiny end-to-end test exercises the workflow. As of September 2, 2026, no full 4,000-game q1 run
-has been executed and no q1 result exists.
-
-### Production-readiness additions
-
-Before the first claim-generating q1 run:
-
-1. include the exact Git revision and `uv.lock` digest in `plan.json` and the promotion decision;
-2. retain compressed individual semantic records for every primary, guardrail, and confirmation
-   arena, not only aggregate reports; and
-3. include those files in the attempt archive and checksum manifest.
-
-The current code fingerprint and normalized configurations remain useful compatibility identities,
-but they do not by themselves identify the source commit or dependency lockfile for a future reader.
-These are bounded archival additions; the self-play, training, and promotion algorithms are already
-implemented.
+See [the results report](MILESTONE6_RESULTS.md) for commands, complete metrics, artifact fingerprints,
+throughput, and the verified archive checksum.
 
 ## Definition of done
 
-Milestone 6 is complete when:
+Milestone 6 is complete because:
 
-- at least one full 4,000-game generation reproduces end to end;
-- up to four declared generations have been run or the recipe meets its stopping rule;
-- every attempt has an immutable promotion or retention decision;
-- every attempt records its exact Git revision and dependency-lock digest;
-- claim-generating arena records are retained in compressed semantic form;
-- the selected champion has a locked final evaluation against the applicable unique set of random,
-  heuristic, q0, parent, and diagnostic earlier champions;
-- final reports include paired and seat-specific uncertainty, margins, terminal reasons, game
-  lengths, throughput, and artifact identities; and
-- negative, equivalent, or inconclusive results are reported without weakening the gate.
+- q1 was independently regenerated end to end from 4,000 games with identical semantic identities;
+- all four declared generations ran before the budget-exhausted stopping rule applied;
+- every attempt has an immutable retention decision and practical-effect assessment;
+- every attempt records Git revision `139318bad909438e8a3e1cb9dd962c80653875d0` and the exact
+  `uv.lock` digest;
+- every claim-generating arena retains compressed semantic records;
+- q0 completed the locked final evaluation against the applicable unique random and heuristic set;
+- reports include paired and seat-specific uncertainty, margins, terminal reasons, game lengths,
+  throughput, and artifact identities; and
+- all four negative promotion results are reported without weakening the gate.
 
-A promotion is not required for the milestone to be scientifically successful.
+No promotion was required for scientific completion.
 
 ## Out of scope
 

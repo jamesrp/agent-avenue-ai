@@ -1,5 +1,12 @@
 # Milestone 3: Initial AI Opponent and Baseline Arena
 
+**Status:** Complete
+**Completed:** August 29, 2026
+**Result:** [`MILESTONE3_RESULTS.md`](MILESTONE3_RESULTS.md)
+
+This document is the original implementation specification for baseline agents, trusted runners,
+paired evaluation, and web-controller integration.
+
 ## Goal
 
 Add fair, reproducible automated opponents on top of the Milestone 1 engine and make them playable

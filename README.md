@@ -1,57 +1,77 @@
 # agent-avenue-ai
+
 [Agent Avenue](https://boardgamegeek.com/boardgame/422732/agent-avenue) AI experiments.
 
-All gameplay content is copyright Nerdlab Games. This is just an ML research project and
-I don't intend to host the game as a playable app.
+All gameplay content is copyright Nerdlab Games. This is an ML research project; it is not intended
+as a public hosted copy of the game.
 
 ## Project goal
+
 Build a strong, reproducible, and inspectable AI for the two-player base game of **Agent Avenue**—not
-just a rules simulator. The broader aim is a complete playable opponent and research platform in
-the spirit of [Keldon Jones's 2009 Race for the Galaxy AI project](https://www.keldon.net/rftg/):
-combine a faithful game implementation with self-play, learned evaluation, rigorous comparison,
-and artifacts that let results be reproduced and improved over time. The project is inspired by
-that end-to-end ambition rather than committed to reproducing Keldon's exact methods.
+just a rules simulator. The project combines a faithful deterministic implementation, self-play,
+learned evaluation, controlled experiments, and artifacts that let results be reproduced and
+improved over time. It is inspired by the end-to-end ambition of
+[Keldon Jones's Race for the Galaxy AI project](https://www.keldon.net/rftg/) without committing to
+its exact methods.
 
-The engine should be deterministic for all the base two-player game for now.
-Setup randomness is explicit; every player action is a first-class decision;
-transitions are deterministic and replayable; and authoritative state
-is strictly separated from player-visible observations. Random, scripted, and simple heuristic
-agents plus single-game and pull-based multi-game runners establish non-ML baselines and the batch
-orchestration seam.
+The long-term measure of success is an AI that becomes meaningfully stronger through iterative
+self-play while remaining fair, testable, auditable, and practical to run on a CPU-only development
+machine.
 
-There should be a lightweight web UI to play the game (to verify the rules engine is correct
-and kick the tires of an AI opponent), but this can be barebones as it's not the main goal.
-Just enough for to QA the system.
+## Current status — September 2, 2026
 
-The first learned baseline: a viewpoint-relative flat observation-and-action encoder, a small
-PyTorch candidate-value network, terminal-outcome training from compact replay data,
-information-safe one-ply candidate selection, frozen-checkpoint iterative self-play, and
-statistically grounded arena evaluation. It must run usefully on a CPU-only exe.dev development box
-while retaining clean paths to parallel actors and GPU-backed training or inference. The research
-review and implementation breakdown are in
-[`docs/NEURAL_AI_RESEARCH.md`](docs/NEURAL_AI_RESEARCH.md) and
-[`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md).
+| Milestone | Status | Result |
+| --- | --- | --- |
+| [1: deterministic rules engine](docs/MILESTONE1.md) | Complete | Typed, immutable, seeded, replayable two-player engine |
+| [2: lightweight web QA](docs/MILESTONE2.md) | Complete | Human hot-seat UI and controller seam |
+| [3: baseline agents and arena](docs/MILESTONE3.md) | Complete | Random, scripted, and `greedy-public-v1`; paired arena |
+| 4: neural data/training foundation | Complete | Safe 87-feature encoder, datasets, model, and checkpoints |
+| 5: first learned checkpoint | Complete | q0 trained and evaluated against random and heuristic |
+| [6: frozen self-play and promotion](docs/MILESTONE6.md) | Core orchestration complete; production/archive work pending | Resumable one-generation orchestration and predeclared gates |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | Planned | Recipe abstraction, environment adapters, and measured ablations |
 
-Preserve the engine as an explicit state machine. Every player choice remains a semantic
-`Decision`, and applying one semantic `Action` advances to the next decision or terminal result.
-The engine never calls agents or exposes model tensors. Learned
-components consume only versioned player-safe observations and public decision context; trusted
-orchestration may operate the engine but must not allow candidate evaluation to exploit hidden
-deck order, facedown cards, or hands.
+The current learned incumbent is **q0**. It was trained from 4,000 epsilon-greedy heuristic
+self-play games and evaluated on fresh paired, seat-swapped arenas:
 
-Keep rules execution, observation and public-context construction, encoding, model definition,
-training, inference, self-play orchestration, replay storage, evaluation, and profiling loosely
-coupled. Actions remain stable structured data rather than display strings or legal-action
-indices. Every dataset, checkpoint, run, and arena report records enough schema versions,
-fingerprints, seeds, and configuration to reject incompatible inputs and reproduce its result.
+| Matchup | Games | q0 win rate | Paired-bootstrap 95% interval |
+| --- | ---: | ---: | ---: |
+| q0 vs random | 800 | **75.375%** | 72.25%–78.375% |
+| q0 vs `greedy-public-v1` | 800 | **60.125%** | 56.75%–63.50% |
 
-The long-term measure of success is an AI that becomes meaningfully stronger through
-iterative self-play while remaining fair, testable, auditable, and practical to run—not merely a
-neural-network demo attached to the rules engine.
+These results establish q0 as a reasonable first learned opponent, not optimal play. Full details,
+lineage, and reproduction commands are in
+[`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md). The living milestone/result index is
+[`docs/STATUS.md`](docs/STATUS.md).
+
+**Milestone 6 is a project milestone, not a sixth neural generation.** It covers generations q1–q4:
+freeze the incumbent, collect one generation of self-play, warm-start a candidate, evaluate it
+against the incumbent and guardrails, and promote it only when the predeclared statistical gate
+passes. The complete one-generation `iterate` workflow is implemented and tested on a small fixture;
+no full 4,000-game q1 run has been executed yet, so q0 remains the incumbent.
+
+## Research principles
+
+The engine is an explicit state machine. Every player choice is a semantic `Decision`; applying one
+semantic `Action` produces the next state, decision, or terminal result. Setup randomness and agent
+randomness use explicit, independently derived seeds. Transitions are deterministic and replayable.
+
+Authoritative state is strictly separated from player-visible observations. Learned components
+consume only versioned `PlayerObservation + Action` inputs and public decision context. Candidate
+evaluation must never use hidden deck order, an opposing hand, an unknown face-down card, or private
+future draws.
+
+Rules execution, observation construction, encoding, model definition, training, inference,
+self-play orchestration, storage, evaluation, and web presentation remain separate modules. The core
+engine does not import web or PyTorch dependencies.
+
+Experiments follow the declared workflow in
+[`docs/EXPERIMENT_PROTOCOL.md`](docs/EXPERIMENT_PROTOCOL.md): state a hypothesis, freeze a recipe and
+seed domains, retain reproducible artifacts, evaluate with matched seat-balanced games, and record
+negative results without changing the gate after seeing them.
 
 ## Development
 
-This repository targets Python 3.12 and uses [uv](https://docs.astral.sh/uv/) for environments and
+The repository targets Python 3.12 and uses [uv](https://docs.astral.sh/uv/) for environments and
 dependency locking.
 
 ```bash
@@ -60,27 +80,51 @@ make check
 make run
 ```
 
-Optional dependencies can be installed with `uv sync --extra web`, `uv sync --extra rl`, or both.
-See `AGENTS.md` for architecture, reproducibility, testing, and contribution conventions.
-
-## Neural training pipeline
-
-Milestone 4 provides the information-safe `candidate-public-v1` encoder, verified replay extraction,
-deterministic game-level dataset splits, the 87→128→1 `candidate-mlp-v1` PyTorch model, strict CPU
-training, and immutable validated checkpoints. The bootstrap corpus command uses the planned exact
-`1/5` epsilon exploration around `greedy-public-v1`.
-
-Install the RL dependencies and run a small end-to-end smoke test:
+Optional dependencies can be installed independently:
 
 ```bash
+uv sync --extra web
 uv sync --extra rl
+uv sync --extra web --extra rl
+```
+
+Useful checks:
+
+```bash
+make test-web
 make check-rl
+make arena-smoke
 make neural-smoke
 ```
 
-Start a full Generation 0 training run with separate artifact stages:
+See `AGENTS.md` for package boundaries, engine invariants, testing conventions, and contribution
+rules.
+
+## Neural training and self-play
+
+The first learned baseline is deliberately small and inspectable:
+
+- `candidate-public-v1`: a viewpoint-relative 87-feature observation-and-action encoder;
+- `candidate-mlp-v1`: an 87→128→1 PyTorch value network with 11,393 parameters;
+- terminal-outcome Monte Carlo regression from verified semantic game records;
+- one batched score for every legal action, followed by information-safe greedy selection;
+- frozen-checkpoint self-play with explicit epsilon exploration; and
+- paired, seat-balanced arena evaluation with deterministic block bootstrap intervals.
+
+The research rationale and complete implementation plan are in
+[`docs/NEURAL_AI_RESEARCH.md`](docs/NEURAL_AI_RESEARCH.md) and
+[`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md).
+
+### Historical q0 recipe
+
+The recorded q0 corpus, dataset, and checkpoint were produced at source revision
+`7fe2e5af6339efc86db285349043bb16b298eed1`. Exact reproduction requires that revision and its
+locked environment; running the same commands at a later revision creates a new, separately
+fingerprinted artifact set.
 
 ```bash
+git switch --detach 7fe2e5af6339efc86db285349043bb16b298eed1
+uv sync --extra rl --locked
 uv run python -m agent_avenue corpus-generate runs/q0-corpus \
   --games 4000 --seed 20260829 --run-id q0-bootstrap
 uv run python -m agent_avenue dataset-build runs/q0-corpus runs/q0-dataset.npz \
@@ -90,10 +134,24 @@ uv run python -m agent_avenue train runs/q0-dataset.npz checkpoints/q0 \
 uv run python -m agent_avenue checkpoint-inspect checkpoints/q0
 ```
 
-Corpora, datasets, checkpoints, and full arena reports are ignored by Git. Training consumes only
-encoded `PlayerObservation + Action` candidates; authoritative replay state is used solely by trusted
-offline extraction and terminal labeling. Checkpoint-backed play is available through the optional
-RL extra:
+The recorded q0 arenas used source revision
+`d46350356a7bf461468ba33c6bf1f28b3231cd14` and its locked environment. See
+[`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md) for the exact evaluation commands and
+artifact identities. Return to the current development branch before using the current self-play
+CLI shown below:
+
+```bash
+git switch main
+uv sync --extra rl --locked
+```
+
+Corpora, datasets, checkpoints, full reports, and game records are generated research artifacts and
+remain outside normal Git history. Their manifests carry fingerprints, source revisions, seeds,
+normalized configuration, and lineage. The q0 corpus bundle is about 1.5 MB for 4,000 games,
+including about 1.2 MB of compressed semantic records, so the project retains complete corpora and
+checkpoints rather than reducing them to aggregate metrics.
+
+Checkpoint-backed play and evaluation are available through the optional RL extra:
 
 ```bash
 uv run python -m agent_avenue game --player-one learned \
@@ -102,52 +160,34 @@ uv run python -m agent_avenue arena --agent-a learned \
   --agent-a-checkpoint checkpoints/q0 --agent-b random --pairs 400 --seed 2026083001
 ```
 
-Arena reports retain the game-level Wilson interval and add the claim-generating deterministic
-20,000-resample paired-seed bootstrap interval. The completed q0 evaluation is summarized in
-[`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md).
+### Run or resume one frozen generation
 
-Milestone 6 starts from discrete frozen generations. Generate and warm-start a Generation 1
-candidate with:
-
-```bash
-uv run python -m agent_avenue corpus-generate runs/q1-corpus \
-  --games 4000 --seed 2026090101 --run-id q1-self-play \
-  --checkpoint checkpoints/q0 --generation 1
-uv run python -m agent_avenue dataset-build runs/q1-corpus runs/q1-dataset.npz \
-  --split-seed 2026090102
-uv run python -m agent_avenue train runs/q1-dataset.npz checkpoints/q1-attempt1 \
-  --seed 2026090103 --parent-checkpoint checkpoints/q0 --generation 1
-```
-
-Generation epsilons default to the predeclared `1/10`, `3/40`, `1/20`, and `1/40` schedule.
-Promotion and plateau primitives apply the fixed block-bootstrap gates documented in
-[`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md). Corpus generation is restart-safe: each verified
-game is atomically sharded under a declaration fingerprint, interrupted runs generate only missing
-games, and the ordered gzip corpus plus manifest are finalized atomically.
-
-A complete generation can now be planned, run, and resumed with one command:
+Inspect the full plan without writing a run:
 
 ```bash
 uv run python -m agent_avenue iterate runs/g1-attempt1 \
   --incumbent checkpoints/q0 --generation 1 --attempt-id g1-attempt1 \
   --seed 2026090100 --dry-run
+```
+
+Execute or resume the same immutable plan:
+
+```bash
 uv run python -m agent_avenue iterate runs/g1-attempt1 \
   --incumbent checkpoints/q0 --generation 1 --attempt-id g1-attempt1 \
   --seed 2026090100
 ```
 
-The orchestrator freezes all attempt-specific seeds and paths in `plan.json`, resumes corpus
-collection, validates or creates the current-generation dataset and warm-started candidate, runs the
-primary and guardrail arenas, performs the one allowed confirmation block when required, and emits
-an immutable `promotion-decision.json`. That decision explicitly selects either the candidate or the
-retained incumbent; it does not silently mutate a global champion pointer. Re-running the command
-validates and reuses every completed artifact.
+The orchestrator freezes paths, seeds, corpus size, epsilon, training configuration, and promotion
+policy in `plan.json`. It validates and reuses completed artifacts, generates only missing games,
+trains a warm-started candidate, runs primary and guardrail arenas, performs the one allowed
+confirmation block if required, and emits an immutable `promotion-decision.json`. It never silently
+mutates a global champion pointer.
 
 ## Lightweight web QA interface
 
-Milestone 2 provides a private, server-rendered hot-seat interface for checking game rules and
-hidden-information behavior. It is a QA tool for this research project, not a public hosted copy of
-the game. Install the optional dependencies and start the single-process in-memory server:
+The private, server-rendered web UI exists to inspect rules, observations, and opponent behavior—not
+to be a public game service.
 
 ```bash
 uv sync --extra web
@@ -155,18 +195,20 @@ make web
 # serves http://0.0.0.0:8000
 ```
 
-The interface supports explicit or generated seeds, human-versus-human play, human-versus-random
-and human-versus-heuristic games from either seat, semantic form actions, public turn summaries,
-terminal results, and reproduction metadata. Automated controllers advance only until the next
-human decision and receive the same player-safe observations as every other agent. Active games are
-intentionally lost when the process restarts. Run its focused tests with `make test-web`; see
-[`docs/WEB_QA.md`](docs/WEB_QA.md) for the manual smoke checklist.
+It currently supports:
 
-## Deterministic rules engine
+- explicit or generated seeds;
+- human-versus-human hot-seat play;
+- human-versus-random and human-versus-heuristic play;
+- either human seat;
+- semantic form actions and public turn history; and
+- terminal/reproduction metadata without hidden authoritative state.
 
-Milestone 1 provides a typed, immutable two-player base-game engine in
-`agent_avenue.engine` and a separate player-safe observation boundary in
-`agent_avenue.observation`.
+Learned-checkpoint selection is planned but not yet implemented. When added, checkpoints will come
+from a validated server-side allowlist rather than arbitrary browser-supplied paths. See
+[`docs/WEB_QA.md`](docs/WEB_QA.md) for the manual checklist.
+
+## Deterministic rules engine and baseline arena
 
 ```python
 from agent_avenue.engine import apply_action, legal_actions, new_game
@@ -175,7 +217,7 @@ state = new_game(seed=17)
 state = apply_action(state, legal_actions(state)[0])
 ```
 
-Run a seeded automated game, save its completed-game record, verify it, or execute a paired arena:
+Run a seeded game, save and verify its semantic record, or execute a paired arena:
 
 ```bash
 uv run python -m agent_avenue game --seed 17 \
@@ -186,16 +228,33 @@ uv run python -m agent_avenue arena \
 ```
 
 Completed-game records contain normalized engine and agent configurations, independently derived
-setup/agent seeds, semantic actions, terminal metadata, versions, and code/rules fingerprints.
-Arena reports alternate seats for every paired setup seed and include Wilson and paired-bootstrap
-95% confidence intervals, seat splits, score margins, terminal reasons, and throughput. See
-[`docs/MILESTONE3_RESULTS.md`](docs/MILESTONE3_RESULTS.md) for the checked baseline and
-`benchmarks/milestone3-smoke.json` for the fast smoke configuration.
+setup/agent seeds, semantic actions, terminal metadata, schema versions, and code/rules
+fingerprints. Arena reports alternate seats for each paired setup seed and include paired bootstrap
+and Wilson intervals, seat splits, score margins, terminal reasons, and throughput.
 
-The Milestone 1 engine replay format remains supported by the `replay` command. The committed
-`tests/fixtures/scripted_seed17.replay.json` is a small compatibility fixture.
+See [`docs/MILESTONE3_RESULTS.md`](docs/MILESTONE3_RESULTS.md) for the checked random/heuristic
+baseline and `benchmarks/milestone3-smoke.json` for its fast smoke configuration.
 
-The canonical 38-card deck cannot naturally reach the deck-exhaustion adjudication: once all six
-Codebreakers have been recruited, at least one of two players necessarily has the three copies
-required for an earlier instant win. The exhaustion rule is nevertheless implemented and tested as
-an isolated adjudication rule, matching the published base rules.
+The canonical 38-card deck cannot naturally reach deck-exhaustion adjudication: once all six
+Codebreakers have been recruited, one player necessarily has the three copies required for an
+earlier instant win. The exhaustion rule is nevertheless implemented and tested in isolation to
+match the published base rules.
+
+## Documentation map
+
+- [`RULES.md`](RULES.md): normalized two-player base-game rules.
+- [`docs/STATUS.md`](docs/STATUS.md): current milestone and result index.
+- [`docs/EXPERIMENT_PROTOCOL.md`](docs/EXPERIMENT_PROTOCOL.md): experiment, metrics, and retention
+  policy.
+- [`docs/NEURAL_AI_RESEARCH.md`](docs/NEURAL_AI_RESEARCH.md): research review and algorithm rationale.
+- [`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md): detailed neural implementation plan and gates.
+- [`docs/MILESTONE1.md`](docs/MILESTONE1.md), [`docs/MILESTONE2.md`](docs/MILESTONE2.md), and
+  [`docs/MILESTONE3.md`](docs/MILESTONE3.md): completed foundational milestone references.
+- [`docs/NEURAL_AI_PLAN.md`](docs/NEURAL_AI_PLAN.md#milestone-4-safe-encoder-dataset-model-and-checkpoint)
+  and [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md): Milestones 4–5 implementation and
+  result references.
+- [`docs/MILESTONE6.md`](docs/MILESTONE6.md) and [`docs/MILESTONE7.md`](docs/MILESTONE7.md): current
+  and planned self-play/RL milestone references.
+- [`docs/MILESTONE3_RESULTS.md`](docs/MILESTONE3_RESULTS.md) and
+  [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md): completed benchmark reports.
+- [`docs/WEB_QA.md`](docs/WEB_QA.md): manual web security and behavior checks.

@@ -1,9 +1,11 @@
 # Neural AI implementation plan
 
-**Status:** Milestones 4–5 complete; Milestone 6 resumable iteration orchestration implemented,
-full generation runs pending
-**Date:** August 30, 2026
+**Status:** Milestones 4–5 complete; Milestone 6 core orchestration implemented and tested but a
+full generation plus production archival metadata/records are pending; Milestone 7 planned
+**Date:** September 2, 2026
 **Latest result:** [`MILESTONE5_RESULTS.md`](MILESTONE5_RESULTS.md)
+**Per-milestone references:** [`MILESTONE6.md`](MILESTONE6.md),
+[`MILESTONE7.md`](MILESTONE7.md)
 **Companion research:** [`NEURAL_AI_RESEARCH.md`](NEURAL_AI_RESEARCH.md)
 
 ## Goal
@@ -132,10 +134,12 @@ Proposed width: **87 features**.
 | Candidate play face-down card | 8 | one-hot; all zero during recruit |
 | Candidate recruit slot | 2 | one-hot face-up/face-down; all zero during play |
 
-The 19-turn scale follows the canonical card flow: 30 post-deal deck cards refill two offered cards
-for 15 turns, leaving two four-card hands; four more no-refill turns consume those eight cards, and
-deck exhaustion adjudicates after turn 19. Normal games terminate earlier, but a boundary fixture
-must verify this mechanical scale against the engine.
+The 19-turn scale is the mechanical card-flow ceiling if earlier terminal conditions are ignored:
+30 post-deal deck cards refill two offered cards for 15 turns, leaving two four-card hands; four more
+no-refill turns consume those eight cards, after which exhaustion would be adjudicated. The
+canonical 38-card game cannot actually reach that adjudication because recruiting all six
+Codebreakers necessarily gives one player the three-copy instant win first. An isolated boundary
+fixture still verifies the encoder's normalization against the engine's exhaustion rule.
 
 The recruited thresholds deliberately omit impossible nonterminal features: Sidekick/Mole counts
 above one and Codebreaker/Daredevil counts at three. The latter terminate the game immediately, so
@@ -629,6 +633,12 @@ heuristic bootstrap corpus, train `q0`, and establish honest random/heuristic ar
 
 ## Milestone 6: Frozen iterative self-play and promotion
 
+**Current status:** The resumable one-generation orchestrator and promotion primitives are
+implemented and covered by a tiny end-to-end test. Before a claim-generating q1 run, add exact
+Git/lockfile identity to attempt artifacts and retain compressed individual arena game records. No
+full 4,000-game q1 run has been executed. See [`MILESTONE6.md`](MILESTONE6.md) for the concise
+standalone milestone reference.
+
 ### Objective
 
 Run reproducible offline policy-improvement generations and produce a champion selected by a
@@ -647,10 +657,12 @@ predeclared statistical gate.
 8. Run candidate-versus-incumbent, random guardrail, and heuristic non-regression arenas.
 9. Emit an explicit promotion decision artifact; update a champion pointer only through a separate,
    auditable operation.
-10. Execute up to four planned generations with the declared epsilon schedule.
-11. Run the locked final benchmark and write a results document analogous to
+10. Record the exact Git revision and `uv.lock` digest in the attempt plan and final result.
+11. Retain compressed individual game records for every claim-generating arena.
+12. Execute up to four planned generations with the declared epsilon schedule.
+13. Run the locked final benchmark and write a results document analogous to
     `MILESTONE3_RESULTS.md`.
-12. Add optional human-versus-champion web mode only after checkpoint safety and arena behavior are
+14. Add optional human-versus-champion web mode only after checkpoint safety and arena behavior are
     stable; render checkpoint identity but no candidate scores or RNG state.
 
 ### Acceptance criteria
@@ -659,6 +671,8 @@ predeclared statistical gate.
   fingerprints, dataset identity, model tensor digest, checkpoint lineage, and promotion report in
   the declared environment; timestamped file bytes are not the reproducibility contract.
 - Generated games identify the exact frozen behavior checkpoint and exploration config.
+- Attempt artifacts record the exact Git revision and `uv.lock` digest.
+- Claim-generating arenas retain compressed individual semantic game records as well as aggregates.
 - No training/promotion seed is present in the locked final set.
 - Promotion uses the predeclared pair-aware gate; an incumbent is retained on failure.
 - Final reports include random, heuristic, q0, parent, seat, uncertainty, throughput, and
@@ -676,6 +690,16 @@ predeclared statistical gate.
   I/O is allowed; streaming policy updates are not part of the reproducible baseline.
 
 ## Milestone 7 experiments: only after the MC baseline
+
+**Current status:** Planned; not started. See [`MILESTONE7.md`](MILESTONE7.md) for the standalone
+milestone reference, including the proposed Gymnasium/PettingZoo environment adapters and generic
+recipe/replicate harness.
+
+Before the ordered experiments below, add a shared versioned turn-based environment adapter over
+safe observations and semantic actions. Expose optional PettingZoo AEC and single-agent Gymnasium
+wrappers without coupling the engine to framework action indices. Add committed machine-readable
+recipe declarations and an experiment runner that isolates and aggregates independent training
+replicates.
 
 These are ordered experiments, not part of the initial implementation commitment. Architecture
 search operates over a bounded **recipe family**, not model shape alone. A recipe fixes the encoder,

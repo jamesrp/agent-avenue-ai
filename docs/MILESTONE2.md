@@ -1,5 +1,12 @@
 # Milestone 2: Lightweight Web QA UI
 
+**Status:** Complete
+**Completed:** August 29, 2026
+
+This document describes the original hot-seat milestone. Milestone 3 subsequently reused the
+controller seam to add human-versus-random and human-versus-heuristic play from either seat; see
+[`WEB_QA.md`](WEB_QA.md) for the current checklist.
+
 ## Goal
 
 Provide a deliberately small, server-rendered web interface for playing and inspecting a game built

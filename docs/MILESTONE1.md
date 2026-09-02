@@ -1,5 +1,11 @@
 # Milestone 1: Deterministic Rules Engine
 
+**Status:** Complete
+**Completed:** August 29, 2026
+
+This document is the original milestone specification. The implemented engine and observation
+boundary remain the authoritative foundation described here.
+
 ## Goal
 
 Implement the complete two-player base game in `RULES.md` as a deterministic, replayable state

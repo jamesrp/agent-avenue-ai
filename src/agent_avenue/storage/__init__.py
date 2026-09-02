@@ -24,6 +24,12 @@ from .game_record import (
     save_game_record,
     verify_game_record,
 )
+from .provenance import (
+    SourceIdentity,
+    SourceIdentityError,
+    inspect_source_identity,
+    repository_root,
+)
 
 __all__ = [
     "CORPUS_SCHEMA_VERSION",
@@ -35,14 +41,18 @@ __all__ = [
     "GameRecord",
     "GameRecordError",
     "ResumableCorpus",
+    "SourceIdentity",
+    "SourceIdentityError",
     "code_fingerprint",
     "create_game_record",
     "game_record_fingerprint",
     "game_record_from_data",
     "game_record_to_data",
+    "inspect_source_identity",
     "load_corpus",
     "load_game_record",
     "open_resumable_corpus",
+    "repository_root",
     "rules_fingerprint",
     "save_game_record",
     "verify_game_record",

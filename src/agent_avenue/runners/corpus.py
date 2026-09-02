@@ -66,6 +66,12 @@ def _record_matches_spec(record: GameRecord, spec: GameSpec) -> bool:
     )
 
 
+def validate_record_matches_spec(record: GameRecord, spec: GameSpec) -> None:
+    """Require a verified game record to match its exact declared schedule entry."""
+    if not _record_matches_spec(record, spec):
+        raise CorpusError("corpus record does not match its scheduled game")
+
+
 def corpus_declaration(
     specs: Iterable[GameSpec],
     *,
@@ -123,18 +129,16 @@ def run_resumable_corpus(
         manifest, records = load_corpus(directory)
         if manifest.declaration_fingerprint != declaration.fingerprint:
             raise CorpusError("completed corpus does not match the requested schedule")
-        if tuple(record.game_id for record in records) != game_ids or any(
-            not _record_matches_spec(record, spec)
-            for record, spec in zip(records, scheduled, strict=True)
-        ):
+        if tuple(record.game_id for record in records) != game_ids:
             raise CorpusError("completed corpus games do not match the requested schedule")
+        for record, spec in zip(records, scheduled, strict=True):
+            validate_record_matches_spec(record, spec)
         return manifest
 
     by_id = {spec.game_id: spec for spec in scheduled}
     with open_resumable_corpus(directory, declaration) as corpus:
         for record in corpus.completed_records():
-            if not _record_matches_spec(record, by_id[record.game_id]):
-                raise CorpusError("staged corpus record does not match its scheduled game")
+            validate_record_matches_spec(record, by_id[record.game_id])
         for game_id in corpus.missing_game_ids():
             corpus.append(run_game(by_id[game_id]))
         return corpus.finalize()

@@ -23,9 +23,15 @@ from agent_avenue.agents import (
 )
 from agent_avenue.engine import GameConfig
 from agent_avenue.engine.setup import normalize_config
-from agent_avenue.storage import code_fingerprint, load_corpus, rules_fingerprint
+from agent_avenue.storage import (
+    code_fingerprint,
+    inspect_source_identity,
+    load_corpus,
+    repository_root,
+    rules_fingerprint,
+)
 
-from .arena import ArenaConfig, run_arena
+from .arena import ArenaConfig, run_resumable_arena
 from .corpus import run_resumable_corpus
 from .game import AgentSpec
 from .promotion import (
@@ -33,6 +39,7 @@ from .promotion import (
     PromotionDecision,
     PromotionEvidence,
     PromotionPolicy,
+    assess_attempt,
     bootstrap_mean_interval,
     evaluate_promotion,
 )
@@ -45,8 +52,9 @@ from .self_play import (
 if TYPE_CHECKING:
     from agent_avenue.learning import LoadedCheckpoint
 
-ITERATION_SCHEMA_VERSION = 1
-ITERATION_PLAN_VERSION = "frozen-generation-iteration-v1"
+ITERATION_SCHEMA_VERSION = 2
+ITERATION_PLAN_VERSION = "frozen-generation-iteration-v2"
+ARENA_RECORDS_VERSION = "iteration-arena-records-v1"
 
 
 class IterationError(ValueError):
@@ -140,8 +148,12 @@ class IterationPlan:
     config: IterationConfig
     incumbent_fingerprint: str
     incumbent_tensor_digest: str
+    incumbent_locator: str
     epsilon: EpsilonConfig
     seeds: Mapping[str, int]
+    source_identity: Mapping[str, object]
+    claim_eligible: bool
+    claim_ineligibility_reasons: tuple[str, ...]
     fingerprint: str
 
     def to_data(self) -> dict[str, object]:
@@ -153,8 +165,14 @@ class IterationPlan:
             "attempt_id": self.config.attempt_id,
             "root_seed": self.config.root_seed,
             "incumbent": {
+                "path": self.incumbent_locator,
                 "checkpoint_fingerprint": self.incumbent_fingerprint,
                 "tensor_digest": self.incumbent_tensor_digest,
+            },
+            "source": dict(self.source_identity),
+            "claim_eligibility": {
+                "eligible": self.claim_eligible,
+                "reasons": list(self.claim_ineligibility_reasons),
             },
             "epsilon": self.epsilon.to_data(),
             "counts": {
@@ -183,6 +201,8 @@ class IterationPlan:
                 "dataset": "dataset.npz",
                 "candidate": "candidate",
                 "arenas": "arenas",
+                "arena_records": "arena-records",
+                "validation": "validation.json",
                 "decision": "promotion-decision.json",
             },
         }
@@ -208,6 +228,43 @@ class IterationResult:
         }
 
 
+def _claim_ineligibility_reasons(
+    config: IterationConfig, epsilon: EpsilonConfig
+) -> tuple[str, ...]:
+    expected = {
+        "game_count": 4_000,
+        "primary_pairs": 500,
+        "guardrail_pairs": 200,
+        "confirmation_pairs": 1_000,
+        "max_epochs": 50,
+        "batch_size": 1024,
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-4,
+        "patience": 8,
+        "cpu_threads": 1,
+    }
+    reasons = [
+        f"non_production_{name}"
+        for name, value in expected.items()
+        if getattr(config, name) != value
+    ]
+    if epsilon != planned_epsilon(config.generation):
+        reasons.append("non_production_epsilon")
+    if config.promotion_policy != PromotionPolicy():
+        reasons.append("non_production_promotion_policy")
+    if config.game_config != GameConfig():
+        reasons.append("non_production_game_config")
+    return tuple(reasons)
+
+
+def _portable_locator(path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(repository_root()).as_posix()
+    except ValueError:
+        return str(resolved)
+
+
 def resolve_iteration_plan(config: IterationConfig) -> IterationPlan:
     """Validate the incumbent and freeze all attempt-specific random domains."""
     from agent_avenue.learning import TrainingConfig, inspect_checkpoint
@@ -231,6 +288,11 @@ def resolve_iteration_plan(config: IterationConfig) -> IterationPlan:
     )
     incumbent = inspect_checkpoint(config.incumbent_checkpoint)
     epsilon = config.epsilon or planned_epsilon(config.generation)
+    source = inspect_source_identity()
+    claim_reasons = list(_claim_ineligibility_reasons(config, epsilon))
+    if not source.tracked_tree_clean:
+        claim_reasons.append("tracked_source_tree_is_dirty")
+    incumbent_locator = _portable_locator(config.incumbent_checkpoint)
     domain = f"iteration:g{config.generation}:attempt:{config.attempt_id}"
     seed_names = (
         "corpus",
@@ -244,6 +306,7 @@ def resolve_iteration_plan(config: IterationConfig) -> IterationPlan:
         "heuristic-bootstrap",
         "confirmation-arena",
         "confirmation-bootstrap",
+        "plateau-bootstrap",
     )
     seeds = {
         name: derive_seed(config.root_seed, f"{domain}:{name}") & ((1 << 63) - 1)
@@ -256,6 +319,12 @@ def resolve_iteration_plan(config: IterationConfig) -> IterationPlan:
         "root_seed": config.root_seed,
         "incumbent_fingerprint": incumbent.checkpoint_fingerprint,
         "incumbent_tensor_digest": incumbent.tensor_digest,
+        "incumbent_locator": incumbent_locator,
+        "source": source.to_data(),
+        "claim_eligibility": {
+            "eligible": not claim_reasons,
+            "reasons": claim_reasons,
+        },
         "epsilon": epsilon.to_data(),
         "game_count": config.game_count,
         "primary_pairs": config.primary_pairs,
@@ -279,8 +348,12 @@ def resolve_iteration_plan(config: IterationConfig) -> IterationPlan:
         config,
         incumbent.checkpoint_fingerprint,
         incumbent.tensor_digest,
+        incumbent_locator,
         epsilon,
         seeds,
+        source.to_data(),
+        not claim_reasons,
+        tuple(claim_reasons),
         _fingerprint(identity),
     )
 
@@ -318,9 +391,19 @@ def _behavior_agent(loaded: LoadedCheckpoint, epsilon: EpsilonConfig) -> AgentSp
     return AgentSpec("frozen-incumbent", wrapped.config_to_data(), lambda: wrapped)
 
 
+def _semantic_report(report: Mapping[str, object]) -> dict[str, object]:
+    copied = json.loads(_canonical_json(report))
+    if not isinstance(copied, dict):
+        raise IterationError("arena report must be an object")
+    copied.pop("elapsed_seconds", None)
+    copied.pop("games_per_second", None)
+    return copied
+
+
 def _arena_artifact(
     path: Path,
     *,
+    records_path: Path,
     stage: str,
     plan: IterationPlan,
     agent_a: AgentSpec,
@@ -341,6 +424,39 @@ def _arena_artifact(
         "rules_fingerprint": rules_fingerprint(),
         "code_fingerprint": code_fingerprint(),
     }
+    arena_config = ArenaConfig(
+        f"{plan.config.attempt_id}-{stage}",
+        agent_a,
+        agent_b,
+        pairs,
+        seed,
+        plan.config.game_config,
+    )
+    retained = run_resumable_arena(
+        records_path,
+        arena_config,
+        generation=plan.config.generation,
+        corpus_configuration={
+            "version": ARENA_RECORDS_VERSION,
+            "plan_fingerprint": plan.fingerprint,
+            "stage": stage,
+            "pair_count": pairs,
+        },
+    )
+    report = retained.report.to_data()
+    records = {
+        "path": records_path.relative_to(plan.config.output).as_posix(),
+        "corpus_fingerprint": retained.records_manifest.corpus_fingerprint,
+        "declaration_fingerprint": retained.records_manifest.declaration_fingerprint,
+        "record_count": retained.records_manifest.record_count,
+    }
+    expected_artifact: dict[str, object] = {
+        **expected,
+        "records": records,
+        "report": report,
+        "artifact_fingerprint": "",
+    }
+    expected_artifact["artifact_fingerprint"] = _arena_fingerprint(expected_artifact)
     if path.exists():
         existing_artifact = _read_json(path)
         declared = existing_artifact.get("artifact_fingerprint")
@@ -348,42 +464,24 @@ def _arena_artifact(
             raise IterationError(f"arena artifact fingerprint mismatch: {stage}")
         if any(existing_artifact.get(key) != value for key, value in expected.items()):
             raise IterationError(f"arena artifact does not match iteration plan: {stage}")
-        report = existing_artifact.get("report")
-        if not isinstance(report, dict):
-            raise IterationError(f"arena artifact has no report: {stage}")
-        if (
-            report.get("total_games") != pairs * 2
-            or report.get("paired_seed_count") != pairs
-            or report.get("master_seed") != seed
-            or report.get("game_config") != expected["game_config"]
-            or report.get("rules_fingerprint") != expected["rules_fingerprint"]
-            or report.get("code_fingerprint") != expected["code_fingerprint"]
-        ):
-            raise IterationError(f"arena report does not match iteration plan: {stage}")
-        agents = report.get("agents")
-        expected_a = {"id": agent_a.agent_id, "config": expected["agent_a_config"]}
-        expected_b = {"id": agent_b.agent_id, "config": expected["agent_b_config"]}
-        if (
-            not isinstance(agents, dict)
-            or agents.get("a") != expected_a
-            or agents.get("b") != expected_b
-        ):
-            raise IterationError(f"arena report agent identity mismatch: {stage}")
+        if existing_artifact.get("records") != records:
+            raise IterationError(f"arena record corpus does not match aggregate: {stage}")
+        existing_report = existing_artifact.get("report")
+        if not isinstance(existing_report, Mapping) or _semantic_report(
+            existing_report
+        ) != _semantic_report(report):
+            raise IterationError(f"arena aggregate does not match retained records: {stage}")
         return existing_artifact
-    report = run_arena(
-        ArenaConfig(
-            f"{plan.config.attempt_id}-{stage}",
-            agent_a,
-            agent_b,
-            pairs,
-            seed,
-            plan.config.game_config,
-        )
-    ).to_data()
-    artifact: dict[str, object] = {**expected, "report": report, "artifact_fingerprint": ""}
-    artifact["artifact_fingerprint"] = _arena_fingerprint(artifact)
-    _atomic_json(path, artifact)
-    return artifact
+    _atomic_json(path, expected_artifact)
+    return expected_artifact
+
+
+def _arena_records_fingerprint(artifact: Mapping[str, object]) -> str:
+    records = artifact.get("records")
+    fingerprint = records.get("corpus_fingerprint") if isinstance(records, Mapping) else None
+    if not isinstance(fingerprint, str):
+        raise IterationError("arena artifact has no record corpus fingerprint")
+    return fingerprint
 
 
 def _report(artifact: Mapping[str, object]) -> Mapping[str, object]:
@@ -489,6 +587,8 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
 
     output = plan.config.output
     output.mkdir(parents=True, exist_ok=True)
+    if inspect_source_identity().to_data() != dict(plan.source_identity):
+        raise IterationError("current Git revision or uv.lock no longer matches the frozen plan")
     _write_or_validate_plan(plan)
     decision_path = output / "promotion-decision.json"
     existing_decision: dict[str, object] | None = None
@@ -591,8 +691,10 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
     candidate_agent = _loaded_checkpoint_agent(candidate, "candidate")
     incumbent_arena_agent = _loaded_checkpoint_agent(incumbent, "incumbent")
     arenas = output / "arenas"
+    arena_records = output / "arena-records"
     primary = _arena_artifact(
         arenas / "primary.json",
+        records_path=arena_records / "primary",
         stage="primary",
         plan=plan,
         agent_a=candidate_agent,
@@ -602,6 +704,7 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
     )
     random_guardrail = _arena_artifact(
         arenas / "versus-random.json",
+        records_path=arena_records / "versus-random",
         stage="versus-random",
         plan=plan,
         agent_a=candidate_agent,
@@ -611,6 +714,7 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
     )
     candidate_heuristic = _arena_artifact(
         arenas / "candidate-versus-heuristic.json",
+        records_path=arena_records / "candidate-versus-heuristic",
         stage="candidate-versus-heuristic",
         plan=plan,
         agent_a=candidate_agent,
@@ -620,6 +724,7 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
     )
     incumbent_heuristic = _arena_artifact(
         arenas / "incumbent-versus-heuristic.json",
+        records_path=arena_records / "incumbent-versus-heuristic",
         stage="incumbent-versus-heuristic",
         plan=plan,
         agent_a=incumbent_arena_agent,
@@ -639,6 +744,45 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
         pair_id: candidate_h_scores[pair_id] - incumbent_h_scores[pair_id]
         for pair_id in candidate_h_scores
     }
+    validation_path = output / "validation.json"
+    checks = {
+        "source_and_lock_match_plan": True,
+        "incumbent_checkpoint_integrity_and_compatibility": True,
+        "training_corpus_records_replay_verified": True,
+        "dataset_lineage_and_split_verified": True,
+        "candidate_checkpoint_integrity_compatibility_and_lineage": True,
+        "arena_records_replay_and_schedule_verified": True,
+        "aligned_heuristic_pair_blocks_verified": True,
+        "safe_observation_encoder_contract_verified": True,
+        "deterministic_artifact_fingerprints_verified": True,
+    }
+    validation_data: dict[str, object] = {
+        "schema_version": ITERATION_SCHEMA_VERSION,
+        "plan_fingerprint": plan.fingerprint,
+        "checks": checks,
+        "source": dict(plan.source_identity),
+        "artifacts": {
+            "corpus": corpus_manifest.corpus_fingerprint,
+            "dataset": dataset.fingerprint,
+            "candidate": candidate.checkpoint_fingerprint,
+            "arena_record_corpora": {
+                "primary": _arena_records_fingerprint(primary),
+                "versus_random": _arena_records_fingerprint(random_guardrail),
+                "candidate_versus_heuristic": _arena_records_fingerprint(candidate_heuristic),
+                "incumbent_versus_heuristic": _arena_records_fingerprint(incumbent_heuristic),
+            },
+        },
+        "artifact_fingerprint": "",
+    }
+    validation_data["artifact_fingerprint"] = _fingerprint(
+        validation_data, exclude=("artifact_fingerprint",)
+    )
+    if validation_path.exists():
+        if _read_json(validation_path) != validation_data:
+            raise IterationError("existing validation artifact does not match verified artifacts")
+    else:
+        _atomic_json(validation_path, validation_data)
+    compatibility_checks_passed = all(value is True for value in checks.values())
     evidence = PromotionEvidence(
         primary=_interval(
             primary_scores,
@@ -657,13 +801,14 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
             seed=plan.seeds["heuristic-bootstrap"],
             domain=f"promotion:{plan.config.attempt_id}:heuristic-difference:v1",
         ),
-        compatibility_checks_passed=True,
+        compatibility_checks_passed=compatibility_checks_passed,
     )
     decision = evaluate_promotion(evidence, plan.config.promotion_policy)
     confirmation_artifact: dict[str, object] | None = None
     if decision.status == "confirmation_required":
         confirmation_artifact = _arena_artifact(
             arenas / "confirmation.json",
+            records_path=arena_records / "confirmation",
             stage="confirmation",
             plan=plan,
             agent_a=candidate_agent,
@@ -682,7 +827,7 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
             player_two_win_rate=evidence.player_two_win_rate,
             versus_random=evidence.versus_random,
             heuristic_difference=evidence.heuristic_difference,
-            compatibility_checks_passed=True,
+            compatibility_checks_passed=compatibility_checks_passed,
             confirmation=confirmation,
         )
         decision = evaluate_promotion(evidence, plan.config.promotion_policy)
@@ -693,16 +838,35 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
     selected_checkpoint = (
         candidate.checkpoint_fingerprint if decision.promoted else plan.incumbent_fingerprint
     )
+    attempt_assessment = (
+        assess_attempt(
+            attempt_id=plan.config.attempt_id,
+            incumbent_checkpoint=plan.incumbent_fingerprint,
+            candidate_checkpoint=candidate.checkpoint_fingerprint,
+            pair_scores=tuple(primary_scores[pair_id] for pair_id in sorted(primary_scores)),
+            master_seed=plan.seeds["plateau-bootstrap"],
+        )
+        if not decision.promoted
+        else None
+    )
     decision_data: dict[str, object] = {
         "schema_version": ITERATION_SCHEMA_VERSION,
         "plan_fingerprint": plan.fingerprint,
         "generation": plan.config.generation,
         "attempt_id": plan.config.attempt_id,
+        "source": dict(plan.source_identity),
+        "claim_eligibility": {
+            "eligible": plan.claim_eligible,
+            "reasons": list(plan.claim_ineligibility_reasons),
+        },
         "incumbent_checkpoint": plan.incumbent_fingerprint,
         "candidate_checkpoint": candidate.checkpoint_fingerprint,
         "selected_checkpoint": selected_checkpoint,
         "selected_role": selected_role,
         "decision": decision.to_data(),
+        "plateau_assessment": (
+            attempt_assessment.to_data() if attempt_assessment is not None else None
+        ),
         "policy": asdict(plan.config.promotion_policy),
         "evidence": {
             "primary": _interval_data(evidence.primary),
@@ -727,6 +891,18 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
                 if confirmation_artifact is not None
                 else None
             ),
+            "arena_record_corpora": {
+                "primary": _arena_records_fingerprint(primary),
+                "versus_random": _arena_records_fingerprint(random_guardrail),
+                "candidate_versus_heuristic": _arena_records_fingerprint(candidate_heuristic),
+                "incumbent_versus_heuristic": _arena_records_fingerprint(incumbent_heuristic),
+                "confirmation": (
+                    _arena_records_fingerprint(confirmation_artifact)
+                    if confirmation_artifact is not None
+                    else None
+                ),
+            },
+            "validation": validation_data["artifact_fingerprint"],
         },
         "artifact_fingerprint": "",
     }

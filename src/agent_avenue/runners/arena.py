@@ -4,8 +4,9 @@ import json
 import math
 import time
 from collections import Counter
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from agent_avenue.agents import (
     RNG_ALGORITHM,
@@ -14,9 +15,16 @@ from agent_avenue.agents import (
     derive_seed,
 )
 from agent_avenue.engine import GameConfig, PlayerId
-from agent_avenue.storage import GameRecord, code_fingerprint, rules_fingerprint
+from agent_avenue.storage import (
+    CorpusManifest,
+    GameRecord,
+    code_fingerprint,
+    load_corpus,
+    rules_fingerprint,
+)
 
 from .batch import iter_games
+from .corpus import run_resumable_corpus, validate_record_matches_spec
 from .game import AgentSpec, GameSpec
 
 PAIRED_BOOTSTRAP_METHOD = "paired-percentile-bootstrap-v1"
@@ -241,11 +249,26 @@ def schedule_arena(config: ArenaConfig) -> Iterator[GameSpec]:
         )
 
 
-def run_arena(
+@dataclass(frozen=True, slots=True)
+class RetainedArenaResult:
+    report: ArenaReport
+    records_manifest: CorpusManifest
+
+
+def arena_report_from_records(
     config: ArenaConfig,
-    record_sink: Callable[[GameRecord], None] | None = None,
+    records: Iterable[GameRecord],
+    *,
+    elapsed_seconds: float,
 ) -> ArenaReport:
-    """Execute a balanced arena and aggregate statistics without retaining records."""
+    """Validate a complete scheduled arena record stream and aggregate its report."""
+    scheduled = tuple(schedule_arena(config))
+    buffered = tuple(records)
+    if len(buffered) != len(scheduled):
+        raise ValueError("arena record count does not match its declared schedule")
+    for record, spec in zip(buffered, scheduled, strict=True):
+        validate_record_matches_spec(record, spec)
+
     wins = Counter[str]()
     terminal_reasons = Counter[str]()
     seat_games = Counter[PlayerId]()
@@ -255,12 +278,7 @@ def run_arena(
     margin_total = 0
     turns_total = 0
     decisions_total = 0
-    started = time.perf_counter()
-    total = 0
-    for record in iter_games(schedule_arena(config)):
-        total += 1
-        if record_sink is not None:
-            record_sink(record)
+    for record in buffered:
         winner_id = record.seats[0 if record.winner is PlayerId.PLAYER_ONE else 1].agent_id
         wins[winner_id] += 1
         if record.pair_id is None:
@@ -281,7 +299,8 @@ def run_arena(
         margin_total += record.final_scores[a_index] - record.final_scores[1 - a_index]
         turns_total += record.turn_count
         decisions_total += record.decision_count
-    elapsed = time.perf_counter() - started
+
+    total = len(buffered)
     pair_ids = tuple(sorted(pair_games))
     if len(pair_ids) != config.pair_count or any(pair_games[pair_id] != 2 for pair_id in pair_ids):
         raise ValueError("arena did not produce exactly two games for every paired seed")
@@ -317,8 +336,8 @@ def run_arena(
         average_score_margin=margin_total / total,
         average_turns=turns_total / total,
         average_decisions=decisions_total / total,
-        elapsed_seconds=elapsed,
-        games_per_second=total / elapsed if elapsed else math.inf,
+        elapsed_seconds=elapsed_seconds,
+        games_per_second=total / elapsed_seconds if elapsed_seconds else math.inf,
         master_seed=config.master_seed,
         seed_derivation=SEED_DERIVATION,
         rng_algorithm=RNG_ALGORITHM,
@@ -328,3 +347,42 @@ def run_arena(
         rules_fingerprint=rules_fingerprint(),
         code_fingerprint=code_fingerprint(),
     )
+
+
+def run_resumable_arena(
+    records_directory: Path,
+    config: ArenaConfig,
+    *,
+    generation: int | None,
+    corpus_configuration: Mapping[str, object],
+) -> RetainedArenaResult:
+    """Run or reuse a compressed, schedule-validated arena corpus and aggregate it."""
+    started = time.perf_counter()
+    manifest = run_resumable_corpus(
+        records_directory,
+        schedule_arena(config),
+        behavior_policy="paired-arena-v1",
+        root_seed=config.master_seed,
+        generation=generation,
+        configuration=corpus_configuration,
+    )
+    loaded_manifest, records = load_corpus(records_directory)
+    if loaded_manifest.corpus_fingerprint != manifest.corpus_fingerprint:
+        raise ValueError("loaded arena corpus does not match the completed manifest")
+    report = arena_report_from_records(
+        config, records, elapsed_seconds=time.perf_counter() - started
+    )
+    return RetainedArenaResult(report, manifest)
+
+
+def run_arena(
+    config: ArenaConfig,
+    record_sink: Callable[[GameRecord], None] | None = None,
+) -> ArenaReport:
+    """Execute a balanced arena and aggregate statistics, optionally retaining records."""
+    started = time.perf_counter()
+    records = tuple(iter_games(schedule_arena(config)))
+    if record_sink is not None:
+        for record in records:
+            record_sink(record)
+    return arena_report_from_records(config, records, elapsed_seconds=time.perf_counter() - started)

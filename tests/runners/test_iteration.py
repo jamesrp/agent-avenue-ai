@@ -86,7 +86,20 @@ def test_tiny_iteration_runs_end_to_end_and_retains_immutable_decision(tmp_path:
     decision = json.loads(first.decision_path.read_text())
     assert decision["plan_fingerprint"] == plan.fingerprint
     assert decision["selected_checkpoint"] == first.selected_checkpoint
+    assert decision["source"] == plan.source_identity
+    assert decision["claim_eligibility"]["eligible"] is False
     assert (config.output / "corpus" / "manifest.json").is_file()
     assert (config.output / "dataset.npz").is_file()
     assert (config.output / "candidate" / "manifest.json").is_file()
     assert (config.output / "arenas" / "primary.json").is_file()
+    assert (config.output / "validation.json").is_file()
+    for stage in (
+        "primary",
+        "versus-random",
+        "candidate-versus-heuristic",
+        "incumbent-versus-heuristic",
+    ):
+        manifest = config.output / "arena-records" / stage / "manifest.json"
+        records = config.output / "arena-records" / stage / "games.jsonl.gz"
+        assert manifest.is_file()
+        assert records.is_file()

@@ -42,6 +42,8 @@ from .model import (
 
 CHECKPOINT_SCHEMA_VERSION: Final = 1
 CHECKPOINT_ARTIFACT_KIND: Final = "immutable-inference"
+CHECKPOINT_FINGERPRINT_ALGORITHM: Final = "sha256-canonical-json-v2"
+_LEGACY_CHECKPOINT_FINGERPRINT_ALGORITHM: Final = "sha256-canonical-json-v1"
 MANIFEST_FILENAME: Final = "manifest.json"
 WEIGHTS_FILENAME: Final = "weights.pt"
 METRICS_FILENAME: Final = "metrics.json"
@@ -288,26 +290,37 @@ def _encoder_data(
     }
 
 
-def _identity_payload(manifest: Mapping[str, object]) -> dict[str, object]:
+def _identity_payload(
+    manifest: Mapping[str, object], *, algorithm: str = CHECKPOINT_FINGERPRINT_ALGORITHM
+) -> dict[str, object]:
     excluded = {
         "checkpoint_fingerprint",
         "created_at",
         "environment",
         "output_path",
         "elapsed_seconds",
-        "files",
     }
+    if algorithm == CHECKPOINT_FINGERPRINT_ALGORITHM:
+        excluded.add("files")
+    elif algorithm != _LEGACY_CHECKPOINT_FINGERPRINT_ALGORITHM:
+        raise CheckpointCompatibilityError(
+            f"unsupported checkpoint fingerprint algorithm {algorithm!r}"
+        )
     payload = {key: value for key, value in manifest.items() if key not in excluded}
     metrics = payload.get("metrics_summary")
-    if isinstance(metrics, Mapping):
+    if algorithm == CHECKPOINT_FINGERPRINT_ALGORITHM and isinstance(metrics, Mapping):
         payload["metrics_summary"] = {
             key: value for key, value in metrics.items() if key != "runtime"
         }
     return payload
 
 
-def _checkpoint_fingerprint(manifest: Mapping[str, object]) -> str:
-    return hashlib.sha256(_canonical_json(_identity_payload(manifest))).hexdigest()
+def _checkpoint_fingerprint(
+    manifest: Mapping[str, object], *, algorithm: str = CHECKPOINT_FINGERPRINT_ALGORITHM
+) -> str:
+    return hashlib.sha256(
+        _canonical_json(_identity_payload(manifest, algorithm=algorithm))
+    ).hexdigest()
 
 
 def save_checkpoint(
@@ -419,6 +432,7 @@ def save_checkpoint(
         manifest: dict[str, object] = {
             "schema_version": CHECKPOINT_SCHEMA_VERSION,
             "artifact_kind": CHECKPOINT_ARTIFACT_KIND,
+            "fingerprint_algorithm": CHECKPOINT_FINGERPRINT_ALGORITHM,
             "created_at": created,
             "model": model_spec(),
             "encoder": encoder_data,
@@ -487,9 +501,19 @@ def _manifest(path: Path) -> Mapping[str, object]:
     if manifest.get("artifact_kind") != CHECKPOINT_ARTIFACT_KIND:
         raise CheckpointCompatibilityError("checkpoint is not an immutable inference artifact")
     declared_identity = manifest.get("checkpoint_fingerprint")
-    if not _valid_digest(declared_identity) or declared_identity != _checkpoint_fingerprint(
-        manifest
-    ):
+    declared_algorithm = manifest.get("fingerprint_algorithm")
+    if declared_algorithm is None:
+        expected_identities = {
+            _checkpoint_fingerprint(manifest),
+            _checkpoint_fingerprint(manifest, algorithm=_LEGACY_CHECKPOINT_FINGERPRINT_ALGORITHM),
+        }
+    elif declared_algorithm == CHECKPOINT_FINGERPRINT_ALGORITHM:
+        expected_identities = {_checkpoint_fingerprint(manifest)}
+    else:
+        raise CheckpointCompatibilityError(
+            f"unsupported checkpoint fingerprint algorithm {declared_algorithm!r}"
+        )
+    if not _valid_digest(declared_identity) or declared_identity not in expected_identities:
         raise CheckpointIntegrityError("checkpoint fingerprint mismatch")
     return manifest
 

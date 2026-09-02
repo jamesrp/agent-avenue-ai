@@ -29,6 +29,7 @@ from agent_avenue.runners import (
     paired_bootstrap_interval,
     run_arena,
     run_game,
+    run_resumable_arena,
     schedule_arena,
     step_agent,
     wilson_interval,
@@ -38,6 +39,27 @@ from agent_avenue.runners import (
 def _random_spec(agent_id: str) -> AgentSpec:
     config = RandomAgentConfig()
     return AgentSpec(agent_id, config.to_data(), RandomAgent)
+
+
+def test_resumable_arena_retains_verified_compressed_records(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    config = ArenaConfig("retained", _random_spec("a"), _random_spec("b"), 2, 71)
+    first = run_resumable_arena(
+        tmp_path / "records",
+        config,
+        generation=1,
+        corpus_configuration={"stage": "fixture"},
+    )
+    second = run_resumable_arena(
+        tmp_path / "records",
+        config,
+        generation=1,
+        corpus_configuration={"stage": "fixture"},
+    )
+    assert first.records_manifest.corpus_fingerprint == second.records_manifest.corpus_fingerprint
+    assert first.records_manifest.record_count == 4
+    assert first.report.to_data()["wins"] == second.report.to_data()["wins"]
+    assert (tmp_path / "records" / "manifest.json").is_file()
+    assert (tmp_path / "records" / "games.jsonl.gz").is_file()
 
 
 def test_seeded_games_reproduce_and_agent_randomness_is_separate_from_setup() -> None:

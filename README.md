@@ -189,8 +189,15 @@ uv run python -m agent_avenue iterate runs/milestone6/q1-a1 \
 The orchestrator freezes paths, seeds, corpus size, epsilon, training configuration, and promotion
 policy in `plan.json`. It validates and reuses completed artifacts, generates only missing games,
 trains a warm-started candidate, retains compressed semantic records for every arena, runs primary
+It evaluates candidate strength against the frozen incumbent, random, and aligned heuristic
 and guardrail comparisons, performs the one allowed confirmation block if required, and emits an
 immutable `promotion-decision.json`. It never silently mutates a global champion pointer.
+
+The terminal-safety experiment adds a resumable generation-zero bootstrap runner, replay-derived
+per-decision safety diagnostics, per-side CLI shield composition, and a held-out diagnostic that
+scores each `qn` on records from every unordered prior-policy pair. Those diagnostic records never
+enter training or promotion. Run the frozen q0–q4 declaration with
+`scripts/run_terminal_safety_v1.py`.
 
 ## Lightweight web QA interface
 
@@ -266,6 +273,7 @@ match the published base rules.
 - [`docs/MILESTONE3_RESULTS.md`](docs/MILESTONE3_RESULTS.md),
   [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md), and
   [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md): completed benchmark reports.
-- [`docs/TERMINAL_SAFETY_EXPERIMENT.md`](docs/TERMINAL_SAFETY_EXPERIMENT.md): implemented
-  zero-ply terminal-safety shield, pending controlled rerun, and Milestone 6 failure analysis.
+- [`docs/TERMINAL_SAFETY_EXPERIMENT.md`](docs/TERMINAL_SAFETY_EXPERIMENT.md): implemented zero-ply
+  terminal-safety shield, controlled q0–q4 rerun, held-out all-pairs diagnostic plan, and Milestone 6
+  failure analysis. Controlled results are pending.
 - [`docs/WEB_QA.md`](docs/WEB_QA.md): manual web security and behavior checks.

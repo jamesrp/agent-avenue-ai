@@ -95,6 +95,14 @@ def test_tiny_iteration_runs_end_to_end_and_retains_immutable_decision(tmp_path:
     assert (config.output / "candidate" / "manifest.json").is_file()
     assert (config.output / "arenas" / "primary.json").is_file()
     assert (config.output / "validation.json").is_file()
+    validation = json.loads((config.output / "validation.json").read_text())
+    assert validation["checks"]["terminal_safety_diagnostics_verified"] is True
+    assert (
+        validation["safety_diagnostics"]["training_corpus"]["counts"][
+            "executed_avoidable_provable_losses"
+        ]
+        == 0
+    )
     corpus_manifest = json.loads((config.output / "corpus" / "manifest.json").read_text())
     assert corpus_manifest["behavior_policy"].endswith(
         ":terminal-safety-v1:epsilon-frozen-incumbent-v1"
@@ -109,3 +117,5 @@ def test_tiny_iteration_runs_end_to_end_and_retains_immutable_decision(tmp_path:
         records = config.output / "arena-records" / stage / "games.jsonl.gz"
         assert manifest.is_file()
         assert records.is_file()
+        artifact = json.loads((config.output / "arenas" / f"{stage}.json").read_text())
+        assert artifact["safety_diagnostics"]["artifact_fingerprint"]

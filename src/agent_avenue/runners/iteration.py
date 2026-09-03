@@ -44,6 +44,7 @@ from .promotion import (
     bootstrap_mean_interval,
     evaluate_promotion,
 )
+from .safety_audit import audit_terminal_safety
 from .self_play import (
     generation_config_from_agent,
     planned_epsilon,
@@ -53,9 +54,9 @@ from .self_play import (
 if TYPE_CHECKING:
     from agent_avenue.learning import LoadedCheckpoint
 
-ITERATION_SCHEMA_VERSION = 3
-ITERATION_PLAN_VERSION = "frozen-generation-iteration-v3"
-ARENA_RECORDS_VERSION = "iteration-arena-records-v1"
+ITERATION_SCHEMA_VERSION = 4
+ITERATION_PLAN_VERSION = "frozen-generation-iteration-v4"
+ARENA_RECORDS_VERSION = "iteration-arena-records-v2"
 
 
 class IterationError(ValueError):
@@ -456,6 +457,13 @@ def _arena_artifact(
         },
     )
     report = retained.report.to_data()
+    loaded_manifest, loaded_records = load_corpus(records_path)
+    if loaded_manifest.corpus_fingerprint != retained.records_manifest.corpus_fingerprint:
+        raise IterationError(f"arena record corpus changed during audit: {stage}")
+    safety_diagnostics = audit_terminal_safety(
+        loaded_records,
+        source_corpus_fingerprint=loaded_manifest.corpus_fingerprint,
+    )
     records = {
         "path": records_path.relative_to(plan.config.output).as_posix(),
         "corpus_fingerprint": retained.records_manifest.corpus_fingerprint,
@@ -466,6 +474,7 @@ def _arena_artifact(
         **expected,
         "records": records,
         "report": report,
+        "safety_diagnostics": safety_diagnostics,
         "artifact_fingerprint": "",
     }
     expected_artifact["artifact_fingerprint"] = _arena_fingerprint(expected_artifact)
@@ -478,6 +487,8 @@ def _arena_artifact(
             raise IterationError(f"arena artifact does not match iteration plan: {stage}")
         if existing_artifact.get("records") != records:
             raise IterationError(f"arena record corpus does not match aggregate: {stage}")
+        if existing_artifact.get("safety_diagnostics") != safety_diagnostics:
+            raise IterationError(f"arena safety diagnostics do not match records: {stage}")
         existing_report = existing_artifact.get("report")
         if not isinstance(existing_report, Mapping) or _semantic_report(
             existing_report
@@ -646,27 +657,26 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
         configuration={"generation": generation.normalized(), "plan_fingerprint": plan.fingerprint},
     )
     _, records = load_corpus(corpus_path)
+    corpus_safety = audit_terminal_safety(
+        records, source_corpus_fingerprint=corpus_manifest.corpus_fingerprint
+    )
 
     dataset_path = output / "dataset.npz"
     dataset_manifest_path = dataset_path.with_suffix(".json")
     if dataset_path.exists() != dataset_manifest_path.exists():
         dataset_path.unlink(missing_ok=True)
         dataset_manifest_path.unlink(missing_ok=True)
+    expected_dataset = materialize_dataset(
+        records,
+        split_seed=plan.seeds["split"],
+        source_corpus_fingerprint=corpus_manifest.corpus_fingerprint,
+    )
     if dataset_path.exists():
         dataset = load_dataset(dataset_path)
-        split_data = dataset.manifest.get("split")
-        if (
-            dataset.manifest.get("source_corpus_fingerprint") != corpus_manifest.corpus_fingerprint
-            or not isinstance(split_data, Mapping)
-            or split_data.get("seed") != plan.seeds["split"]
-        ):
-            raise IterationError("existing dataset does not match iteration corpus and split")
+        if dataset.fingerprint != expected_dataset.fingerprint:
+            raise IterationError("existing dataset does not exactly match corpus and split")
     else:
-        dataset = materialize_dataset(
-            records,
-            split_seed=plan.seeds["split"],
-            source_corpus_fingerprint=corpus_manifest.corpus_fingerprint,
-        )
+        dataset = expected_dataset
         save_dataset(dataset, dataset_path)
 
     training_config = TrainingConfig(
@@ -774,6 +784,7 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
         "dataset_lineage_and_split_verified": True,
         "candidate_checkpoint_integrity_compatibility_and_lineage": True,
         "arena_records_replay_and_schedule_verified": True,
+        "terminal_safety_diagnostics_verified": True,
         "aligned_heuristic_pair_blocks_verified": True,
         "safe_observation_encoder_contract_verified": True,
         "deterministic_artifact_fingerprints_verified": True,
@@ -783,10 +794,22 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
         "plan_fingerprint": plan.fingerprint,
         "checks": checks,
         "source": dict(plan.source_identity),
+        "safety_diagnostics": {"training_corpus": corpus_safety},
         "artifacts": {
             "corpus": corpus_manifest.corpus_fingerprint,
             "dataset": dataset.fingerprint,
             "candidate": candidate.checkpoint_fingerprint,
+            "safety_diagnostics": {
+                "training_corpus": corpus_safety["artifact_fingerprint"],
+                "primary": primary["safety_diagnostics"]["artifact_fingerprint"],  # type: ignore[index]
+                "versus_random": random_guardrail["safety_diagnostics"]["artifact_fingerprint"],  # type: ignore[index]
+                "candidate_versus_heuristic": candidate_heuristic["safety_diagnostics"][
+                    "artifact_fingerprint"
+                ],  # type: ignore[index]
+                "incumbent_versus_heuristic": incumbent_heuristic["safety_diagnostics"][
+                    "artifact_fingerprint"
+                ],  # type: ignore[index]
+            },
             "arena_record_corpora": {
                 "primary": _arena_records_fingerprint(primary),
                 "versus_random": _arena_records_fingerprint(random_guardrail),
@@ -904,6 +927,22 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
         "artifacts": {
             "corpus_fingerprint": corpus_manifest.corpus_fingerprint,
             "dataset_fingerprint": dataset.fingerprint,
+            "safety_diagnostics": {
+                "training_corpus": corpus_safety["artifact_fingerprint"],
+                "primary": primary["safety_diagnostics"]["artifact_fingerprint"],  # type: ignore[index]
+                "versus_random": random_guardrail["safety_diagnostics"]["artifact_fingerprint"],  # type: ignore[index]
+                "candidate_versus_heuristic": candidate_heuristic["safety_diagnostics"][
+                    "artifact_fingerprint"
+                ],  # type: ignore[index]
+                "incumbent_versus_heuristic": incumbent_heuristic["safety_diagnostics"][
+                    "artifact_fingerprint"
+                ],  # type: ignore[index]
+                "confirmation": (
+                    confirmation_artifact["safety_diagnostics"]["artifact_fingerprint"]  # type: ignore[index]
+                    if confirmation_artifact is not None
+                    else None
+                ),
+            },
             "primary_arena": primary["artifact_fingerprint"],
             "random_arena": random_guardrail["artifact_fingerprint"],
             "candidate_heuristic_arena": candidate_heuristic["artifact_fingerprint"],

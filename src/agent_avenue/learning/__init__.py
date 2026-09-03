@@ -27,6 +27,12 @@ from .dataset import (
     materialize_dataset,
     save_dataset,
 )
+from .evaluation import (
+    GamePredictionMetrics,
+    RecordEvaluation,
+    RecordEvaluationError,
+    evaluate_records,
+)
 from .model import CandidateMLP, CandidateValueModel, create_model, model_spec
 from .train import TrainingConfig, TrainingData, TrainingResult, evaluate_model, train_model
 
@@ -40,8 +46,11 @@ __all__ = [
     "CheckpointIntegrityError",
     "DatasetError",
     "DatasetSplit",
+    "GamePredictionMetrics",
     "LoadedCheckpoint",
     "MaterializedDataset",
+    "RecordEvaluation",
+    "RecordEvaluationError",
     "SavedCheckpoint",
     "TrainingConfig",
     "TrainingData",
@@ -49,6 +58,7 @@ __all__ = [
     "TrainingSample",
     "create_model",
     "evaluate_model",
+    "evaluate_records",
     "extract_game_samples",
     "inspect_checkpoint",
     "load_checkpoint",

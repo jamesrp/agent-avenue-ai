@@ -69,6 +69,11 @@ ended `budget_exhausted_inconclusive`; it did not meet the practical-equivalence
 A separate q1 regeneration reproduced all semantic identities, and q0 completed a fresh locked final
 evaluation. See [the Milestone 6 result](MILESTONE6_RESULTS.md).
 
+The terminal-safety rerun is implemented and predeclared but not yet executed. Its additional
+held-out diagnostic evaluates each `qn` on fresh records from every unordered pair in
+`(heuristic, q0, ..., q(n-1))`; those records are diagnostic-only and do not change fitting or
+promotion.
+
 ## Web status
 
 The QA web UI currently supports:
@@ -92,7 +97,9 @@ The repository currently records:
 - semantic actions in retained corpora and game records sufficient to replay those completed games;
 - deterministic game-level data splits;
 - paired, seat-swapped arena blocks; and
-- immutable promotion decisions.
+- immutable promotion decisions;
+- replay-derived immediate-loss safety diagnostics; and
+- held-out, setup-disjoint all-pairs prior-policy evaluation plans and reports.
 
 The q0 source corpus, dataset, checkpoint, logs, and reports remain retained. The q0 historical arena
 aggregates predate the individual-record policy. Every Milestone 6 training and evaluation arena
@@ -111,9 +118,10 @@ results and exact source revisions remain committed. See [the result](MILESTONE6
 
 ## Planned next work
 
-1. run the implemented [`terminal-safety-v1` hybrid-policy experiment](TERMINAL_SAFETY_EXPERIMENT.md),
-   retraining a separately named q0 snapshot and repeating q1–q4 without rewriting historical
-   artifacts;
+1. execute the frozen [`terminal-safety-v1` hybrid-policy experiment](TERMINAL_SAFETY_EXPERIMENT.md)
+   with `scripts/run_terminal_safety_v1.py`, retraining a separately named q0 snapshot, repeating
+   q1–q4, and scoring every proposal on the declared all-pairs held-out data without rewriting
+   historical artifacts;
 2. add q0/current-champion selection to the optional web QA UI; and
 3. begin the controlled replay, target, and environment-adapter experiments described in
    [Milestone 7](MILESTONE7.md).

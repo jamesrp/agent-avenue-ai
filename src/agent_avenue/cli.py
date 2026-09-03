@@ -2,13 +2,12 @@
 
 import argparse
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 
 from .agents import (
     SEED_DERIVATION,
     EpsilonConfig,
-    EpsilonGreedyAgent,
     GreedyHeuristicAgent,
     GreedyHeuristicConfig,
     RandomAgent,
@@ -28,16 +27,30 @@ from .storage import (
 )
 
 
-def _agent_spec(kind: str, agent_id: str, checkpoint: Path | None = None) -> AgentSpec:
+def _agent_spec(
+    kind: str,
+    agent_id: str,
+    checkpoint: Path | None = None,
+    *,
+    terminal_safety: bool = False,
+) -> AgentSpec:
     if kind == "random":
         if checkpoint is not None:
             raise ValueError("checkpoint path is only valid for a learned agent")
         random_config = RandomAgentConfig()
+        if terminal_safety:
+            wrapped_random = TerminalSafetyAgent(RandomAgent(random_config))
+            return AgentSpec(agent_id, wrapped_random.config_to_data(), lambda: wrapped_random)
         return AgentSpec(agent_id, random_config.to_data(), RandomAgent)
     if kind == "heuristic":
         if checkpoint is not None:
             raise ValueError("checkpoint path is only valid for a learned agent")
         heuristic_config = GreedyHeuristicConfig()
+        if terminal_safety:
+            wrapped_heuristic = TerminalSafetyAgent(GreedyHeuristicAgent(heuristic_config))
+            return AgentSpec(
+                agent_id, wrapped_heuristic.config_to_data(), lambda: wrapped_heuristic
+            )
         return AgentSpec(agent_id, heuristic_config.to_data(), GreedyHeuristicAgent)
     if kind == "learned":
         if checkpoint is None:
@@ -46,8 +59,11 @@ def _agent_spec(kind: str, agent_id: str, checkpoint: Path | None = None) -> Age
         from .learning import load_checkpoint
 
         loaded = load_checkpoint(checkpoint)
-        agent = LearnedValueAgent.from_checkpoint(loaded)
-        return AgentSpec(agent_id, agent.config.to_data(), lambda: agent)
+        learned = LearnedValueAgent.from_checkpoint(loaded)
+        if terminal_safety:
+            wrapped_learned = TerminalSafetyAgent(learned)
+            return AgentSpec(agent_id, wrapped_learned.config_to_data(), lambda: wrapped_learned)
+        return AgentSpec(agent_id, learned.config.to_data(), lambda: learned)
     raise ValueError(f"unsupported agent kind: {kind}")
 
 
@@ -63,6 +79,8 @@ def _parser() -> argparse.ArgumentParser:
     game.add_argument("--player-two", choices=("random", "heuristic", "learned"), default="random")
     game.add_argument("--player-one-checkpoint", type=Path)
     game.add_argument("--player-two-checkpoint", type=Path)
+    game.add_argument("--player-one-terminal-safety", action="store_true")
+    game.add_argument("--player-two-terminal-safety", action="store_true")
     game.add_argument("--player-one-seed", type=int)
     game.add_argument("--player-two-seed", type=int)
     game.add_argument("--output", type=Path, help="write a completed-game JSON record")
@@ -72,6 +90,8 @@ def _parser() -> argparse.ArgumentParser:
     arena.add_argument("--agent-b", choices=("random", "heuristic", "learned"), default="random")
     arena.add_argument("--agent-a-checkpoint", type=Path)
     arena.add_argument("--agent-b-checkpoint", type=Path)
+    arena.add_argument("--agent-a-terminal-safety", action="store_true")
+    arena.add_argument("--agent-b-terminal-safety", action="store_true")
     arena.add_argument("--pairs", type=int, default=10)
     arena.add_argument("--seed", type=int, default=0, help="arena master seed")
     arena.add_argument("--run-id", default="cli-arena")
@@ -128,6 +148,51 @@ def _parser() -> argparse.ArgumentParser:
     )
     checkpoint.add_argument("path", type=Path)
 
+    bootstrap = subparsers.add_parser(
+        "bootstrap", help="run or resume generation-zero corpus, training, and validation"
+    )
+    bootstrap.add_argument("output", type=Path)
+    bootstrap.add_argument("--attempt-id", required=True)
+    bootstrap.add_argument("--experiment-id", required=True)
+    bootstrap.add_argument("--seed", type=int, required=True)
+    bootstrap.add_argument("--games", type=int, default=4000)
+    bootstrap.add_argument("--max-epochs", type=int, default=50)
+    bootstrap.add_argument("--batch-size", type=int, default=1024)
+    bootstrap.add_argument("--learning-rate", type=float, default=1e-3)
+    bootstrap.add_argument("--weight-decay", type=float, default=1e-4)
+    bootstrap.add_argument("--patience", type=int, default=8)
+    bootstrap.add_argument("--cpu-threads", type=int, default=1)
+    bootstrap.add_argument("--terminal-safety", action="store_true")
+    bootstrap.add_argument("--dry-run", action="store_true")
+
+    safety_audit = subparsers.add_parser(
+        "safety-audit", help="replay a retained corpus and audit immediate-loss decisions"
+    )
+    safety_audit.add_argument("corpus", type=Path)
+    safety_audit.add_argument("--output", type=Path)
+    safety_audit.add_argument("--allow-code-mismatch", action="store_true")
+
+    crossplay = subparsers.add_parser(
+        "crossplay-evaluate",
+        help="evaluate qn on held-out records from every prior-policy pair",
+    )
+    crossplay.add_argument("output", type=Path)
+    crossplay.add_argument("--candidate", type=Path, required=True)
+    crossplay.add_argument("--candidate-label", required=True)
+    crossplay.add_argument("--generation", type=int, required=True)
+    crossplay.add_argument(
+        "--prior",
+        action="append",
+        default=[],
+        metavar="LABEL=CHECKPOINT",
+        help="repeat in q0..q(n-1) order",
+    )
+    crossplay.add_argument("--exclude-corpus", action="append", type=Path, default=[])
+    crossplay.add_argument("--pairs", type=int, default=200)
+    crossplay.add_argument("--seed", type=int, required=True)
+    crossplay.add_argument("--terminal-safety", action="store_true")
+    crossplay.add_argument("--dry-run", action="store_true")
+
     iterate = subparsers.add_parser(
         "iterate", help="run or resume one complete frozen self-play generation"
     )
@@ -156,11 +221,13 @@ def _run_game_command(args: argparse.Namespace) -> dict[str, object]:
         args.player_one,
         f"player-one-{args.player_one}",
         args.player_one_checkpoint,
+        terminal_safety=args.player_one_terminal_safety,
     )
     second = _agent_spec(
         args.player_two,
         f"player-two-{args.player_two}",
         args.player_two_checkpoint,
+        terminal_safety=args.player_two_terminal_safety,
     )
     first_seed = args.player_one_seed
     first_derivation = "supplied"
@@ -189,24 +256,53 @@ def _run_game_command(args: argparse.Namespace) -> dict[str, object]:
 
 
 def _run_arena_command(args: argparse.Namespace) -> dict[str, object]:
+    from .runners import run_resumable_arena
+    from .runners.safety_audit import audit_terminal_safety
+    from .storage import load_corpus
+
     config = ArenaConfig(
         args.run_id,
-        _agent_spec(args.agent_a, f"agent-a-{args.agent_a}", args.agent_a_checkpoint),
-        _agent_spec(args.agent_b, f"agent-b-{args.agent_b}", args.agent_b_checkpoint),
+        _agent_spec(
+            args.agent_a,
+            f"agent-a-{args.agent_a}",
+            args.agent_a_checkpoint,
+            terminal_safety=args.agent_a_terminal_safety,
+        ),
+        _agent_spec(
+            args.agent_b,
+            f"agent-b-{args.agent_b}",
+            args.agent_b_checkpoint,
+            terminal_safety=args.agent_b_terminal_safety,
+        ),
         args.pairs,
         args.seed,
     )
-    sink = None
-    if args.records_dir is not None:
+    if args.records_dir is None:
+        data = run_arena(config).to_data()
+    else:
         run_directory = args.records_dir / args.run_id
-        run_directory.mkdir(parents=True, exist_ok=True)
-
-        def save_record(record):  # type: ignore[no-untyped-def]
-            save_game_record(record, run_directory / f"{record.game_id}.game.json")
-
-        sink = save_record
-    data = run_arena(config, sink).to_data()
+        retained = run_resumable_arena(
+            run_directory,
+            config,
+            generation=None,
+            corpus_configuration={
+                "version": "cli-retained-arena-v1",
+                "run_id": args.run_id,
+            },
+        )
+        manifest, records = load_corpus(run_directory)
+        data = retained.report.to_data()
+        data["records"] = {
+            "path": str(run_directory),
+            "corpus_fingerprint": manifest.corpus_fingerprint,
+            "declaration_fingerprint": manifest.declaration_fingerprint,
+            "record_count": manifest.record_count,
+        }
+        data["safety_diagnostics"] = audit_terminal_safety(
+            records, source_corpus_fingerprint=manifest.corpus_fingerprint
+        )
     if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(data, sort_keys=True, indent=2) + "\n")
     return data
 
@@ -238,10 +334,12 @@ def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
         raise ValueError("corpus generation requires at least two games")
     from .runners import (
         generation_config_from_agent,
+        heuristic_bootstrap_agent,
         learned_self_play_agent,
         planned_epsilon,
         run_resumable_corpus,
         schedule_generation,
+        schedule_heuristic_bootstrap,
     )
 
     if args.generation == 0:
@@ -249,36 +347,17 @@ def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
             raise ValueError("generation zero uses the heuristic bootstrap, not a checkpoint")
         if (args.epsilon_numerator, args.epsilon_denominator) not in {(None, None), (1, 5)}:
             raise ValueError("generation zero epsilon is fixed at 1/5")
-        base_config = GreedyHeuristicConfig()
         epsilon = EpsilonConfig(1, 5)
-        exploratory = EpsilonGreedyAgent(GreedyHeuristicAgent(base_config), epsilon)
-        wrapped = TerminalSafetyAgent(exploratory) if args.terminal_safety else exploratory
-        wrapped_config = wrapped.config_to_data()
-        agent = AgentSpec(
-            "epsilon-heuristic-v1",
-            wrapped_config,
-            lambda: wrapped,
+        agent = heuristic_bootstrap_agent(terminal_safety=args.terminal_safety)
+        scheduled_specs = tuple(
+            schedule_heuristic_bootstrap(
+                run_id=args.run_id,
+                game_count=args.games,
+                root_seed=args.seed,
+                attempt_id=args.attempt_id,
+                agent=agent,
+            )
         )
-
-        def bootstrap_specs() -> Iterator[GameSpec]:
-            for index in range(args.games):
-                domain = f"corpus:attempt:{args.attempt_id}:game:{index}"
-                setup_seed = derive_seed(args.seed, f"{domain}:setup") & ((1 << 64) - 1)
-                yield GameSpec(
-                    args.run_id,
-                    f"game-{index:06d}",
-                    None,
-                    GameConfig(),
-                    setup_seed,
-                    (agent, agent),
-                    (
-                        derive_seed(args.seed, f"{domain}:player-one"),
-                        derive_seed(args.seed, f"{domain}:player-two"),
-                    ),
-                    (SEED_DERIVATION, SEED_DERIVATION),
-                )
-
-        scheduled_specs = tuple(bootstrap_specs())
         behavior_policy = (
             "terminal-safety-v1:epsilon-1/5-greedy-public-v1"
             if args.terminal_safety
@@ -399,6 +478,82 @@ def _run_train_command(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _run_bootstrap_command(args: argparse.Namespace) -> dict[str, object]:
+    from .runners.bootstrap import (
+        BootstrapConfig,
+        resolve_bootstrap_plan,
+        run_bootstrap,
+    )
+
+    plan = resolve_bootstrap_plan(
+        BootstrapConfig(
+            output=args.output,
+            attempt_id=args.attempt_id,
+            experiment_id=args.experiment_id,
+            root_seed=args.seed,
+            game_count=args.games,
+            max_epochs=args.max_epochs,
+            batch_size=args.batch_size,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            patience=args.patience,
+            cpu_threads=args.cpu_threads,
+            terminal_safety=args.terminal_safety,
+        )
+    )
+    if args.dry_run:
+        return plan.to_data()
+    return run_bootstrap(plan).to_data()
+
+
+def _run_safety_audit_command(args: argparse.Namespace) -> dict[str, object]:
+    from .runners.safety_audit import audit_terminal_safety
+    from .storage import load_corpus
+
+    manifest, records = load_corpus(args.corpus, verify_code=not args.allow_code_mismatch)
+    result = audit_terminal_safety(
+        records,
+        source_corpus_fingerprint=manifest.corpus_fingerprint,
+        verify_code=not args.allow_code_mismatch,
+    )
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n")
+    return result
+
+
+def _parse_prior(value: str) -> tuple[str, Path]:
+    label, separator, raw_path = value.partition("=")
+    if not separator or not label or not raw_path:
+        raise ValueError("--prior must use LABEL=CHECKPOINT")
+    return label, Path(raw_path)
+
+
+def _run_crossplay_command(args: argparse.Namespace) -> dict[str, object]:
+    from .runners.crossplay import CrossplayConfig, resolve_crossplay_plan, run_crossplay
+
+    plan = resolve_crossplay_plan(
+        CrossplayConfig(
+            output=args.output,
+            candidate_checkpoint=args.candidate,
+            candidate_label=args.candidate_label,
+            generation=args.generation,
+            prior_checkpoints=tuple(_parse_prior(value) for value in args.prior),
+            exclusion_corpora=tuple(args.exclude_corpus),
+            root_seed=args.seed,
+            pair_count=args.pairs,
+            terminal_safety=args.terminal_safety,
+        )
+    )
+    if args.dry_run:
+        return plan.to_data()
+    report_path = run_crossplay(plan)
+    report = json.loads(report_path.read_text())
+    if not isinstance(report, dict):  # pragma: no cover - runner writes an object
+        raise ValueError("crossplay report must be an object")
+    return report
+
+
 def _json_value(value: object) -> object:
     if isinstance(value, Mapping):
         return {str(key): _json_value(item) for key, item in value.items()}
@@ -462,6 +617,12 @@ def main() -> None:
         result = _run_train_command(args)
     elif args.command == "checkpoint-inspect":
         result = _run_checkpoint_inspect_command(args)
+    elif args.command == "bootstrap":
+        result = _run_bootstrap_command(args)
+    elif args.command == "safety-audit":
+        result = _run_safety_audit_command(args)
+    elif args.command == "crossplay-evaluate":
+        result = _run_crossplay_command(args)
     else:
         result = _run_iterate_command(args)
     print(json.dumps(result, sort_keys=True))

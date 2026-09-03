@@ -55,9 +55,11 @@ from .self_play import (
     GENERATION_EPSILONS,
     GenerationConfig,
     generation_config_from_agent,
+    heuristic_bootstrap_agent,
     learned_self_play_agent,
     planned_epsilon,
     schedule_generation,
+    schedule_heuristic_bootstrap,
 )
 
 __all__ = [
@@ -96,6 +98,7 @@ __all__ = [
     "detect_plateau",
     "evaluate_promotion",
     "generation_config_from_agent",
+    "heuristic_bootstrap_agent",
     "iter_games",
     "learned_self_play_agent",
     "paired_bootstrap_interval",
@@ -108,6 +111,7 @@ __all__ = [
     "run_resumable_corpus",
     "schedule_arena",
     "schedule_generation",
+    "schedule_heuristic_bootstrap",
     "step_agent",
     "submit_human_action",
     "wilson_interval",

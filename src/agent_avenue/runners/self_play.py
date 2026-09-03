@@ -16,6 +16,8 @@ from agent_avenue.agents import (
     UNCERTAINTY_VERSION,
     EpsilonConfig,
     EpsilonGreedyAgent,
+    GreedyHeuristicAgent,
+    GreedyHeuristicConfig,
     TerminalSafetyAgent,
     derive_seed,
 )
@@ -99,6 +101,44 @@ def planned_epsilon(generation: int) -> EpsilonConfig:
     if not 1 <= generation <= len(GENERATION_EPSILONS):
         raise ValueError("baseline epsilon is declared only for generations 1 through 4")
     return GENERATION_EPSILONS[generation - 1]
+
+
+def heuristic_bootstrap_agent(*, terminal_safety: bool = False) -> AgentSpec:
+    """Build the fixed epsilon-heuristic generation-zero behavior policy."""
+    base = GreedyHeuristicAgent(GreedyHeuristicConfig())
+    exploratory = EpsilonGreedyAgent(base, EpsilonConfig(1, 5))
+    wrapped = TerminalSafetyAgent(exploratory) if terminal_safety else exploratory
+    return AgentSpec("epsilon-heuristic-v1", wrapped.config_to_data(), lambda: wrapped)
+
+
+def schedule_heuristic_bootstrap(
+    *,
+    run_id: str,
+    game_count: int,
+    root_seed: int,
+    attempt_id: str,
+    agent: AgentSpec,
+    game_config: GameConfig | None = None,
+) -> Iterator[GameSpec]:
+    """Yield the fixed, independently seeded generation-zero bootstrap schedule."""
+    if not run_id or not attempt_id or game_count < 2:
+        raise ValueError("bootstrap schedule requires ids and at least two games")
+    config = game_config or GameConfig()
+    for index in range(game_count):
+        domain = f"corpus:attempt:{attempt_id}:game:{index}"
+        yield GameSpec(
+            run_id,
+            f"game-{index:06d}",
+            None,
+            config,
+            derive_seed(root_seed, f"{domain}:setup") & ((1 << 64) - 1),
+            (agent, agent),
+            (
+                derive_seed(root_seed, f"{domain}:player-one"),
+                derive_seed(root_seed, f"{domain}:player-two"),
+            ),
+            (SEED_DERIVATION, SEED_DERIVATION),
+        )
 
 
 def learned_self_play_agent(

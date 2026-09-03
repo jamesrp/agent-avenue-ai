@@ -1,7 +1,8 @@
 # Terminal-Safety Hybrid Policy Experiment
 
-**Status:** Declared; implementation and runs pending
+**Status:** `terminal-safety-v1` implemented; controlled runs pending
 **Declaration date:** September 2, 2026
+**Implementation date:** September 3, 2026
 **Parent result:** [Milestone 6 frozen self-play](MILESTONE6_RESULTS.md)
 
 ## Motivation and observed failure
@@ -87,6 +88,25 @@ than an approximate score test.
 The normalized policy identity should name the wrapper, version, base policy, fallback rule, public
 uncertainty enumeration, and terminal evaluator version. Game records must identify both the shield
 and wrapped policy.
+
+## Implementation
+
+The shield is implemented in `agent_avenue.agents.terminal_safety` as
+`TerminalSafetyAgent`. It wraps the complete behavior policy, so the required composition for
+exploratory policies is `TerminalSafetyAgent(EpsilonGreedyAgent(base, epsilon))`. The nested
+normalized configuration records the shield, epsilon wrapper, and underlying policy identities.
+
+The corpus and iteration CLIs expose this composition through `--terminal-safety`; shield identity is
+included in generation fingerprints, plans, corpus manifests, arena configurations, and per-seat
+game-record policy configurations.
+
+`filter_terminal_actions` exposes deterministic per-turn diagnostics: all publicly provable loss
+actions, actions actually vetoed, the actions supplied to the base policy, and whether an all-losing
+forced fallback occurred. Terminal resolution reuses the engine's public-material
+`engine-terminal-v1` evaluator rather than duplicating tie logic in the agent package.
+
+The implementation and regression suite do not start or alter the controlled experiment chain
+below. Historical Milestone 6 artifacts remain unchanged.
 
 ## Required tests
 

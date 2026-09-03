@@ -23,6 +23,20 @@ def _agent(epsilon: EpsilonConfig) -> AgentSpec:
     return AgentSpec("frozen-incumbent", config, lambda: None)  # type: ignore[arg-type,return-value]
 
 
+def _safe_agent(epsilon: EpsilonConfig) -> AgentSpec:
+    base = _agent(epsilon)
+    config = {
+        "type": "terminal_safety",
+        "version": "terminal-safety-v1",
+        "base": dict(base.config),
+        "fallback": "all-losing-preserve-complete-v1",
+        "public_uncertainty": "public-remaining-multiset-enumeration-v1",
+        "resolution_scope": "current-offer-resolution-only-v1",
+        "terminal_evaluator": "engine-terminal-v1",
+    }
+    return AgentSpec("frozen-incumbent", config, lambda: None)  # type: ignore[arg-type,return-value]
+
+
 def test_generation_schedule_is_deterministic_and_namespaced() -> None:
     epsilon = planned_epsilon(1)
     agent = _agent(epsilon)
@@ -42,6 +56,30 @@ def test_generation_schedule_is_deterministic_and_namespaced() -> None:
     assert all(game.seats == (agent, agent) for game in first)
     assert config.normalized()["parent_checkpoint_fingerprint"] == "a" * 64
     assert len(config.fingerprint) == 64
+
+
+def test_terminal_safety_is_part_of_generation_identity_and_validation() -> None:
+    epsilon = planned_epsilon(1)
+    agent = _safe_agent(epsilon)
+    config = generation_config_from_agent(
+        generation=1,
+        run_id="safe-g1",
+        game_count=2,
+        root_seed=42,
+        agent=agent,
+        epsilon=epsilon,
+    )
+    assert config.policy_shield == "terminal-safety-v1"
+    assert config.normalized()["policy_shield"] == "terminal-safety-v1"
+    assert len(tuple(schedule_generation(config, agent))) == 2
+
+    unshielded = _agent(epsilon)
+    try:
+        tuple(schedule_generation(config, unshielded))
+    except ValueError as exc:
+        assert "policy shield" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("unshielded agent matched shielded generation identity")
 
 
 def test_generation_rejects_mismatched_behavior_identity() -> None:

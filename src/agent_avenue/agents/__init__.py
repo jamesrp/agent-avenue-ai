@@ -18,11 +18,25 @@ from .random_source import (
     derive_seed,
 )
 from .scripted import ScriptCallback, ScriptedAgent
+from .terminal_safety import (
+    FALLBACK_VERSION,
+    RESOLUTION_SCOPE,
+    TERMINAL_SAFETY_VERSION,
+    UNCERTAINTY_VERSION,
+    TerminalSafetyAgent,
+    TerminalSafetyFilter,
+    filter_terminal_actions,
+    information_consistent_face_down_cards,
+)
 
 __all__ = [
+    "FALLBACK_VERSION",
     "HEURISTIC_VERSION",
+    "RESOLUTION_SCOPE",
     "RNG_ALGORITHM",
     "SEED_DERIVATION",
+    "TERMINAL_SAFETY_VERSION",
+    "UNCERTAINTY_VERSION",
     "Agent",
     "AgentTurn",
     "DeterministicRandom",
@@ -36,8 +50,12 @@ __all__ = [
     "RandomSource",
     "ScriptCallback",
     "ScriptedAgent",
+    "TerminalSafetyAgent",
+    "TerminalSafetyFilter",
     "choose_agent_action",
     "derive_seed",
+    "filter_terminal_actions",
+    "information_consistent_face_down_cards",
     "score_actions",
     "visible_unknown_multiset",
 ]

@@ -1,6 +1,6 @@
 # Project status
 
-**As of:** September 2, 2026
+**As of:** September 3, 2026
 **Current learned incumbent:** q0
 **Latest completed learned result:** [Milestone 6 frozen self-play](MILESTONE6_RESULTS.md)
 
@@ -111,7 +111,7 @@ results and exact source revisions remain committed. See [the result](MILESTONE6
 
 ## Planned next work
 
-1. run the declared [`terminal-safety-v1` hybrid-policy experiment](TERMINAL_SAFETY_EXPERIMENT.md),
+1. run the implemented [`terminal-safety-v1` hybrid-policy experiment](TERMINAL_SAFETY_EXPERIMENT.md),
    retraining a separately named q0 snapshot and repeating q1–q4 without rewriting historical
    artifacts;
 2. add q0/current-champion selection to the optional web QA UI; and

@@ -19,6 +19,7 @@ from agent_avenue.agents import (
     GreedyHeuristicConfig,
     RandomAgent,
     RandomAgentConfig,
+    TerminalSafetyAgent,
     derive_seed,
 )
 from agent_avenue.engine import GameConfig
@@ -52,8 +53,8 @@ from .self_play import (
 if TYPE_CHECKING:
     from agent_avenue.learning import LoadedCheckpoint
 
-ITERATION_SCHEMA_VERSION = 2
-ITERATION_PLAN_VERSION = "frozen-generation-iteration-v2"
+ITERATION_SCHEMA_VERSION = 3
+ITERATION_PLAN_VERSION = "frozen-generation-iteration-v3"
 ARENA_RECORDS_VERSION = "iteration-arena-records-v1"
 
 
@@ -127,6 +128,7 @@ class IterationConfig:
     weight_decay: float = 1e-4
     patience: int = 8
     cpu_threads: int = 1
+    terminal_safety: bool = False
     promotion_policy: PromotionPolicy = field(default_factory=PromotionPolicy)
     game_config: GameConfig = field(default_factory=GameConfig)
 
@@ -175,6 +177,7 @@ class IterationPlan:
                 "reasons": list(self.claim_ineligibility_reasons),
             },
             "epsilon": self.epsilon.to_data(),
+            "policy_shield": "terminal-safety-v1" if self.config.terminal_safety else None,
             "counts": {
                 "corpus_games": self.config.game_count,
                 "primary_pairs": self.config.primary_pairs,
@@ -326,6 +329,7 @@ def resolve_iteration_plan(config: IterationConfig) -> IterationPlan:
             "reasons": claim_reasons,
         },
         "epsilon": epsilon.to_data(),
+        "policy_shield": "terminal-safety-v1" if config.terminal_safety else None,
         "game_count": config.game_count,
         "primary_pairs": config.primary_pairs,
         "guardrail_pairs": config.guardrail_pairs,
@@ -376,18 +380,26 @@ def _baseline_agent(kind: Literal["random", "heuristic"], agent_id: str) -> Agen
     return AgentSpec(agent_id, heuristic_config.to_data(), GreedyHeuristicAgent)
 
 
-def _loaded_checkpoint_agent(loaded: LoadedCheckpoint, agent_id: str) -> AgentSpec:
-    from agent_avenue.agents.learned import LearnedValueAgent
-
-    agent = LearnedValueAgent.from_checkpoint(loaded)
-    return AgentSpec(agent_id, agent.config.to_data(), lambda: agent)
-
-
-def _behavior_agent(loaded: LoadedCheckpoint, epsilon: EpsilonConfig) -> AgentSpec:
+def _loaded_checkpoint_agent(
+    loaded: LoadedCheckpoint, agent_id: str, *, terminal_safety: bool
+) -> AgentSpec:
     from agent_avenue.agents.learned import LearnedValueAgent
 
     base = LearnedValueAgent.from_checkpoint(loaded)
-    wrapped = EpsilonGreedyAgent(base, epsilon)
+    if terminal_safety:
+        agent = TerminalSafetyAgent(base)
+        return AgentSpec(agent_id, agent.config_to_data(), lambda: agent)
+    return AgentSpec(agent_id, base.config.to_data(), lambda: base)
+
+
+def _behavior_agent(
+    loaded: LoadedCheckpoint, epsilon: EpsilonConfig, *, terminal_safety: bool
+) -> AgentSpec:
+    from agent_avenue.agents.learned import LearnedValueAgent
+
+    base = LearnedValueAgent.from_checkpoint(loaded)
+    exploratory = EpsilonGreedyAgent(base, epsilon)
+    wrapped = TerminalSafetyAgent(exploratory) if terminal_safety else exploratory
     return AgentSpec("frozen-incumbent", wrapped.config_to_data(), lambda: wrapped)
 
 
@@ -607,7 +619,9 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
         or tensor_digest(incumbent.model.state_dict()) != plan.incumbent_tensor_digest
     ):
         raise IterationError("incumbent checkpoint no longer matches the frozen iteration plan")
-    incumbent_agent = _behavior_agent(incumbent, plan.epsilon)
+    incumbent_agent = _behavior_agent(
+        incumbent, plan.epsilon, terminal_safety=plan.config.terminal_safety
+    )
     generation = generation_config_from_agent(
         generation=plan.config.generation,
         run_id=f"{plan.config.attempt_id}-self-play",
@@ -622,7 +636,11 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
     corpus_manifest = run_resumable_corpus(
         corpus_path,
         schedule_generation(generation, incumbent_agent),
-        behavior_policy=f"{generation.fingerprint}:epsilon-frozen-incumbent-v1",
+        behavior_policy=(
+            f"{generation.fingerprint}:terminal-safety-v1:epsilon-frozen-incumbent-v1"
+            if plan.config.terminal_safety
+            else f"{generation.fingerprint}:epsilon-frozen-incumbent-v1"
+        ),
         root_seed=plan.seeds["corpus"],
         generation=plan.config.generation,
         configuration={"generation": generation.normalized(), "plan_fingerprint": plan.fingerprint},
@@ -688,8 +706,12 @@ def _run_iteration_locked(plan: IterationPlan) -> IterationResult:
         )
         candidate = load_checkpoint(saved.path)
 
-    candidate_agent = _loaded_checkpoint_agent(candidate, "candidate")
-    incumbent_arena_agent = _loaded_checkpoint_agent(incumbent, "incumbent")
+    candidate_agent = _loaded_checkpoint_agent(
+        candidate, "candidate", terminal_safety=plan.config.terminal_safety
+    )
+    incumbent_arena_agent = _loaded_checkpoint_agent(
+        incumbent, "incumbent", terminal_safety=plan.config.terminal_safety
+    )
     arenas = output / "arenas"
     arena_records = output / "arena-records"
     primary = _arena_artifact(

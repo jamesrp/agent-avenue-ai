@@ -72,8 +72,10 @@ def test_tiny_iteration_runs_end_to_end_and_retains_immutable_decision(tmp_path:
         max_epochs=1,
         batch_size=32,
         patience=1,
+        terminal_safety=True,
     )
     plan = resolve_iteration_plan(config)
+    assert plan.to_data()["policy_shield"] == "terminal-safety-v1"
     first = run_iteration(plan)
     second = run_iteration(plan)
     assert first.to_data() == second.to_data()
@@ -93,6 +95,10 @@ def test_tiny_iteration_runs_end_to_end_and_retains_immutable_decision(tmp_path:
     assert (config.output / "candidate" / "manifest.json").is_file()
     assert (config.output / "arenas" / "primary.json").is_file()
     assert (config.output / "validation.json").is_file()
+    corpus_manifest = json.loads((config.output / "corpus" / "manifest.json").read_text())
+    assert corpus_manifest["behavior_policy"].endswith(
+        ":terminal-safety-v1:epsilon-frozen-incumbent-v1"
+    )
     for stage in (
         "primary",
         "versus-random",

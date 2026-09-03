@@ -13,6 +13,7 @@ from .agents import (
     GreedyHeuristicConfig,
     RandomAgent,
     RandomAgentConfig,
+    TerminalSafetyAgent,
     derive_seed,
 )
 from .engine import GameConfig, load_replay, replay, state_fingerprint
@@ -99,6 +100,7 @@ def _parser() -> argparse.ArgumentParser:
     corpus.add_argument("--attempt-id", default="attempt-1")
     corpus.add_argument("--epsilon-numerator", type=int)
     corpus.add_argument("--epsilon-denominator", type=int)
+    corpus.add_argument("--terminal-safety", action="store_true")
 
     dataset = subparsers.add_parser(
         "dataset-build", help="extract safe samples from a verified corpus"
@@ -145,6 +147,7 @@ def _parser() -> argparse.ArgumentParser:
     iterate.add_argument("--patience", type=int, default=8)
     iterate.add_argument("--cpu-threads", type=int, default=1)
     iterate.add_argument("--dry-run", action="store_true")
+    iterate.add_argument("--terminal-safety", action="store_true")
     return parser
 
 
@@ -248,15 +251,13 @@ def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
             raise ValueError("generation zero epsilon is fixed at 1/5")
         base_config = GreedyHeuristicConfig()
         epsilon = EpsilonConfig(1, 5)
-        wrapped_config = {
-            "version": "epsilon-wrapper-v1",
-            "base": base_config.to_data(),
-            "epsilon": epsilon.to_data(),
-        }
+        exploratory = EpsilonGreedyAgent(GreedyHeuristicAgent(base_config), epsilon)
+        wrapped = TerminalSafetyAgent(exploratory) if args.terminal_safety else exploratory
+        wrapped_config = wrapped.config_to_data()
         agent = AgentSpec(
             "epsilon-heuristic-v1",
             wrapped_config,
-            lambda: EpsilonGreedyAgent(GreedyHeuristicAgent(), epsilon),
+            lambda: wrapped,
         )
 
         def bootstrap_specs() -> Iterator[GameSpec]:
@@ -278,12 +279,17 @@ def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
                 )
 
         scheduled_specs = tuple(bootstrap_specs())
-        behavior_policy = "epsilon-1/5-greedy-public-v1"
+        behavior_policy = (
+            "terminal-safety-v1:epsilon-1/5-greedy-public-v1"
+            if args.terminal_safety
+            else "epsilon-1/5-greedy-public-v1"
+        )
         configuration: dict[str, object] = {
             "version": "heuristic-bootstrap-corpus-v1",
             "attempt_id": args.attempt_id,
             "epsilon": epsilon.to_data(),
             "games": args.games,
+            "policy_shield": "terminal-safety-v1" if args.terminal_safety else None,
         }
     else:
         if args.generation < 1 or args.checkpoint is None:
@@ -295,7 +301,9 @@ def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
             if args.epsilon_numerator is None
             else EpsilonConfig(args.epsilon_numerator, args.epsilon_denominator)
         )
-        agent = learned_self_play_agent(args.checkpoint, epsilon)
+        agent = learned_self_play_agent(
+            args.checkpoint, epsilon, terminal_safety=args.terminal_safety
+        )
         generation = generation_config_from_agent(
             generation=args.generation,
             run_id=args.run_id,
@@ -306,7 +314,11 @@ def _run_corpus_generate_command(args: argparse.Namespace) -> dict[str, object]:
             attempt_id=args.attempt_id,
         )
         scheduled_specs = tuple(schedule_generation(generation, agent))
-        behavior_policy = f"{generation.fingerprint}:epsilon-frozen-incumbent-v1"
+        behavior_policy = (
+            f"{generation.fingerprint}:terminal-safety-v1:epsilon-frozen-incumbent-v1"
+            if args.terminal_safety
+            else f"{generation.fingerprint}:epsilon-frozen-incumbent-v1"
+        )
         configuration = {"generation": generation.normalized()}
 
     manifest = run_resumable_corpus(
@@ -426,6 +438,7 @@ def _run_iterate_command(args: argparse.Namespace) -> dict[str, object]:
         weight_decay=args.weight_decay,
         patience=args.patience,
         cpu_threads=args.cpu_threads,
+        terminal_safety=args.terminal_safety,
     )
     plan = resolve_iteration_plan(config)
     if args.dry_run:

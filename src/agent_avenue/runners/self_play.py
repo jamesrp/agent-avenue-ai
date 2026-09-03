@@ -8,8 +8,19 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agent_avenue.agents import SEED_DERIVATION, EpsilonConfig, EpsilonGreedyAgent, derive_seed
+from agent_avenue.agents import (
+    FALLBACK_VERSION,
+    RESOLUTION_SCOPE,
+    SEED_DERIVATION,
+    TERMINAL_SAFETY_VERSION,
+    UNCERTAINTY_VERSION,
+    EpsilonConfig,
+    EpsilonGreedyAgent,
+    TerminalSafetyAgent,
+    derive_seed,
+)
 from agent_avenue.engine import GameConfig
+from agent_avenue.engine.terminal import TERMINAL_EVALUATOR_VERSION
 
 from .game import AgentSpec, GameSpec
 
@@ -39,6 +50,7 @@ class GenerationConfig:
     epsilon: EpsilonConfig
     game_config: GameConfig = field(default_factory=GameConfig)
     attempt_id: str = "attempt-1"
+    policy_shield: str | None = None
 
     def __post_init__(self) -> None:
         if self.generation < 1:
@@ -47,6 +59,8 @@ class GenerationConfig:
             raise ValueError("generation requires a run id and at least two games")
         if not self.attempt_id:
             raise ValueError("generation attempt id must be non-empty")
+        if self.policy_shield not in (None, TERMINAL_SAFETY_VERSION):
+            raise ValueError("unsupported self-play policy shield")
         for label, digest in (
             ("parent checkpoint", self.parent_checkpoint_fingerprint),
             ("parent tensor", self.parent_tensor_digest),
@@ -59,7 +73,7 @@ class GenerationConfig:
     def normalized(self) -> dict[str, object]:
         from agent_avenue.engine.setup import normalize_config
 
-        return {
+        normalized = {
             "version": GENERATION_CONFIG_VERSION,
             "generation": self.generation,
             "run_id": self.run_id,
@@ -71,6 +85,9 @@ class GenerationConfig:
             "epsilon": self.epsilon.to_data(),
             "game_config": normalize_config(self.game_config),
         }
+        if self.policy_shield is not None:
+            normalized["policy_shield"] = self.policy_shield
+        return normalized
 
     @property
     def fingerprint(self) -> str:
@@ -84,16 +101,38 @@ def planned_epsilon(generation: int) -> EpsilonConfig:
     return GENERATION_EPSILONS[generation - 1]
 
 
-def learned_self_play_agent(checkpoint: Path, epsilon: EpsilonConfig) -> AgentSpec:
-    """Load one checkpoint once and expose an epsilon-wrapped immutable behavior policy."""
+def learned_self_play_agent(
+    checkpoint: Path, epsilon: EpsilonConfig, *, terminal_safety: bool = False
+) -> AgentSpec:
+    """Load one checkpoint once and expose an immutable exploratory behavior policy."""
     from agent_avenue.agents.learned import LearnedValueAgent
     from agent_avenue.learning import load_checkpoint
 
     loaded = load_checkpoint(checkpoint)
     base = LearnedValueAgent.from_checkpoint(loaded)
-    wrapped = EpsilonGreedyAgent(base, epsilon)
+    exploratory = EpsilonGreedyAgent(base, epsilon)
+    wrapped = TerminalSafetyAgent(exploratory) if terminal_safety else exploratory
     config = wrapped.config_to_data()
     return AgentSpec("frozen-incumbent", config, lambda: wrapped)
+
+
+def _policy_layers(config: Mapping[str, object]) -> tuple[Mapping[str, object], str | None]:
+    if config.get("version") == TERMINAL_SAFETY_VERSION:
+        expected = {
+            "type": "terminal_safety",
+            "version": TERMINAL_SAFETY_VERSION,
+            "fallback": FALLBACK_VERSION,
+            "public_uncertainty": UNCERTAINTY_VERSION,
+            "resolution_scope": RESOLUTION_SCOPE,
+            "terminal_evaluator": TERMINAL_EVALUATOR_VERSION,
+        }
+        if any(config.get(key) != value for key, value in expected.items()):
+            raise ValueError("terminal-safety agent config is incompatible with this runtime")
+        inner = config.get("base")
+        if not isinstance(inner, Mapping):
+            raise ValueError("terminal-safety agent config is missing its wrapped policy")
+        return inner, TERMINAL_SAFETY_VERSION
+    return config, None
 
 
 def generation_config_from_agent(
@@ -107,7 +146,8 @@ def generation_config_from_agent(
     game_config: GameConfig | None = None,
     attempt_id: str = "attempt-1",
 ) -> GenerationConfig:
-    base = agent.config.get("base")
+    epsilon_policy, policy_shield = _policy_layers(agent.config)
+    base = epsilon_policy.get("base")
     if not isinstance(base, Mapping):
         raise ValueError("self-play agent must be an epsilon-wrapped learned checkpoint")
     checkpoint = base.get("checkpoint_fingerprint")
@@ -124,19 +164,23 @@ def generation_config_from_agent(
         epsilon=epsilon,
         game_config=game_config or GameConfig(),
         attempt_id=attempt_id,
+        policy_shield=policy_shield,
     )
 
 
 def schedule_generation(config: GenerationConfig, agent: AgentSpec) -> Iterator[GameSpec]:
     """Yield independent games whose random domains are fixed by generation and index."""
-    base = agent.config.get("base")
+    epsilon_policy, policy_shield = _policy_layers(agent.config)
+    base = epsilon_policy.get("base")
     if not isinstance(base, Mapping) or (
         base.get("checkpoint_fingerprint") != config.parent_checkpoint_fingerprint
         or base.get("tensor_digest") != config.parent_tensor_digest
     ):
         raise ValueError("behavior agent does not match the generation parent checkpoint")
-    if agent.config.get("epsilon") != config.epsilon.to_data():
+    if epsilon_policy.get("epsilon") != config.epsilon.to_data():
         raise ValueError("behavior agent does not match the generation epsilon")
+    if policy_shield != config.policy_shield:
+        raise ValueError("behavior agent does not match the generation policy shield")
     for index in range(config.game_count):
         domain = f"self-play:g{config.generation}:attempt:{config.attempt_id}:game:{index}"
         yield GameSpec(

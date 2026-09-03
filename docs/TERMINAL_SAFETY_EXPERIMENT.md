@@ -1,8 +1,9 @@
 # Terminal-Safety Hybrid Policy Experiment
 
-**Status:** `terminal-safety-v1` and held-out cross-policy diagnostics implemented; controlled runs pending
+**Status:** Complete — controlled q0–q4 run, all-pairs diagnostics, locked final, and archive verified
 **Declaration date:** September 2, 2026
-**Implementation date:** September 3, 2026
+**Implementation and run date:** September 3, 2026
+**Result:** [Terminal-safety hybrid policy results](TERMINAL_SAFETY_RESULTS.md)
 **Parent result:** [Milestone 6 frozen self-play](MILESTONE6_RESULTS.md)
 
 ## Motivation and observed failure
@@ -105,10 +106,11 @@ actions, actions actually vetoed, the actions supplied to the base policy, and w
 forced fallback occurred. Terminal resolution reuses the engine's public-material
 `engine-terminal-v1` evaluator rather than duplicating tie logic in the agent package.
 
-The implementation and regression suite do not start or alter the controlled experiment chain
-below. Historical Milestone 6 artifacts remain unchanged. The committed experiment driver is
-`scripts/run_terminal_safety_v1.py`; it refuses to begin from a tracked-dirty source tree and writes
-an immutable top-level declaration before collecting games.
+The implementation and controlled experiment preserve all historical Milestone 6 artifacts. The
+committed driver is `scripts/run_terminal_safety_v1.py`; it refuses to begin from a tracked-dirty
+source tree, freezes the historical q0 input, and writes an immutable top-level declaration before
+collecting games. The completed result retained shielded q0 after q1–q4; see the
+[result report](TERMINAL_SAFETY_RESULTS.md).
 
 ## Required tests
 
@@ -232,14 +234,15 @@ Playing-strength conclusions continue to use the unchanged paired promotion gate
 
 The controlled run uses experiment root seed `2026090301` and derives all q0 bootstrap, q1–q4
 iteration, all-pairs diagnostic, development, and locked-final seeds with the project
-`sha256-domain-separation-v1` derivation. Names are fixed as `q0-terminal-safety-v1-a1` through
+`sha256-domain-v1` derivation. Names are fixed as `q0-terminal-safety-v1-a1` through
 `q4-terminal-safety-v1-a1`. q0 uses 400 paired development blocks per matchup; each diagnostic cell
 uses 200 paired blocks; final unique matchups use 500 paired blocks. The driver writes every derived
 seed and exact source/lock identity to `runs/terminal-safety-v1/experiment-plan.json` before work.
 
 The q0 gate remains the historical requirement that the paired-bootstrap 95% lower endpoint against
-random exceed 0.50. The q1–q4 gate remains unchanged. A q0 gate failure stops the chain rather than
-silently weakening the prerequisite.
+random exceed 0.50. The q1–q4 gate remains unchanged. A q0 gate failure would have stopped
+progression to q1 after retaining q0's required all-pairs diagnostic rather than silently weakening
+the prerequisite.
 
 ## Retention and reporting
 

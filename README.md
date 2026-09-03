@@ -28,27 +28,38 @@ machine.
 | 4: neural data/training foundation | Complete | Safe 87-feature encoder, datasets, model, and checkpoints |
 | 5: first learned checkpoint | Complete | q0 trained and evaluated against random and heuristic |
 | [6: frozen self-play and promotion](docs/MILESTONE6.md) | Complete | Four production generations, locked final evaluation, and verified archive |
+| [Terminal-safety hybrid](docs/TERMINAL_SAFETY_RESULTS.md) | Complete | Shielded q0 retained after q1–q4; all-pairs diagnostics and locked final archived |
 | [7: controlled RL experiments](docs/MILESTONE7.md) | Planned | Recipe abstraction, environment adapters, and measured ablations |
 
-The current learned champion is **q0**. Milestone 6 completed all four frozen self-play proposals;
-each candidate beat q0 head-to-head but failed the predeclared heuristic non-regression guardrail, so
-q0 was correctly retained. Its locked-final evaluation used fresh 500-pair blocks:
+The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
+**q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
+zero-ply immediate-loss veto. Its locked-final evaluation reused one fresh 500-setup block across the
+three opponents:
 
-| Matchup | Games | q0 win rate | Paired-bootstrap 95% interval |
+| Matchup | Games | Hybrid q0 win rate | Paired-bootstrap 95% interval |
 | --- | ---: | ---: | ---: |
-| q0 vs random | 1,000 | **75.5%** | 72.9%–78.1% |
-| q0 vs `greedy-public-v1` | 1,000 | **57.3%** | 54.2%–60.4% |
+| vs random | 1,000 | **77.9%** | 75.3%–80.5% |
+| vs `greedy-public-v1` | 1,000 | **67.4%** | 64.4%–70.4% |
+| vs historical q0 | 1,000 | **56.7%** | 54.1%–59.3% |
 
-Full q1–q4 decisions, independent reproduction evidence, lineage, and archive checksums are in
-[`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md). The earlier q0 evaluation and training
-history remain in [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md). The living
-milestone/result index is [`docs/STATUS.md`](docs/STATUS.md).
+All four shielded q1–q4 candidates beat hybrid q0 directly but failed the unchanged heuristic
+non-regression guardrail, so hybrid q0 was correctly retained under the protocol. Across 591,219
+audited shielded decisions, the shield executed zero publicly provable avoidable immediate losses.
+Full results, the 14,000-game
+all-prior-policy-pairs diagnostic, lineage, and archive checksums are in
+[`docs/TERMINAL_SAFETY_RESULTS.md`](docs/TERMINAL_SAFETY_RESULTS.md).
+
+Historical Milestone 6 results remain in
+[`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md), and the original q0 evaluation remains in
+[`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md). The living milestone/result index is
+[`docs/STATUS.md`](docs/STATUS.md).
 
 **Milestone 6 is a project milestone, not a sixth neural generation.** It covered generations q1–q4:
 freeze the incumbent, collect one generation of self-play, warm-start a candidate, evaluate it
 against the incumbent and guardrails, and promote it only when the predeclared statistical gate
 passes. The four-generation budget ended without a promotion or practical-equivalence plateau;
-this is reported as `budget_exhausted_inconclusive`, and q0 remains the incumbent.
+this is reported as `budget_exhausted_inconclusive`; historical q0 remains the incumbent selected by
+that Milestone 6 run.
 
 ## Research principles
 
@@ -193,10 +204,11 @@ It evaluates candidate strength against the frozen incumbent, random, and aligne
 and guardrail comparisons, performs the one allowed confirmation block if required, and emits an
 immutable `promotion-decision.json`. It never silently mutates a global champion pointer.
 
-The terminal-safety experiment adds a resumable generation-zero bootstrap runner, replay-derived
+The terminal-safety experiment added a resumable generation-zero bootstrap runner, replay-derived
 per-decision safety diagnostics, per-side CLI shield composition, and a held-out diagnostic that
 scores each `qn` on records from every unordered prior-policy pair. Those diagnostic records never
-enter training or promotion. Run the frozen q0–q4 declaration with
+enter training or promotion. The completed q0–q4 result is in
+[`docs/TERMINAL_SAFETY_RESULTS.md`](docs/TERMINAL_SAFETY_RESULTS.md); reproduce it with
 `scripts/run_terminal_safety_v1.py`.
 
 ## Lightweight web QA interface
@@ -273,7 +285,7 @@ match the published base rules.
 - [`docs/MILESTONE3_RESULTS.md`](docs/MILESTONE3_RESULTS.md),
   [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md), and
   [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md): completed benchmark reports.
-- [`docs/TERMINAL_SAFETY_EXPERIMENT.md`](docs/TERMINAL_SAFETY_EXPERIMENT.md): implemented zero-ply
-  terminal-safety shield, controlled q0–q4 rerun, held-out all-pairs diagnostic plan, and Milestone 6
-  failure analysis. Controlled results are pending.
+- [`docs/TERMINAL_SAFETY_EXPERIMENT.md`](docs/TERMINAL_SAFETY_EXPERIMENT.md) and
+  [`docs/TERMINAL_SAFETY_RESULTS.md`](docs/TERMINAL_SAFETY_RESULTS.md): zero-ply terminal-safety
+  declaration, controlled q0–q4 result, held-out all-pairs diagnostics, and archive evidence.
 - [`docs/WEB_QA.md`](docs/WEB_QA.md): manual web security and behavior checks.

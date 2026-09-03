@@ -1,9 +1,9 @@
 # Neural AI implementation plan
 
-**Status:** Milestones 4–6 complete; q1–q4 retained q0 after heuristic guardrail failures;
+**Status:** Milestones 4–6 and the terminal-safety q0–q4 rerun complete; shielded q0 selected;
 Milestone 7 planned
-**Date:** September 2, 2026
-**Latest result:** [`MILESTONE6_RESULTS.md`](MILESTONE6_RESULTS.md)
+**Date:** September 3, 2026
+**Latest result:** [`TERMINAL_SAFETY_RESULTS.md`](TERMINAL_SAFETY_RESULTS.md)
 **Per-milestone references:** [`MILESTONE6.md`](MILESTONE6.md),
 [`MILESTONE7.md`](MILESTONE7.md)
 **Companion research:** [`NEURAL_AI_RESEARCH.md`](NEURAL_AI_RESEARCH.md)

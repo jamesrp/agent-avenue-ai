@@ -1,8 +1,9 @@
 # Project status
 
 **As of:** September 3, 2026
-**Current learned incumbent:** q0
-**Latest completed learned result:** [Milestone 6 frozen self-play](MILESTONE6_RESULTS.md)
+**Current selected hybrid champion:** q0-terminal-safety-v1
+**Permanent pure-neural baseline:** historical q0
+**Latest completed learned result:** [Terminal-safety hybrid rerun](TERMINAL_SAFETY_RESULTS.md)
 
 This document is the concise, living index of completed work and current next steps. Historical
 milestone documents describe the intended scope at the time; `README.md` and this file describe the
@@ -18,6 +19,7 @@ actual present state.
 | [4: neural foundation](NEURAL_AI_PLAN.md#milestone-4-safe-encoder-dataset-model-and-checkpoint) | Complete | Encoder, dataset, trainer, checkpoint, and compatibility tests |
 | [5: first learned checkpoint](NEURAL_AI_PLAN.md#milestone-5-learned-agent-and-first-usable-checkpoint) | Complete | [q0 result and reproduction contract](MILESTONE5_RESULTS.md) |
 | [6: frozen iterative self-play](MILESTONE6.md) | Complete | [q1–q4 decisions, final evaluation, and archive](MILESTONE6_RESULTS.md) |
+| [Terminal-safety hybrid](TERMINAL_SAFETY_EXPERIMENT.md) | Complete | [Shielded q0–q4 result, all-pairs diagnostics, and archive](TERMINAL_SAFETY_RESULTS.md) |
 | [7: controlled RL experiments](MILESTONE7.md) | Planned; not started | Ordered experiment plan only |
 
 ## Current measured policies
@@ -26,11 +28,13 @@ actual present state.
 | --- | --- | --- |
 | `random-v1` | None | Symmetry/control baseline |
 | `greedy-public-v1` | Hand-authored public heuristic | 86.25% vs random over 400 games |
-| q0 | 4,000 epsilon-heuristic games, 62,184 decisions | Locked final: 75.5% vs random and 57.3% vs heuristic over 1,000 games each |
+| historical q0 | 4,000 epsilon-heuristic games, 62,184 decisions | Locked final: 75.5% vs random and 57.3% vs heuristic over 1,000 games each |
+| q0-terminal-safety-v1 | 4,000 shielded epsilon-heuristic games, 65,746 decisions | Locked final: 77.9% vs random, 67.4% vs heuristic, and 56.7% vs historical q0 |
 
-The locked final q0 intervals are 72.9%–78.1% against random and 54.2%–60.4% against the heuristic.
-The heuristic-versus-random baseline used a different seed set, so percentages should not be treated
-as a transitive ranking.
+The hybrid q0 paired-bootstrap intervals are 75.3%–80.5% against random, 64.4%–70.4% against the
+heuristic, and 54.1%–59.3% against historical q0. Historical and hybrid final blocks use different
+fresh seeds, so the improvement over the old aggregate is descriptive; the direct hybrid-versus-
+historical-q0 arena is the clean head-to-head comparison.
 
 Validation loss and accuracy measure outcome prediction on held-out games, not playing strength.
 Promotion and strength claims come from paired gameplay arenas.
@@ -48,8 +52,9 @@ It uses the information-safe 87-feature `candidate-public-v1` encoder and the 11
 `candidate-mlp-v1` network. It was trained on the action actually selected at each recorded decision,
 with the final winner as the target from that decision actor's viewpoint.
 
-q0 is not a policy-gradient agent, a search agent, or evidence of equilibrium play. It is the first
-frozen learned baseline and current incumbent for later self-play.
+Historical q0 remains the permanent pure-neural baseline rather than being overwritten by later
+experiments. q0-terminal-safety-v1 uses the same action-conditioned model family and adds the narrow
+public immediate-loss veto described in the terminal-safety declaration.
 
 ## What Milestone 6 means
 
@@ -69,10 +74,16 @@ ended `budget_exhausted_inconclusive`; it did not meet the practical-equivalence
 A separate q1 regeneration reproduced all semantic identities, and q0 completed a fresh locked final
 evaluation. See [the Milestone 6 result](MILESTONE6_RESULTS.md).
 
-The terminal-safety rerun is implemented and predeclared but not yet executed. Its additional
-held-out diagnostic evaluates each `qn` on fresh records from every unordered pair in
-`(heuristic, q0, ..., q(n-1))`; those records are diagnostic-only and do not change fitting or
-promotion.
+The terminal-safety rerun completed on September 3, 2026. The separately trained shielded q0 passed
+its gate and beat historical q0 directly. All shielded q1–q4 proposals again dominated their parent
+but failed the aligned heuristic non-regression guardrail, so shielded q0 was retained under the
+predeclared gate. Across 591,219 audited shielded decisions, the safety invariant held with zero
+executed avoidable provable losses; this is retained-record coverage rather than a universal proof.
+
+The additional held-out diagnostic evaluated each `qn` on fresh records from every unordered pair in
+`(heuristic, q0, ..., q(n-1))`. It covered 14,000 games and exposed poor prediction transfer to
+interactions among rejected candidates. Those records were diagnostic-only and did not change
+fitting or promotion. See [the terminal-safety result](TERMINAL_SAFETY_RESULTS.md).
 
 ## Web status
 
@@ -96,17 +107,18 @@ The repository currently records:
 - rules, code, corpus, dataset, model tensor, checkpoint, and report fingerprints;
 - semantic actions in retained corpora and game records sufficient to replay those completed games;
 - deterministic game-level data splits;
-- paired, seat-swapped arena blocks; and
+- paired, seat-swapped arena blocks;
 - immutable promotion decisions;
 - replay-derived immediate-loss safety diagnostics; and
 - held-out, setup-disjoint all-pairs prior-policy evaluation plans and reports.
 
 The q0 source corpus, dataset, checkpoint, logs, and reports remain retained. The q0 historical arena
-aggregates predate the individual-record policy. Every Milestone 6 training and evaluation arena
-retains compressed semantic records, and the complete run is packaged in a verified ignored archive
-with an embedded checksum manifest. Generated artifacts stay out of ordinary Git history; compact
-results and exact source revisions remain committed. See [the result](MILESTONE6_RESULTS.md) and
-[the experiment protocol](EXPERIMENT_PROTOCOL.md).
+aggregates predate the individual-record policy. Every Milestone 6 and terminal-safety training and
+evaluation arena retains compressed semantic records. Both completed chains are packaged in verified
+ignored archives with embedded member checksums. Generated artifacts stay out of ordinary Git
+history; compact results and exact source revisions remain committed. See the
+[terminal-safety result](TERMINAL_SAFETY_RESULTS.md), [Milestone 6 result](MILESTONE6_RESULTS.md),
+and [experiment protocol](EXPERIMENT_PROTOCOL.md).
 
 ## Verified source revisions
 
@@ -115,13 +127,12 @@ results and exact source revisions remain committed. See [the result](MILESTONE6
 | q0 corpus, dataset, and training | `7fe2e5af6339efc86db285349043bb16b298eed1` | `b92b07727d89eb2f9471316fa44992a2eb337da2186a25f3bc4637404bb09d8d` |
 | q0 learned-agent arena evaluation | `d46350356a7bf461468ba33c6bf1f28b3231cd14` | `6909e9316510f48cad515b99a8f9b19288ee5c43d5925f84b88ad853479031bc` |
 | Milestone 6 production q1–q4 and final evaluation | `139318bad909438e8a3e1cb9dd962c80653875d0` | `5a66a4a63f7c5680f3db81e83dfebf53af63f73d29b653645850bb013a45ba0c` |
+| Terminal-safety q0–q4, all-pairs diagnostics, and final | `19c2871080503c62a53522415e0645913d7674b0` | `9c8b39bb4e81bb29e0902c56198557f63b7e9992bdaff845967c562fc064f429` |
 
 ## Planned next work
 
-1. execute the frozen [`terminal-safety-v1` hybrid-policy experiment](TERMINAL_SAFETY_EXPERIMENT.md)
-   with `scripts/run_terminal_safety_v1.py`, retraining a separately named q0 snapshot, repeating
-   q1–q4, and scoring every proposal on the declared all-pairs held-out data without rewriting
-   historical artifacts;
-2. add q0/current-champion selection to the optional web QA UI; and
-3. begin the controlled replay, target, and environment-adapter experiments described in
-   [Milestone 7](MILESTONE7.md).
+1. predeclare the next data/target experiment, using the terminal-safety hybrid champion while
+   testing mixed-opponent replay and/or counterfactual candidate-ranking supervision rather than
+   extending incumbent-only selected-action Monte Carlo training;
+2. add historical q0/current hybrid champion selection to the optional web QA UI; and
+3. implement the recipe and environment-adapter boundaries described in [Milestone 7](MILESTONE7.md).

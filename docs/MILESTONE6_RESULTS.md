@@ -118,12 +118,12 @@ every member against the embedded checksum manifest. A byte-identical secondary 
 `~/.local/share/agent-avenue-ai-archives/milestone6-baseline.tar.gz`. Generated artifacts remain
 ignored by Git.
 
-## Declared follow-up
+## Completed follow-up
 
-The next controlled experiment is the narrowly scoped
-[`terminal-safety-v1` hybrid-policy rerun](TERMINAL_SAFETY_EXPERIMENT.md): veto only publicly
-provable immediate losses, retrain a separately named q0 snapshot, and repeat q1–q4 with all other
-recipe and gate choices frozen. It does not alter this historical result.
+The narrowly scoped [`terminal-safety-v1` hybrid-policy rerun](TERMINAL_SAFETY_RESULTS.md) completed
+on September 3, 2026. It preserved this historical result, retrained a separately named shielded q0,
+repeated q1–q4 with the frozen gate, and retained shielded q0 after all four candidates again failed
+the heuristic non-regression guardrail.
 
 ## Reproduction commands
 

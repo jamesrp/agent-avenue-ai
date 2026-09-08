@@ -23,8 +23,11 @@ def _write(path: Path, value: dict[str, object]) -> None:
 
 def analyze(arena_path: Path, output: Path) -> None:
     arena = _read(arena_path)
-    games = int(arena["game_count"])
-    wins = int(arena["agent_a_wins"])
+    games = int(arena["total_games"])
+    wins_data = arena["wins"]
+    if not isinstance(wins_data, dict):
+        raise ValueError("arena wins must be an object")
+    wins = int(wins_data["a"])
     pairs = arena["paired_seed_outcomes"]
     if not isinstance(pairs, list) or games != 2 * len(pairs):
         raise ValueError("arena does not contain complete paired, seat-swapped blocks")
@@ -52,9 +55,14 @@ def review(arena_path: Path, analysis_path: Path, output: Path) -> None:
     problems: list[str] = []
     if analysis.get("evidence_class") != "smoke_only":
         problems.append("analysis did not label the result smoke-only")
-    if analysis.get("games") != arena.get("game_count"):
+    if analysis.get("games") != arena.get("total_games"):
         problems.append("analysis game count differs from arena report")
-    expected_rate = int(arena["agent_a_wins"]) / int(arena["game_count"])
+    wins_data = arena.get("wins")
+    if not isinstance(wins_data, dict):
+        problems.append("arena wins are malformed")
+        expected_rate = -1.0
+    else:
+        expected_rate = int(wins_data["a"]) / int(arena["total_games"])
     if analysis.get("agent_a_win_rate") != expected_rate:
         problems.append("analysis win rate is not reproducible from the arena report")
     pairs = arena.get("paired_seed_outcomes")
@@ -67,7 +75,7 @@ def review(arena_path: Path, analysis_path: Path, output: Path) -> None:
             "accepted": not problems,
             "checks": {
                 "smoke_label": analysis.get("evidence_class") == "smoke_only",
-                "game_count_recomputed": analysis.get("games") == arena.get("game_count"),
+                "game_count_recomputed": analysis.get("games") == arena.get("total_games"),
                 "win_rate_recomputed": analysis.get("agent_a_win_rate") == expected_rate,
                 "paired_block_count": len(pairs) if isinstance(pairs, list) else None,
             },

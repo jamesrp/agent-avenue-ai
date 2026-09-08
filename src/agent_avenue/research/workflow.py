@@ -115,6 +115,11 @@ def _validate_output(output: Mapping[str, object], label: str) -> None:
         _integer(output["min_bytes"], f"{label}.min_bytes")
     if "json_contains" in output and not isinstance(output["json_contains"], Mapping):
         raise WorkflowError(f"{label}.json_contains must be an object")
+    required_keys = output.get("required_keys", [])
+    if not isinstance(required_keys, list) or any(
+        not isinstance(item, str) or not item for item in required_keys
+    ):
+        raise WorkflowError(f"{label}.required_keys must contain non-empty strings")
 
 
 def validate_plan(data: Mapping[str, object], *, require_approved: bool = False) -> None:
@@ -190,6 +195,22 @@ def validate_plan(data: Mapping[str, object], *, require_approved: bool = False)
             raise WorkflowError("claim_generating is only valid for experiment tasks")
         if task.get("claim_generating", False) and not task.get("freeze_source", False):
             raise WorkflowError("claim-generating experiments must freeze their clean source")
+        if task.get("claim_relevant", False) and not task.get("freeze_source", False):
+            raise WorkflowError("claim-relevant tasks must freeze their clean source")
+        if task.get("claim_generating", False):
+            if not task.get("resume_safe", False):
+                raise WorkflowError("claim-generating retries require a resume-safe runner")
+            manifests = [
+                cast(Mapping[str, object], output)
+                for output in outputs
+                if isinstance(output, Mapping)
+                and output.get("type") == "json"
+                and output.get("required_keys")
+            ]
+            if not manifests:
+                raise WorkflowError(
+                    "claim-generating tasks require a JSON manifest with required_keys"
+                )
 
     for task_id, required in dependencies.items():
         unknown = set(required) - task_ids
@@ -247,6 +268,16 @@ def _json_contains(actual: object, expected: object) -> bool:
     return actual == expected
 
 
+def _resolved_output_path(
+    output: Mapping[str, object], *, task_id: str, runtime: Path, repo: Path
+) -> Path:
+    raw_path = cast(str, output["path"])
+    path = Path(_expand(raw_path, runtime=runtime, repo=repo, task_id=task_id)).resolve()
+    if not path.is_relative_to(runtime.resolve()):
+        raise WorkflowError(f"declared output escapes workflow runtime: {path}")
+    return path
+
+
 def validate_expected_outputs(
     task: Mapping[str, object], *, runtime: Path, repo: Path
 ) -> tuple[bool, list[str]]:
@@ -256,8 +287,7 @@ def validate_expected_outputs(
     outputs = cast(list[object], task.get("expected_outputs", []))
     for raw_output in outputs:
         output = cast(Mapping[str, object], raw_output)
-        raw_path = cast(str, output["path"])
-        path = Path(_expand(raw_path, runtime=runtime, repo=repo, task_id=task_id))
+        path = _resolved_output_path(output, task_id=task_id, runtime=runtime, repo=repo)
         output_type = output.get("type", "file")
         if output_type in {"file", "json"} and not path.is_file():
             problems.append(f"missing file: {path}")
@@ -275,10 +305,91 @@ def validate_expected_outputs(
             except (OSError, json.JSONDecodeError):
                 problems.append(f"invalid JSON: {path}")
                 continue
+            required_keys = cast(list[str], output.get("required_keys", []))
+            if isinstance(actual, Mapping):
+                missing_keys = [key for key in required_keys if key not in actual]
+            else:
+                missing_keys = required_keys
+            if missing_keys:
+                problems.append(f"JSON missing required keys {missing_keys}: {path}")
+                continue
             expected = output.get("json_contains")
             if expected is not None and not _json_contains(actual, expected):
                 problems.append(f"JSON content mismatch: {path}")
     return not problems, problems
+
+
+def _validate_runtime_boundaries(plan: Mapping[str, object], *, runtime: Path, repo: Path) -> None:
+    for task in cast(list[Mapping[str, object]], plan["tasks"]):
+        task_id = cast(str, task["id"])
+        workdir = Path(
+            _expand(
+                cast(str, task.get("working_directory", "{repo}")),
+                runtime=runtime,
+                repo=repo,
+                task_id=task_id,
+            )
+        ).resolve()
+        if not workdir.is_relative_to(repo.resolve()):
+            raise WorkflowError(f"task {task_id} working directory escapes repository: {workdir}")
+        for raw_output in cast(list[object], task.get("expected_outputs", [])):
+            _resolved_output_path(
+                cast(Mapping[str, object], raw_output),
+                task_id=task_id,
+                runtime=runtime,
+                repo=repo,
+            )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _collect_output_evidence(
+    task: Mapping[str, object], *, runtime: Path, repo: Path
+) -> list[dict[str, object]]:
+    task_id = cast(str, task["id"])
+    evidence: list[dict[str, object]] = []
+    for raw_output in cast(list[object], task.get("expected_outputs", [])):
+        output = cast(Mapping[str, object], raw_output)
+        path = _resolved_output_path(output, task_id=task_id, runtime=runtime, repo=repo)
+        item: dict[str, object] = {
+            "path": str(path),
+            "type": output.get("type", "file"),
+        }
+        if path.is_file():
+            item["size"] = path.stat().st_size
+            item["sha256"] = _sha256_file(path)
+        elif path.is_dir():
+            item["entry_count"] = sum(1 for _ in path.iterdir())
+        evidence.append(item)
+    return evidence
+
+
+def _validate_completed_evidence(
+    plan: Mapping[str, object], state: dict[str, object], runtime: Path, repo: Path
+) -> None:
+    definitions = _task_map(plan)
+    for task_id, task_state in _state_tasks(state).items():
+        if task_state["status"] != "completed":
+            continue
+        valid, problems = validate_expected_outputs(
+            definitions[task_id], runtime=runtime, repo=repo
+        )
+        current = _collect_output_evidence(definitions[task_id], runtime=runtime, repo=repo)
+        recorded = task_state.get("output_evidence")
+        if not valid or recorded != current:
+            task_state["status"] = "failed"
+            state["finished_at"] = None
+            task_state["last_error"] = (
+                f"completed output evidence changed: validation={problems}; "
+                f"recorded={recorded}; current={current}"
+            )
+            _event(state, "completed_evidence_changed", task_id=task_id)
 
 
 def _initial_state(plan: Mapping[str, object], plan_path: Path) -> dict[str, object]:
@@ -290,6 +401,7 @@ def _initial_state(plan: Mapping[str, object], plan_path: Path) -> dict[str, obj
             "retries_used": 0,
             "last_error": None,
             "source_snapshot": None,
+            "output_evidence": [],
         }
         for task in cast(list[Mapping[str, object]], plan["tasks"])
     }
@@ -397,6 +509,9 @@ def _recover_running_tasks(
         valid, problems = validate_expected_outputs(task, runtime=runtime, repo=repo)
         if has_declared_outputs and valid:
             task_state["status"] = "completed"
+            task_state["output_evidence"] = _collect_output_evidence(
+                task, runtime=runtime, repo=repo
+            )
             latest["recovered_without_exit"] = True
             latest["finished_at"] = _now()
             _event(state, "task_recovered_from_outputs", task_id=task_id)
@@ -445,6 +560,7 @@ def _finish_attempt(
                 return
         task_state["status"] = "completed"
         task_state["last_error"] = None
+        task_state["output_evidence"] = _collect_output_evidence(task, runtime=runtime, repo=repo)
         _event(state, "task_completed", task_id=task_id)
     else:
         retries_used = cast(int, task_state["retries_used"])
@@ -529,7 +645,12 @@ def _start_task(
             repo=repo,
             task_id=task_id,
         )
-    )
+    ).resolve()
+    if not workdir.is_relative_to(repo.resolve()):
+        task_state["status"] = "failed"
+        task_state["last_error"] = f"working directory escapes repository: {workdir}"
+        _event(state, "task_failed", task_id=task_id, reason=task_state["last_error"])
+        return False
     timeout = cast(int, task["timeout_seconds"])
     wrapper_command = [
         sys.executable,
@@ -630,6 +751,17 @@ def _notify_once(state: dict[str, object], runtime: Path, conversation_id: str |
     _event(state, "notification_finished", status=notification["status"])
 
 
+def _control_path(runtime: Path) -> Path:
+    return runtime / "control.json"
+
+
+def _read_stop_control(runtime: Path) -> dict[str, object] | None:
+    path = _control_path(runtime)
+    if not path.exists():
+        return None
+    return _read_object(path)
+
+
 @dataclass(frozen=True, slots=True)
 class RunResult:
     state_path: Path
@@ -649,6 +781,7 @@ def run_workflow(
     repo = repository_root()
     runtime = runtime.resolve()
     runtime.mkdir(parents=True, exist_ok=True)
+    _validate_runtime_boundaries(plan, runtime=runtime, repo=repo)
     lock = (runtime / ".workflow.lock").open("a+", encoding="utf-8")
     try:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -658,6 +791,10 @@ def run_workflow(
     try:
         state = _prepare_runtime(plan, plan_path, runtime)
         if clear_stop:
+            _atomic_json(
+                _control_path(runtime),
+                {"stop_requested": False, "reason": None, "updated_at": _now()},
+            )
             state["stop_requested"] = False
             state["stop_reason"] = None
             state["budget_exhausted"] = False
@@ -666,6 +803,13 @@ def run_workflow(
                 if task_state["status"] == "intentionally_stopped":
                     task_state["status"] = "queued"
             _event(state, "stop_cleared")
+        control = _read_stop_control(runtime)
+        if control and control.get("stop_requested"):
+            state["stop_requested"] = True
+            state["stop_reason"] = control.get("reason")
+        _validate_completed_evidence(plan, state, runtime, repo)
+        _block_dependents(plan, state)
+        _update_workflow_status(plan, state)
         if state["status"] in TERMINAL_WORKFLOW_STATES and not clear_stop:
             _notify_once(state, runtime, conversation_id)
             _atomic_json(runtime / "state.json", state)
@@ -683,10 +827,15 @@ def run_workflow(
 
         while True:
             disk_state = _read_object(runtime / "state.json")
-            if disk_state.get("stop_requested"):
+            control = _read_stop_control(runtime)
+            if control and control.get("stop_requested"):
+                state["stop_requested"] = True
+                state["stop_reason"] = control.get("reason")
+            elif disk_state.get("stop_requested"):
                 state["stop_requested"] = True
                 state["stop_reason"] = disk_state.get("stop_reason")
             _recover_running_tasks(plan, state, runtime, repo)
+            _validate_completed_evidence(plan, state, runtime, repo)
             _block_dependents(plan, state)
             task_states = _state_tasks(state)
 
@@ -782,6 +931,10 @@ def workflow_status(plan_path: Path, runtime: Path) -> dict[str, object]:
 def request_stop(plan_path: Path, runtime: Path, *, reason: str) -> dict[str, object]:
     plan = load_plan(plan_path)
     runtime = runtime.resolve()
+    _atomic_json(
+        _control_path(runtime),
+        {"stop_requested": True, "reason": reason, "updated_at": _now()},
+    )
     state = _prepare_runtime(plan, plan_path, runtime)
     state["stop_requested"] = True
     state["stop_reason"] = reason

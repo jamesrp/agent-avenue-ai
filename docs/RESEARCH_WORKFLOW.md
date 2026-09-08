@@ -44,7 +44,7 @@ Committed inputs live under `research/cycles/`. Generated runtime state remains 
 `runs/research-cycles/<cycle-id>/`:
 
 ```text
-state.json                         current state and append-only event list
+`state.json`                       current state plus an event history in one atomic snapshot
 tasks/<task>/attempt-N/started.json
                                exact command, cwd, wrapper PID, start time
 tasks/<task>/attempt-N/stdout.log  command output
@@ -58,10 +58,17 @@ Task states are `queued`, `running`, `completed`, `failed`, `blocked`, or
 or `budget_exhausted`.
 
 A task is never marked complete merely because it started. Completion requires exit code zero and
-all declared outputs. Completed tasks are not relaunched. A task whose wrapper disappeared can be
-recovered from valid declared outputs; otherwise it returns to the same idempotent/resumable command.
-Failures receive at most the plan's bounded retry count (currently no more than one). Failed
-prerequisites block dependent work but do not stop independent ready tasks.
+all declared outputs. The coordinator records each output file's size and SHA-256 and revalidates
+that evidence before a later resume accepts the completed task. Completed tasks are not relaunched.
+A task whose wrapper disappeared can be recovered from valid declared outputs; otherwise it returns
+to the same idempotent/resumable command. Claim-generating tasks must explicitly declare a
+resume-safe runner and a JSON manifest with required provenance keys. Failures receive at most the
+plan's bounded retry count (currently no more than one). Failed prerequisites block dependent work
+but do not stop independent ready tasks.
+
+Declared outputs must resolve inside that cycle's runtime, and task working directories must remain
+inside the repository. The event history is not a separate append-only journal: corruption of the
+single atomic state snapshot would require artifact-based/manual recovery.
 
 ## Commands
 
@@ -91,11 +98,12 @@ explicit resume.
 
 ## Stop and budget semantics
 
-A stop request is durable, halts new dispatch, sends `SIGTERM` to the managed wrapper/process group,
-and preserves logs and partial artifacts. Resume after a stop requires the explicit `--clear-stop`
-flag. The wall-time budget similarly stops running managed jobs and blocks undispatched work. A
-runner that supports checkpointing or semantic resume is responsible for using it on the next
-explicit resume; unrelated processes are never targeted.
+A stop request is written first to a separate atomic `control.json`, so it cannot be lost when the
+supervisor concurrently rewrites `state.json`. It halts new dispatch, sends `SIGTERM` to the managed
+wrapper/process group, and preserves logs and partial artifacts. Resume after a stop requires the
+explicit `--clear-stop` flag. The wall-time budget similarly stops running managed jobs and blocks
+undispatched work. A runner that supports checkpointing or semantic resume is responsible for using
+it on the next explicit resume; unrelated processes are never targeted.
 
 ## Delegation boundary
 
@@ -105,8 +113,9 @@ Git worktree, a bounded prompt, acceptance criteria, and a completion report. On
 shared code/status changes. Successive generations remain dependent tasks, never parallel jobs.
 
 A fresh-context reviewer receives the agreement, protocol, relevant source, and actual artifacts.
-It must challenge interpretation and list alternative explanations. Its judgment is an additional
-check, not scientific proof.
+It must challenge interpretation and list alternative explanations. Deterministic recomputation in
+the task graph is separate from this model-based fresh review; neither is mislabeled as the other.
+Reviewer judgment is an additional check, not scientific proof.
 
 ## Durability matrix
 
@@ -119,9 +128,12 @@ check, not scientific proof.
 | VM reboot | Artifacts survive; automatic execution resume is **not configured** | No enabled project systemd unit was installed; a lead must relaunch `resume` |
 | VM loss/disk loss | Not solved by this coordinator | Claim artifacts still require the protocol's checksum archive and durable secondary copy |
 
-The setup tests simulate supervisor interruption and exercise real child processes. They do not
-claim proof of browser disconnect, Shelley restart, or VM reboot. Those boundaries remain as stated
-above.
+The setup tests use real child processes to simulate supervisor interruption and exercise retry,
+blocking, stop races, wall-time termination, output tamper detection, path containment, and resume
+without duplicate completed work. A detached `tmux` smoke also ran a real paired arena through
+analysis, deterministic recomputation, and briefing. A disposable Shelley conversation accepted a
+terminal completion message. These do not prove Shelley service restart or VM reboot recovery; those
+boundaries remain as stated above.
 
 ## Cycle finish
 

@@ -99,6 +99,14 @@ def test_plan_requires_approval_and_enforces_bounded_limits(tmp_path: Path) -> N
     with pytest.raises(WorkflowError, match="may not exceed 1"):
         validate_plan(plan)
 
+    claim_plan = _plan([_task("experiment", "pass")])
+    claim_task = claim_plan["tasks"][0]
+    claim_task["claim_generating"] = True
+    claim_task["freeze_source"] = True
+    claim_plan["plan_fingerprint"] = plan_fingerprint(claim_plan)
+    with pytest.raises(WorkflowError, match="resume-safe runner"):
+        validate_plan(claim_plan)
+
 
 def test_workflow_runs_experiment_analysis_review_and_briefing_once(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
@@ -313,6 +321,50 @@ def test_stop_halts_running_job_and_prevents_new_dispatch(tmp_path: Path) -> Non
     assert state["tasks"]["analysis"]["status"] == "intentionally_stopped"
     assert state["tasks"]["briefing"]["status"] == "intentionally_stopped"
     assert not (runtime / "should-not-exist").exists()
+
+
+def test_completed_output_digest_is_revalidated_before_resume(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    output = runtime / "result.json"
+    code = (
+        "from pathlib import Path; "
+        f"p=Path({str(output)!r}); p.parent.mkdir(parents=True, exist_ok=True); "
+        'p.write_text(\'{"status":"completed"}\')'
+    )
+    task = _task(
+        "analysis",
+        code,
+        outputs=[
+            {
+                "path": str(output),
+                "type": "json",
+                "json_contains": {"status": "completed"},
+            }
+        ],
+    )
+    path = _write_plan(tmp_path / "plan.json", _plan([task]))
+    assert run_workflow(path, runtime).status == "completed"
+    output.write_text('{"status":"completed","tampered":true}')
+
+    result = run_workflow(path, runtime)
+    state = json.loads(result.state_path.read_text())
+    assert result.status == "failed"
+    assert state["tasks"]["analysis"]["status"] == "failed"
+    assert any(event["event"] == "completed_evidence_changed" for event in state["events"])
+
+
+def test_output_paths_must_remain_inside_runtime(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    outside = tmp_path / "outside.json"
+    task = _task(
+        "analysis",
+        "pass",
+        outputs=[{"path": str(outside), "type": "json"}],
+    )
+    path = _write_plan(tmp_path / "plan.json", _plan([task]))
+    with pytest.raises(WorkflowError, match="escapes workflow runtime"):
+        run_workflow(path, runtime)
+    assert not outside.exists()
 
 
 def test_wall_time_budget_terminates_job_and_does_not_dispatch_followup(tmp_path: Path) -> None:

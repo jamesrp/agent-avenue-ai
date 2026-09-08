@@ -1,0 +1,230 @@
+{
+  "agreement": {
+    "frozen_evaluation": "Exactly four random-versus-random paired setup blocks; completion and evidence integrity only, with no strength claim.",
+    "hypotheses": [
+      "Declared output checks and durable task state will support unattended stage transitions without duplicate completed work.",
+      "The result will remain clearly labeled smoke-only and will not trigger another cycle."
+    ],
+    "question": "Can the review-hardened bounded workflow execute one disposable paired arena and advance automatically through analysis, review, and briefing?",
+    "reserved_decisions": "No scientific follow-up, training run, or next cycle may start after this setup smoke.",
+    "why_it_matters": "The setup must be demonstrated with inspectable evidence before a real research cycle is approved."
+  },
+  "approval_status": "approved",
+  "cycle_id": "setup-smoke-v3",
+  "limits": {
+    "max_concurrency": 1,
+    "max_substantial_jobs": 1,
+    "wall_time_seconds": 900
+  },
+  "plan_fingerprint": "e0a0657ea60dc62b5ad54c1bb405ea003af6e9e2ecd8e15ecc930f411a7b7fe7",
+  "schema_version": 1,
+  "tasks": [
+    {
+      "claim_generating": false,
+      "claim_relevant": false,
+      "command": [
+        "python",
+        "-c",
+        "from pathlib import Path; import json; source=Path('{repo}/docs/RESEARCH_WORKFLOW_INVENTORY.md'); assert source.is_file(); out=Path('{runtime}/delegation/integration.json'); out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps({'status':'completed','source':str(source),'contains_current_status':'q1\u2013q4 and terminal-safety are complete' in source.read_text()}))"
+      ],
+      "depends_on": [],
+      "expected_outputs": [
+        {
+          "json_contains": {
+            "contains_current_status": true,
+            "status": "completed"
+          },
+          "path": "{runtime}/delegation/integration.json",
+          "required_keys": [
+            "contains_current_status",
+            "status"
+          ],
+          "type": "json"
+        }
+      ],
+      "freeze_source": true,
+      "id": "delegation-integration-check",
+      "kind": "check",
+      "max_retries": 1,
+      "resource_class": "light",
+      "resume_safe": true,
+      "timeout_seconds": 30,
+      "working_directory": "{repo}"
+    },
+    {
+      "claim_generating": false,
+      "claim_relevant": false,
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "agent_avenue",
+        "arena",
+        "--agent-a",
+        "random",
+        "--agent-b",
+        "random",
+        "--pairs",
+        "4",
+        "--seed",
+        "2026090801",
+        "--run-id",
+        "workflow-smoke-arena",
+        "--output",
+        "{runtime}/experiment/arena.json",
+        "--records-dir",
+        "{runtime}/experiment/records"
+      ],
+      "depends_on": [
+        "delegation-integration-check"
+      ],
+      "expected_outputs": [
+        {
+          "json_contains": {
+            "paired_seed_count": 4,
+            "total_games": 8
+          },
+          "path": "{runtime}/experiment/arena.json",
+          "required_keys": [
+            "paired_seed_count",
+            "total_games"
+          ],
+          "type": "json"
+        },
+        {
+          "json_contains": {
+            "record_count": 8
+          },
+          "path": "{runtime}/experiment/records/workflow-smoke-arena/manifest.json",
+          "required_keys": [
+            "record_count"
+          ],
+          "type": "json"
+        }
+      ],
+      "freeze_source": true,
+      "id": "paired-arena-smoke",
+      "kind": "experiment",
+      "max_retries": 1,
+      "resource_class": "substantial",
+      "resume_safe": true,
+      "timeout_seconds": 180,
+      "working_directory": "{repo}"
+    },
+    {
+      "claim_generating": false,
+      "claim_relevant": false,
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "scripts/research_workflow_smoke.py",
+        "analyze",
+        "{runtime}/experiment/arena.json",
+        "{runtime}/analysis/summary.json"
+      ],
+      "depends_on": [
+        "paired-arena-smoke"
+      ],
+      "expected_outputs": [
+        {
+          "json_contains": {
+            "evidence_class": "smoke_only",
+            "games": 8,
+            "paired_blocks": 4,
+            "status": "completed"
+          },
+          "path": "{runtime}/analysis/summary.json",
+          "required_keys": [
+            "evidence_class",
+            "games",
+            "paired_blocks",
+            "status"
+          ],
+          "type": "json"
+        }
+      ],
+      "freeze_source": true,
+      "id": "deterministic-analysis",
+      "kind": "analysis",
+      "max_retries": 1,
+      "resource_class": "light",
+      "resume_safe": true,
+      "timeout_seconds": 30,
+      "working_directory": "{repo}"
+    },
+    {
+      "claim_generating": false,
+      "claim_relevant": false,
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "scripts/research_workflow_smoke.py",
+        "review",
+        "{runtime}/experiment/arena.json",
+        "{runtime}/analysis/summary.json",
+        "{runtime}/review/review.json"
+      ],
+      "depends_on": [
+        "deterministic-analysis"
+      ],
+      "expected_outputs": [
+        {
+          "json_contains": {
+            "accepted": true,
+            "status": "completed"
+          },
+          "path": "{runtime}/review/review.json",
+          "required_keys": [
+            "accepted",
+            "status"
+          ],
+          "type": "json"
+        }
+      ],
+      "freeze_source": true,
+      "id": "independent-recomputation",
+      "kind": "review",
+      "max_retries": 1,
+      "resource_class": "light",
+      "resume_safe": true,
+      "timeout_seconds": 30,
+      "working_directory": "{repo}"
+    },
+    {
+      "claim_generating": false,
+      "claim_relevant": false,
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "scripts/research_workflow_smoke.py",
+        "brief",
+        "{runtime}/analysis/summary.json",
+        "{runtime}/review/review.json",
+        "{runtime}/BRIEFING.md"
+      ],
+      "depends_on": [
+        "independent-recomputation"
+      ],
+      "expected_outputs": [
+        {
+          "min_bytes": 500,
+          "path": "{runtime}/BRIEFING.md",
+          "type": "file"
+        }
+      ],
+      "freeze_source": true,
+      "id": "setup-briefing",
+      "kind": "briefing",
+      "max_retries": 1,
+      "resource_class": "light",
+      "resume_safe": true,
+      "timeout_seconds": 30,
+      "working_directory": "{repo}"
+    }
+  ],
+  "version": "bounded-research-workflow-v1"
+}

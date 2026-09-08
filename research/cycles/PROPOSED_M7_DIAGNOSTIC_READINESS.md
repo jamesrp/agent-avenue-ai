@@ -3,7 +3,9 @@
 **Cycle ID:** `m7-diagnostic-readiness-v1`  
 **Status:** Proposed; awaiting user approval  
 **Proposed:** September 8, 2026  
-**Parent evidence:** terminal-safety-v1 completed result
+**Parent evidence:** [`docs/TERMINAL_SAFETY_RESULTS.md`](../../docs/TERMINAL_SAFETY_RESULTS.md),
+[`docs/MILESTONE6_RESULTS.md`](../../docs/MILESTONE6_RESULTS.md), and their locally retained
+checksum archives
 
 ## Research question
 
@@ -30,7 +32,8 @@ model complexity by intuition.
 ### A. Retention and recovery audit (prerequisite)
 
 - Inventory the exact live and archived q0/Milestone 6/terminal-safety artifacts.
-- Verify checksums and perform a disposable extraction/restore validation of both major archives.
+- Verify checksums and perform a disposable extraction/semantic restore validation of both major
+  archives; the setup already created byte-identical secondary local copies, but not off-VM backup.
 - Confirm the workflow and existing resumable corpus/iteration recovery tests at the cycle source.
 - Produce `artifact-catalog.json` and a short retention-gap note.
 
@@ -64,7 +67,8 @@ allowlisted policies can play from either seat, and ordinary non-RL core tests r
 ### D. Independent audit and briefing (depends on A, B, and C)
 
 - Give a fresh-context reviewer this agreement, the experiment protocol, relevant code, raw
-  artifacts, deterministic analysis, and representative traces.
+  artifacts, deterministic recomputation implementation, and representative traces. This is
+  distinct from the deterministic audit stage in the task graph.
 - Require challenges to evaluation validity, hidden-information safety, causal interpretation, and
   the recommended next experiment.
 - Integrate corrections, update `docs/STATUS.md`, and prepare one coherent research briefing.
@@ -77,6 +81,9 @@ limitations/alternatives, one board-game ML lesson, and explicit next decisions/
 - This is a **retrospective diagnostic/infrastructure cycle**, not a strength or promotion claim.
 - No new training corpus, model training, q-generation, promotion decision, or locked-final seed is
   opened.
+- Every claim-relevant task freezes the same clean source identity. Every claim-generating runner
+  must be explicitly resume-safe and emit a manifest with required source/configuration/seed/input
+  identities; the coordinator records output SHA-256 evidence and rejects later mutation.
 - Existing record-level results must reproduce their published aggregates within deterministic
   arithmetic/format tolerances; mismatches stop dependent interpretation.
 - Evaluation remains paired and seat-aware. Arena sampling uncertainty is not presented as

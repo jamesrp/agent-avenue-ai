@@ -560,6 +560,7 @@ def _load_ranking_initializer(
     dataset_fingerprint: str,
 ) -> tuple[dict[str, object], dict[str, Tensor]]:
     import torch
+    from torch import Tensor
 
     from agent_avenue.learning import tensor_digest
     from agent_avenue.learning.model import validate_state_dict

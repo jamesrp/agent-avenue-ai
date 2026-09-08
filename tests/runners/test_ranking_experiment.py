@@ -7,7 +7,9 @@ from agent_avenue.runners import AgentSpec, GameSpec, run_game
 from agent_avenue.runners.ranking_experiment import (
     HISTORICAL_Q1_MC_SEED,
     RankingExperimentConfig,
+    _load_ranking_initializer,
     _nested_interval,
+    _save_ranking_initializer,
     resolve_ranking_experiment_plan,
 )
 from agent_avenue.storage import write_corpus
@@ -86,6 +88,47 @@ def test_ranking_plan_freezes_paired_seed_domains_and_inputs(tmp_path: Path) -> 
     assert len(set(first.arena_seeds.values())) == len(first.arena_seeds)
     assert first.input_identities["corpus"]["record_count"] == 4
     assert "historical_q1_tensor_mismatch" in first.claim_ineligibility_reasons
+
+
+def test_ranking_initializer_round_trip_loads_runtime_tensor_type(tmp_path: Path) -> None:
+    corpus, dataset, parent, historical = _inputs(tmp_path)
+    plan = resolve_ranking_experiment_plan(
+        RankingExperimentConfig(
+            output=tmp_path / "output",
+            corpus=corpus,
+            mc_dataset=dataset,
+            parent_checkpoint=parent,
+            historical_q1_checkpoint=historical,
+            replicates=1,
+            direct_pairs=1,
+            parent_pairs=1,
+            heuristic_pairs=1,
+            random_pairs=1,
+            max_epochs=1,
+            batch_size=8,
+            patience=1,
+        )
+    )
+    model = create_model(seed=99)
+    state = {name: value.detach().clone() for name, value in model.state_dict().items()}
+    destination = tmp_path / "initializer"
+    saved = _save_ranking_initializer(
+        destination,
+        state,
+        plan=plan,
+        replicate=1,
+        dataset_fingerprint="d" * 64,
+        metrics={"fixture": True},
+    )
+    loaded_manifest, loaded_state = _load_ranking_initializer(
+        destination,
+        plan=plan,
+        replicate=1,
+        dataset_fingerprint="d" * 64,
+    )
+
+    assert loaded_manifest == saved
+    assert set(loaded_state) == set(state)
 
 
 def test_nested_bootstrap_is_deterministic_and_keeps_replicate_unit() -> None:

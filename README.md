@@ -30,7 +30,8 @@ machine.
 | [6: frozen self-play and promotion](docs/MILESTONE6.md) | Complete | Four production generations, locked final evaluation, and verified archive |
 | [Terminal-safety hybrid](docs/TERMINAL_SAFETY_RESULTS.md) | Complete | Shielded q0 retained after q1–q4; all-pairs diagnostics and locked final archived |
 | [M7 diagnostic readiness](docs/M7_DIAGNOSTIC_READINESS_RESULTS.md) | Complete | Retention/recompute audit, learned web QA, and next-experiment recommendation |
-| [7: controlled RL experiments](docs/MILESTONE7.md) | Planned | Recipe abstraction, environment adapters, and measured ablations |
+| [M7 ranking warm start](docs/M7_HEURISTIC_RANKING_RESULTS.md) | Complete; did not advance | Three paired recipe replicates and 15,600 fresh development games |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress | First controlled recipe screen complete; broader experiment program remains open |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
 **q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
@@ -50,11 +51,15 @@ Full results, the 14,000-game
 all-prior-policy-pairs diagnostic, lineage, and archive checksums are in
 [`docs/TERMINAL_SAFETY_RESULTS.md`](docs/TERMINAL_SAFETY_RESULTS.md).
 
-The September 8 diagnostic-readiness cycle then checksum/restore-validated the retained artifacts,
-recomputed 38 arena reports from individual records without mismatch, and found that target/action
-coverage is a better-isolated next question than increasing model capacity. It recommends—but did
-not start—counterfactual candidate-ranking supervision as the next controlled experiment. See
-[`docs/M7_DIAGNOSTIC_READINESS_RESULTS.md`](docs/M7_DIAGNOSTIC_READINESS_RESULTS.md).
+The September 8 diagnostic-readiness cycle checksum/restore-validated the retained artifacts,
+recomputed 38 arena reports from individual records without mismatch, and selected heuristic
+candidate-ranking supervision as the next controlled question. The resulting fixed-corpus experiment
+then compared three ranking-warm-start treatments with three paired MC-only controls. The ranking
+recipe did not advance: no treatment replicate beat its direct control, and its heuristic
+non-regression difference was -18.17 percentage points with a nested 95% bootstrap interval of
+[-24.17, -12.28]. Shielded q0 remains the selected champion. See
+[`docs/M7_DIAGNOSTIC_READINESS_RESULTS.md`](docs/M7_DIAGNOSTIC_READINESS_RESULTS.md) and
+[`docs/M7_HEURISTIC_RANKING_RESULTS.md`](docs/M7_HEURISTIC_RANKING_RESULTS.md).
 
 Historical Milestone 6 results remain in
 [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md), and the original q0 evaluation remains in
@@ -126,7 +131,7 @@ uv run python -m agent_avenue.research status research/cycles/setup-smoke-v1.jso
 ```
 
 See [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md) for approval, delegation, unattended
-execution, stop/resume, and durability boundaries. No real Milestone 7 cycle is approved or running.
+execution, stop/resume, and durability boundaries. No research cycle is currently running.
 
 See `AGENTS.md` for package boundaries, engine invariants, testing conventions, and contribution
 rules.

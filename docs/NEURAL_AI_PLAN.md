@@ -1,9 +1,9 @@
 # Neural AI implementation plan
 
 **Status:** Milestones 4–6 and the terminal-safety q0–q4 rerun complete; shielded q0 selected;
-Milestone 7 planned
-**Date:** September 3, 2026
-**Latest result:** [`TERMINAL_SAFETY_RESULTS.md`](TERMINAL_SAFETY_RESULTS.md)
+first Milestone 7 ranking warm-start screen complete without advancement
+**Date:** September 8, 2026
+**Latest result:** [`M7_HEURISTIC_RANKING_RESULTS.md`](M7_HEURISTIC_RANKING_RESULTS.md)
 **Per-milestone references:** [`MILESTONE6.md`](MILESTONE6.md),
 [`MILESTONE7.md`](MILESTONE7.md)
 **Companion research:** [`NEURAL_AI_RESEARCH.md`](NEURAL_AI_RESEARCH.md)
@@ -714,8 +714,9 @@ bootstrap from the fixed heuristic corpus before beginning their own frozen-gene
    and a retained terminal-loss component.
 3. **Opponent/champion pool:** sample frozen older checkpoints if self-play cycling or forgetting is
    measured.
-4. **Heuristic ranking warm start:** safe auxiliary candidate-ranking pretraining if q0 coverage is
-   inadequate.
+4. **Heuristic ranking warm start:** the first fixed-corpus pairwise version completed on September
+   8, 2026 and did not advance; materially different ranking formulations remain separate future
+   questions. See [`M7_HEURISTIC_RANKING_RESULTS.md`](M7_HEURISTIC_RANKING_RESULTS.md).
 5. **Search distillation:** shallow information-set-safe rollouts or a learned belief model whose
    action rankings are distilled into the candidate network.
 6. **Larger/two-layer MLP:** only after profiling and an encoder/data ablation show underfitting.

@@ -1,7 +1,8 @@
 # Milestone 7: Controlled RL Environment and Recipe Experiments
 
-**Status:** Planned; not started
-**Date:** September 2, 2026
+**Status:** In progress; first controlled recipe screen complete
+**Originally planned:** September 2, 2026
+**Last updated:** September 8, 2026
 **Detailed experiment list:** [Neural AI plan — Milestone 7](NEURAL_AI_PLAN.md#milestone-7-experiments-only-after-the-mc-baseline)
 
 ## Goal
@@ -158,6 +159,15 @@ best-response behavior.
 Question: does policy diversity improve robustness relative to frozen incumbent-only self-play?
 
 ### 4. Heuristic-ranking warm start
+
+A first fixed-corpus version completed on September 8, 2026 after the diagnostic-readiness cycle
+moved this question ahead of broader infrastructure work. It pretrained pairwise public heuristic
+rankings from the shielded q1 corpus and then applied unchanged MC fine-tuning across three paired
+replicates. The recipe did not beat matched MC controls and failed heuristic and seat guardrails, so
+it does not advance. See [`M7_HEURISTIC_RANKING_RESULTS.md`](M7_HEURISTIC_RANKING_RESULTS.md).
+
+The broader question remains open for materially different formulations; the completed result does
+not authorize auxiliary losses, another teacher, shield-aware filtering, or fresh data.
 
 Pretrain safe candidate rankings from `greedy-public-v1`, then fine-tune on terminal outcomes.
 

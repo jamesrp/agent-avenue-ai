@@ -3,9 +3,9 @@
 **As of:** September 8, 2026
 **Current selected hybrid champion:** q0-terminal-safety-v1
 **Permanent pure-neural baseline:** historical q0
-**Latest completed learned result:** [Terminal-safety hybrid rerun](TERMINAL_SAFETY_RESULTS.md)
+**Latest completed learned experiment:** [M7 heuristic ranking warm-start screen](M7_HEURISTIC_RANKING_RESULTS.md)
 
-**Latest completed research cycle:** [M7 diagnostic readiness](M7_DIAGNOSTIC_READINESS_RESULTS.md)
+**Latest completed research cycle:** [M7 heuristic ranking warm start](M7_HEURISTIC_RANKING_RESULTS.md)
 
 This document is the concise, living index of completed work and current next steps. Historical
 milestone documents describe the intended scope at the time; `README.md` and this file describe the
@@ -22,7 +22,7 @@ actual present state.
 | [5: first learned checkpoint](NEURAL_AI_PLAN.md#milestone-5-learned-agent-and-first-usable-checkpoint) | Complete | [q0 result and reproduction contract](MILESTONE5_RESULTS.md) |
 | [6: frozen iterative self-play](MILESTONE6.md) | Complete | [q1–q4 decisions, final evaluation, and archive](MILESTONE6_RESULTS.md) |
 | [Terminal-safety hybrid](TERMINAL_SAFETY_EXPERIMENT.md) | Complete | [Shielded q0–q4 result, all-pairs diagnostics, and archive](TERMINAL_SAFETY_RESULTS.md) |
-| [7: controlled RL experiments](MILESTONE7.md) | Planned; not started | Ordered experiment plan only |
+| [7: controlled RL experiments](MILESTONE7.md) | In progress; first recipe screen complete | [Heuristic ranking warm start did not advance](M7_HEURISTIC_RANKING_RESULTS.md) |
 
 ## Current measured policies
 
@@ -87,6 +87,23 @@ The additional held-out diagnostic evaluated each `qn` on fresh records from eve
 interactions among rejected candidates. Those records were diagnostic-only and did not change
 fitting or promotion. See [the terminal-safety result](TERMINAL_SAFETY_RESULTS.md).
 
+## First Milestone 7 experiment
+
+The first controlled Milestone 7 recipe screen reused the exact retained terminal-safety q1 corpus
+and compared three MC-only controls with three paired treatments that first learned all-legal-action
+ordinal preferences from `greedy-public-v1`. The treatment did not advance: its direct score against
+matched controls was 48.37% with a nested 95% bootstrap interval of [45.67%, 51.10%], and
+its heuristic non-regression difference relative to shielded q0 was -18.17 percentage points with a
+nested 95% interval of [-24.17, -12.28]. It still beat shielded q0 and random in absolute terms,
+illustrating the same specialization pattern rather than repairing it.
+
+All three treatment/control direct point estimates favored the controls. Ranking initializers
+achieved about 93.4% validation pair accuracy, but final treatment checkpoints had worse MC
+validation loss and failed robustness criteria on this fixed development suite. The experiment does
+not show that all ranking supervision is harmful; it rejects this exact parent-initialized pairwise
+warm-start recipe on this fixed corpus. The selected champion remains unchanged. See
+[`M7_HEURISTIC_RANKING_RESULTS.md`](M7_HEURISTIC_RANKING_RESULTS.md).
+
 ## Web status
 
 The QA web UI currently supports:
@@ -118,10 +135,13 @@ The repository currently records:
 - held-out, setup-disjoint all-pairs prior-policy evaluation plans and reports.
 
 The q0 source corpus, dataset, checkpoint, logs, and reports remain retained. The q0 historical arena
-aggregates predate the individual-record policy. Every Milestone 6 and terminal-safety training and
-evaluation arena retains compressed semantic records. Both completed chains are packaged in verified
-ignored archives with embedded member checksums. Generated artifacts stay out of ordinary Git
-history; compact results and exact source revisions remain committed. See the
+aggregates predate the individual-record policy. Every Milestone 6, terminal-safety, and M7 ranking
+evaluation arena retains compressed semantic records. The completed ranking screen adds a
+versioned all-legal-action dataset, three paired training replicates per recipe, nested
+training/block bootstrap intervals, and independently recomputed arena and safety artifacts. These
+completed lines are packaged in verified ignored archives with embedded member checksums. Generated
+artifacts stay out of ordinary Git history; compact results and exact source revisions remain
+committed. See the [M7 ranking result](M7_HEURISTIC_RANKING_RESULTS.md),
 [terminal-safety result](TERMINAL_SAFETY_RESULTS.md), [Milestone 6 result](MILESTONE6_RESULTS.md),
 and [experiment protocol](EXPERIMENT_PROTOCOL.md).
 
@@ -133,6 +153,7 @@ and [experiment protocol](EXPERIMENT_PROTOCOL.md).
 | q0 learned-agent arena evaluation | `d46350356a7bf461468ba33c6bf1f28b3231cd14` | `6909e9316510f48cad515b99a8f9b19288ee5c43d5925f84b88ad853479031bc` |
 | Milestone 6 production q1–q4 and final evaluation | `139318bad909438e8a3e1cb9dd962c80653875d0` | `5a66a4a63f7c5680f3db81e83dfebf53af63f73d29b653645850bb013a45ba0c` |
 | Terminal-safety q0–q4, all-pairs diagnostics, and final | `19c2871080503c62a53522415e0645913d7674b0` | `9c8b39bb4e81bb29e0902c56198557f63b7e9992bdaff845967c562fc064f429` |
+| M7 heuristic ranking warm-start repaired run | `240d33495c29e227c57afe2b58d73ad792fbdbd8` | `9f9e78d1c4a5a124a12d8f01056788520a65bc86bec652ffa113da24e5975b49` |
 
 ## Research workflow status
 
@@ -154,15 +175,23 @@ supervision as the most directly isolating next **question**, with mixed-opponen
 second. This is a diagnostic recommendation, not an authorization or strength result. See
 [`M7_DIAGNOSTIC_READINESS_RESULTS.md`](M7_DIAGNOSTIC_READINESS_RESULTS.md).
 
-No research cycle is currently running. The coordinator did not launch the recommended experiment.
-VM-reboot execution resume and off-VM artifact durability remain unconfigured.
+The approved ranking cycle completed through one declared operational repair. The original run
+stopped on a runtime-only `Tensor` import defect after producing valid replicate-1 artifacts. The
+repair changed only initializer loading and added a regression test; original and repaired
+replicate-1 tensors match exactly. The repaired run retained 22 arenas containing 15,600 games,
+recomputed every aggregate and safety report, and concluded that the frozen recipe does not advance.
+See [`M7_HEURISTIC_RANKING_RESULTS.md`](M7_HEURISTIC_RANKING_RESULTS.md).
+
+No research cycle is currently running. VM-reboot execution resume and off-VM artifact durability
+remain unconfigured.
 
 ## Planned next work
 
-1. decide whether to approve a controlled counterfactual candidate-ranking supervision experiment,
-   mixed-opponent replay instead, or another direction;
-2. if ranking is chosen, predeclare teacher semantics, fixed-corpus construction, independent
-   training replicates, matched development arenas, and guardrails before execution;
-3. implement the recipe/environment-adapter boundaries in [Milestone 7](MILESTONE7.md) only as
-   needed by the approved experiment; and
+1. decide whether to approve a diagnostic-only teacher-retention/washout audit on the existing
+   parent, initializer, control, and treatment artifacts;
+2. use that audit to characterize endpoint teacher retention, calibration, phase/action effects, and
+   shield-veto concentration, narrowing—but not causally separating—persistence, washout, and
+   ordinal/value mismatch hypotheses without new training or gameplay;
+3. if diagnostics do not justify a narrow target repair, consider mixed-opponent replay as the next
+   substantive data intervention; and
 4. choose an off-VM retention mechanism if stronger disaster recovery is desired.

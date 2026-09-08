@@ -43,6 +43,7 @@ from agent_avenue.runners import (
 )
 from agent_avenue.runners.game import Controller
 
+from .opponents import LearnedOpponentRegistry
 from .presenters import (
     PLAYER_LABELS,
     completed_turn_view,
@@ -90,24 +91,48 @@ def _advance_agents(game: WebGame) -> None:
     game.state = session.state
 
 
-def _controller_metadata(game: WebGame) -> tuple[str, str, str]:
+def _checkpoint_fingerprint(config: Mapping[str, object]) -> str | None:
+    direct = config.get("checkpoint_fingerprint")
+    if isinstance(direct, str):
+        return direct
+    base = config.get("base")
+    return _checkpoint_fingerprint(base) if isinstance(base, Mapping) else None
+
+
+def _controller_metadata(
+    game: WebGame, opponents: LearnedOpponentRegistry
+) -> tuple[str, str, str, str | None, str | None]:
     if _is_hot_seat(game):
-        return ("human-human", PlayerId.PLAYER_ONE.value, "Human versus human")
+        return ("human-human", PlayerId.PLAYER_ONE.value, "Human versus human", None, None)
     human = next(
         controller for controller in game.controllers if isinstance(controller, HumanController)
     )
     automated = next(
         controller for controller in game.controllers if isinstance(controller, AgentController)
     )
+    learned_label = opponents.public_label(automated.agent_id)
+    if learned_label is not None:
+        key = automated.agent_id.removeprefix("learned-")
+        return (
+            f"human-learned:{key}",
+            human.player.value,
+            f"Human ({PLAYER_LABELS[human.player]}) versus {learned_label}",
+            learned_label,
+            _checkpoint_fingerprint(automated.config),
+        )
     return (
         f"human-{automated.agent_id}",
         human.player.value,
         f"Human ({PLAYER_LABELS[human.player]}) versus {automated.agent_id.title()}",
+        None,
+        None,
     )
 
 
-def _metadata(game: WebGame) -> dict[str, object]:
-    mode, human_seat, controller_label = _controller_metadata(game)
+def _metadata(game: WebGame, opponents: LearnedOpponentRegistry) -> dict[str, object]:
+    mode, human_seat, controller_label, opponent_label, checkpoint_fingerprint = (
+        _controller_metadata(game, opponents)
+    )
     return {
         "seed": game.state.seed,
         "starting_player": PLAYER_LABELS[game.state.config.starting_player],
@@ -119,6 +144,8 @@ def _metadata(game: WebGame) -> dict[str, object]:
         "mode": mode,
         "human_seat": human_seat,
         "controller_label": controller_label,
+        "opponent_label": opponent_label,
+        "checkpoint_fingerprint": checkpoint_fingerprint,
     }
 
 
@@ -126,7 +153,7 @@ def _redirect(path: str) -> RedirectResponse:
     return RedirectResponse(path, status_code=status.HTTP_303_SEE_OTHER)
 
 
-def build_router(repository: SessionRepository) -> APIRouter:
+def build_router(repository: SessionRepository, opponents: LearnedOpponentRegistry) -> APIRouter:
     router = APIRouter()
 
     @router.get("/", response_class=HTMLResponse)
@@ -134,7 +161,10 @@ def build_router(repository: SessionRepository) -> APIRouter:
         return TEMPLATES.TemplateResponse(
             request=request,
             name="landing.html",
-            context={"csrf_token": _session(request).csrf_token},
+            context={
+                "csrf_token": _session(request).csrf_token,
+                "learned_opponents": opponents.configured(),
+            },
         )
 
     @router.post("/games")
@@ -168,6 +198,11 @@ def build_router(repository: SessionRepository) -> APIRouter:
                     agent_id = "heuristic"
                     agent = GreedyHeuristicAgent(heuristic_config)
                     agent_config = heuristic_config.to_data()
+                elif mode.startswith("human-learned:"):
+                    learned = opponents.resolve(mode.removeprefix("human-learned:"))
+                    agent_id = learned.agent_id
+                    agent = learned.agent
+                    agent_config = learned.agent_config
                 else:
                     raise ValueError
                 automated = human.other()
@@ -188,7 +223,7 @@ def build_router(repository: SessionRepository) -> APIRouter:
                     by_player[PlayerId.PLAYER_ONE],
                     by_player[PlayerId.PLAYER_TWO],
                 )
-        except (ValueError, EngineError) as exc:
+        except (ValueError, EngineError, OSError) as exc:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
                 "Seed, mode, or human seat is invalid",
@@ -228,7 +263,7 @@ def build_router(repository: SessionRepository) -> APIRouter:
                     "game_id": game_id,
                     "player": PLAYER_LABELS[decision],
                     "csrf_token": _session(request).csrf_token,
-                    "metadata": _metadata(game),
+                    "metadata": _metadata(game, opponents),
                 },
             )
 
@@ -275,7 +310,7 @@ def build_router(repository: SessionRepository) -> APIRouter:
                     "view": observation_view(observation),
                     "actions": observation.legal_actions,
                     "csrf_token": _session(request).csrf_token,
-                    "metadata": _metadata(game),
+                    "metadata": _metadata(game, opponents),
                 },
             )
 
@@ -358,7 +393,7 @@ def build_router(repository: SessionRepository) -> APIRouter:
                     "board": public_board_view(observation),
                     "terminal": game.state.phase is Phase.TERMINAL,
                     "csrf_token": _session(request).csrf_token,
-                    "metadata": _metadata(game),
+                    "metadata": _metadata(game, opponents),
                 },
             )
 
@@ -394,7 +429,7 @@ def build_router(repository: SessionRepository) -> APIRouter:
                 context={
                     "outcome": outcome_view(game.state.outcome),
                     "board": public_board_view(observation),
-                    "metadata": _metadata(game),
+                    "metadata": _metadata(game, opponents),
                     "csrf_token": _session(request).csrf_token,
                 },
             )

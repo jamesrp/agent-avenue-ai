@@ -3,6 +3,9 @@
   <dl>
     <div><dt>Seed</dt><dd><code>{{ metadata.seed }}</code></dd></div>
     <div><dt>Controllers</dt><dd>{{ metadata.controller_label }}</dd></div>
+    {% if metadata.checkpoint_fingerprint %}
+    <div><dt>Checkpoint</dt><dd>{{ metadata.opponent_label }} <code>{{ metadata.checkpoint_fingerprint }}</code></dd></div>
+    {% endif %}
     <div><dt>Starting player</dt><dd>{{ metadata.starting_player }}</dd></div>
     <div><dt>Rules</dt><dd><code>{{ metadata.rules_version }}</code></dd></div>
     <div><dt>Shuffle</dt><dd><code>{{ metadata.shuffle_version }}</code></dd></div>

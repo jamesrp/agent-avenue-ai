@@ -15,6 +15,9 @@
       <option value="human-human">Human versus human</option>
       <option value="human-random">Human versus random agent</option>
       <option value="human-heuristic">Human versus greedy heuristic</option>
+      {% for opponent in learned_opponents %}
+      <option value="human-learned:{{ opponent.key }}">Human versus {{ opponent.label }}</option>
+      {% endfor %}
     </select>
     <label for="human-seat">Human seat</label>
     <select id="human-seat" name="human_seat">

@@ -1,7 +1,7 @@
 # Web QA checklist
 
-**Current modes:** human versus human, random, or `greedy-public-v1`; either human seat
-**Planned mode:** validated q0/current-champion selection from a server-side allowlist
+**Current modes:** human versus human, random, `greedy-public-v1`, historical q0, or
+`q0-terminal-safety-v1`; either human seat
 
 The web interface is a private rules and observation QA tool. Do not deploy it as a public playable
 copy. It stores games only in one process and intentionally has no accounts or durable storage.
@@ -16,8 +16,9 @@ make web
 Open `http://localhost:8000`. The server binds to `0.0.0.0:8000` and must run with one worker because
 active sessions are in memory.
 
-The landing page already supports human-versus-human, human-versus-random, and
-human-versus-heuristic play. Learned checkpoints are not yet selectable in the web UI.
+The landing page supports human-versus-human, human-versus-random, human-versus-heuristic, and the
+two server-allowlisted learned policies. Learned checkpoints are loaded and validated lazily on the
+server when selected. The browser submits only an opaque allowlist key, never a filesystem path.
 
 ## Complete-game smoke pass
 
@@ -42,9 +43,7 @@ human-versus-heuristic play. Learned checkpoints are not yet selectable in the w
 - [ ] Inspect AI-game responses and confirm they contain no agent RNG seed, heuristic score,
       opposing hand, deck order, or unrevealed face-down identity.
 
-## Planned learned-opponent checks
-
-When learned-checkpoint web play is implemented, extend this checklist to verify:
+## Learned-opponent checks
 
 - [ ] Only configured, server-side allowlisted checkpoint names are selectable; no browser field can
       submit an arbitrary filesystem path.
@@ -53,11 +52,12 @@ When learned-checkpoint web play is implemented, extend this checklist to verify
 - [ ] The human can play each configured learned opponent from either seat.
 - [ ] The process reuses one validated immutable inference model rather than reloading weights for
       every decision.
-- [ ] Responses expose no candidate logits, model RNG state, opposing hand, deck order, or unknown
-      face-down identity.
-- [ ] Replay/start-over preserves the opponent label, checkpoint fingerprint, human seat, and seed.
+- [ ] Responses expose no candidate logits, tensor digest, model RNG state, opposing hand, deck
+      order, or unknown face-down identity.
+- [ ] Replay/start-over preserves the opaque opponent key, checkpoint fingerprint, human seat, and
+      seed.
 
-The learned mode will require both optional dependency groups:
+The learned modes require both optional dependency groups:
 
 ```bash
 uv sync --extra web --extra rl

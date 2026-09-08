@@ -1,6 +1,6 @@
 """FastAPI application factory for the local QA interface."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .opponents import LearnedOpponentConfig, LearnedOpponentRegistry
 from .routes import TEMPLATES, build_router
 from .sessions import BrowserSession, SessionRepository
 
@@ -18,6 +19,17 @@ class WebConfig:
 
     cookie_name: str = "agent_avenue_session"
     cookie_secure: bool = False
+    learned_opponents: tuple[LearnedOpponentConfig, ...] = field(
+        default_factory=lambda: (
+            LearnedOpponentConfig("historical-q0", "Historical q0", Path("checkpoints/q0")),
+            LearnedOpponentConfig(
+                "terminal-safety-q0",
+                "Terminal-safety q0",
+                Path("runs/terminal-safety-v1/q0-a1/checkpoint"),
+                terminal_safety=True,
+            ),
+        )
+    )
 
 
 def create_app(
@@ -27,8 +39,10 @@ def create_app(
     """Create an isolated QA application suitable for tests or one-worker Uvicorn."""
     actual_config = config or WebConfig()
     sessions = repository or SessionRepository()
+    opponents = LearnedOpponentRegistry(actual_config.learned_opponents)
     app = FastAPI(title="Agent Avenue QA", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.session_repository = sessions
+    app.state.learned_opponent_registry = opponents
     app.mount(
         "/static",
         StaticFiles(directory=Path(__file__).with_name("static")),
@@ -91,7 +105,7 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    app.include_router(build_router(sessions))
+    app.include_router(build_router(sessions, opponents))
     return app
 
 

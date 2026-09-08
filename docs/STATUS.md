@@ -148,7 +148,11 @@ No real research cycle is approved or running. The proposed first agreement is
 
 A real retrospective cycle is now approved and in progress:
 [`m7-diagnostic-readiness-v1`](../research/cycles/M7_DIAGNOSTIC_READINESS_V1.md). Its frozen executable
-plan is `research/cycles/m7-diagnostic-readiness-v1.json`. It permits retention/restore validation,
+plan is `research/cycles/m7-diagnostic-readiness-v1.json`. The first retained scan completed but
+exposed an implementation gap: archive/corpus validation passed, while zero arena aggregates were
+actually recomputed. The one preapproved repair is frozen in
+`research/cycles/m7-diagnostic-readiness-v1-repair1.json`; dependent interpretation is provisional
+until that repair validates nonzero matched aggregates. The cycle permits retention/restore validation,
 retained-record diagnostics, learned-checkpoint web QA, independent review, and one briefing; it
 forbids training, promotion, locked-final evaluation, and automatic next-cycle launch.
 

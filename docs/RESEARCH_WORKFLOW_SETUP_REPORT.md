@@ -2,7 +2,7 @@
 
 **Date:** September 8, 2026  
 **Status:** Setup implemented and smoke-tested; no real research cycle started  
-**Latest coordinator correction:** `3ce3d49` (`Serialize stop control without state races`)
+**Latest coordinator correction:** `e2e6ba9` (`Honor stop requests before initial dispatch`)
 
 ## Executive result
 
@@ -114,7 +114,9 @@ The fresh reviewer correctly rejected v2 and then v3 snapshots rather than rubbe
 The v3 re-review is at `runs/research-cycles/setup-smoke-v3/fresh-context-rereview.md`. Its most
 important remaining concrete defect—`request_stop()` rewriting `state.json` concurrently—was fixed
 in `3ce3d49`; stop now writes only `control.json`, and the supervisor is the sole runtime-state
-writer. The new regression test verifies the stop command does not rewrite state.
+writer. `e2e6ba9` additionally verifies a stop requested before supervisor launch produces a stopped
+workflow with zero task attempts. The regression test verifies the stop command does not rewrite
+state.
 
 Per the one-repair-and-retry setup limit, no third reviewer pass was requested. Therefore the honest
 record is: the implementation lead considers the coordinator suitable for the narrowly proposed

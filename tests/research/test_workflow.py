@@ -342,6 +342,11 @@ def test_stop_control_does_not_concurrently_rewrite_state(tmp_path: Path) -> Non
         "stop_requested": True,
         "updated_at": control["updated_at"],
     }
+    result = run_workflow(path, runtime)
+    state = json.loads(result.state_path.read_text())
+    assert result.status == "stopped"
+    assert state["tasks"]["analysis"]["status"] == "intentionally_stopped"
+    assert state["tasks"]["analysis"]["attempts"] == []
 
 
 def test_completed_output_digest_is_revalidated_before_resume(tmp_path: Path) -> None:

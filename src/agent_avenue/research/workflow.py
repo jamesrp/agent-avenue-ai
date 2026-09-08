@@ -835,6 +835,11 @@ def run_workflow(
                 _event(state, "stop_observed", reason=control.get("reason"))
             state["stop_requested"] = True
             state["stop_reason"] = control.get("reason")
+            for task_id, task_state in _state_tasks(state).items():
+                if task_state["status"] == "queued":
+                    task_state["status"] = "intentionally_stopped"
+                    task_state["last_error"] = "workflow stop requested before dispatch"
+                    _event(state, "task_stopped", task_id=task_id)
         _validate_completed_evidence(plan, state, runtime, repo)
         _block_dependents(plan, state)
         _update_workflow_status(plan, state)

@@ -201,6 +201,14 @@ def _parser() -> argparse.ArgumentParser:
         "--trace-limit", type=int, default=4, help="number of information-safe positions to emit"
     )
 
+    diagnostics_analysis = subparsers.add_parser(
+        "diagnostics-analyze",
+        help="independently validate and interpret one retained diagnostic pack",
+    )
+    diagnostics_analysis.add_argument("raw", type=Path, help="raw diagnostics directory")
+    diagnostics_analysis.add_argument("web_evidence", type=Path)
+    diagnostics_analysis.add_argument("output", type=Path)
+
     crossplay = subparsers.add_parser(
         "crossplay-evaluate",
         help="evaluate qn on held-out records from every prior-policy pair",
@@ -563,6 +571,12 @@ def _run_diagnostics_command(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
+def _run_diagnostics_analysis_command(args: argparse.Namespace) -> dict[str, object]:
+    from .runners.diagnostic_analysis import analyze_diagnostic_pack
+
+    return analyze_diagnostic_pack(args.raw, args.web_evidence, args.output)
+
+
 def _parse_prior(value: str) -> tuple[str, Path]:
     label, separator, raw_path = value.partition("=")
     if not separator or not label or not raw_path:
@@ -664,6 +678,8 @@ def main() -> None:
         result = _run_safety_audit_command(args)
     elif args.command == "diagnostics":
         result = _run_diagnostics_command(args)
+    elif args.command == "diagnostics-analyze":
+        result = _run_diagnostics_analysis_command(args)
     elif args.command == "crossplay-evaluate":
         result = _run_crossplay_command(args)
     else:

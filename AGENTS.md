@@ -123,6 +123,21 @@ justified. It should show the acting player's legal public view, decision, actio
 debug/replay identifiers, but never render hidden authoritative state to the browser. Do not make
 network access or a browser a requirement for core tests.
 
+## Research-cycle coordination
+
+- Shelley remains the single user-facing research lead. Use temporary workers only in isolated Git
+  worktrees with bounded assignments and evidence-bearing completion reports; one lead integrates.
+- A real cycle requires a committed, fingerprinted, user-approved agreement under
+  `research/cycles/`. The local coordinator in `agent_avenue.research` orders trusted commands but
+  does not replace experiment runners or make promotion/scientific decisions.
+- Generated coordinator state belongs under ignored `runs/research-cycles/`. Every task declares
+  outputs, timeout, dependencies, and at most one retry. Claim-generating tasks freeze a clean source
+  and still use the owning runner's normalized plan/provenance checks.
+- Do not use LLM polling to watch jobs. Detached managed processes report actual exit status; one
+  terminal completion message may resume the lead for analysis/review/briefing.
+- Stop and budget requests halt new dispatch and preserve evidence. Never launch an unapproved next
+  cycle automatically. See `docs/RESEARCH_WORKFLOW.md`.
+
 ## Git workflow
 
 - Keep commits small and descriptive; use imperative subjects.

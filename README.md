@@ -109,6 +109,18 @@ make arena-smoke
 make neural-smoke
 ```
 
+A small bounded coordinator now records approved research-cycle task state without replacing the
+experiment runners:
+
+```bash
+uv run python -m agent_avenue.research validate research/cycles/setup-smoke-v1.json
+uv run python -m agent_avenue.research status research/cycles/setup-smoke-v1.json \
+  --runtime runs/research-cycles/setup-smoke-v1
+```
+
+See [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md) for approval, delegation, unattended
+execution, stop/resume, and durability boundaries. No real Milestone 7 cycle is approved or running.
+
 See `AGENTS.md` for package boundaries, engine invariants, testing conventions, and contribution
 rules.
 
@@ -271,6 +283,10 @@ match the published base rules.
 
 - [`RULES.md`](RULES.md): normalized two-player base-game rules.
 - [`docs/STATUS.md`](docs/STATUS.md): current milestone and result index.
+- [`docs/RESEARCH_WORKFLOW_INVENTORY.md`](docs/RESEARCH_WORKFLOW_INVENTORY.md): verified current
+  experiment, artifact, VM, Shelley, and Codex capabilities.
+- [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md): bounded cycle agreement, durable task
+  state, unattended execution, stop/resume, and known durability limits.
 - [`docs/EXPERIMENT_PROTOCOL.md`](docs/EXPERIMENT_PROTOCOL.md): experiment, metrics, and retention
   policy.
 - [`docs/NEURAL_AI_RESEARCH.md`](docs/NEURAL_AI_RESEARCH.md): research review and algorithm rationale.

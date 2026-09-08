@@ -129,7 +129,23 @@ and [experiment protocol](EXPERIMENT_PROTOCOL.md).
 | Milestone 6 production q1–q4 and final evaluation | `139318bad909438e8a3e1cb9dd962c80653875d0` | `5a66a4a63f7c5680f3db81e83dfebf53af63f73d29b653645850bb013a45ba0c` |
 | Terminal-safety q0–q4, all-pairs diagnostics, and final | `19c2871080503c62a53522415e0645913d7674b0` | `9c8b39bb4e81bb29e0902c56198557f63b7e9992bdaff845967c562fc064f429` |
 
-## Planned next work
+## Research workflow status
+
+A bounded coordinator and cycle-record convention are implemented and tested; see
+[`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md) and
+[`RESEARCH_WORKFLOW_INVENTORY.md`](RESEARCH_WORKFLOW_INVENTORY.md). It records queued/running/
+completed/failed/blocked/stopped work, exact attempts and exit status, output evidence, bounded
+retries, source freezing, stop/budget state, and one optional Shelley completion message. It wraps
+rather than duplicates the existing experiment runners.
+
+The setup-only cycle is `research/cycles/setup-smoke-v1.json`. Its generated evidence lives under
+ignored `runs/research-cycles/setup-smoke-v1/` and does not support a gameplay-strength claim. No
+real research cycle is approved or running. The proposed first agreement is
+[`research/cycles/PROPOSED_M7_DIAGNOSTIC_READINESS.md`](../research/cycles/PROPOSED_M7_DIAGNOSTIC_READINESS.md).
+
+Verified setup durability is limited to local files/processes and explicit resume. VM-reboot
+execution resume and off-VM artifact durability are not configured or claimed.
+
 
 1. predeclare the next data/target experiment, using the terminal-safety hybrid champion while
    testing mixed-opponent replay and/or counterfactual candidate-ranking supervision rather than

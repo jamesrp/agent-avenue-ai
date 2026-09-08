@@ -31,7 +31,7 @@ no surviving local artifact or backing service was confirmed. No secrets are rec
 | Provenance | Source identity records Git revision, `uv.lock` SHA-256, tracked-tree cleanliness, and tracked diff SHA-256. Records/manifests bind rules/code, configuration, seeds, schedule, and per-record hashes. | `src/agent_avenue/storage/{provenance,game_record,corpus,fingerprints}.py` |
 | Artifacts | Corpus manifests and game records are replay-verified; datasets carry lineage/split fingerprints; immutable checkpoints contain manifest, weights, metrics, compatibility metadata, and digests. | `src/agent_avenue/learning/{dataset,checkpoint}.py`; `tests/learning/test_checkpoint.py` |
 | Evaluation/reporting | Pair/seat arena reports; promotion gates and immutable decisions; held-out prior-policy crossplay; replay-derived terminal-safety audits. Human-readable result/protocol documents are committed. | `src/agent_avenue/runners/{arena,promotion,iteration,crossplay,safety_audit}.py`; `docs/EXPERIMENT_PROTOCOL.md` |
-| Regression coverage | 25 test files / 147 `test_` functions found; the full optional-dependency suite collected 159 tests and passed 158 (1 skipped). Coverage includes corpus interruption/resume, bootstrap, iteration, crossplay, replay, checkpoints, safety, and web tests. | `tests/` search; full test run on September 8, 2026 |
+| Regression coverage | The full suite collected and passed 165 tests. Coverage includes corpus interruption/resume, bootstrap, iteration, crossplay, replay, checkpoints, safety, web, and the bounded workflow's retry/interruption/stop/budget behavior. | `make check` on September 8, 2026 |
 
 Useful bounded commands (write generated outputs outside Git):
 
@@ -48,21 +48,20 @@ uv run --extra web --extra rl pytest  # current fully provisioned check
 
 ## Artifact durability
 
-- **Verified durable on this VM:**
+- **Verified present in the authoritative primary checkout:** ignored `artifacts/`, `runs/`, and
+  `checkpoints/` trees exist (about 56 MB, 66 MB, and 404 KB respectively). The historical q0
+  checkpoint and both completed run trees are locally inspectable; they remain intentionally absent
+  from ordinary Git history.
+- **Verified terminal-safety archive bytes:** the primary checkout contains
+  `artifacts/archive/terminal-safety-v1-artifacts-2026-09-03.tar.gz` (30,036,123 bytes). Its SHA-256
+  is `d33c3e4bc3fea107a4d7ffe93dc841d9af8d12687269b7da783f540167fb27b9`, matching its JSON
+  sidecar and `docs/TERMINAL_SAFETY_RESULTS.md`.
+- **Verified secondary local Milestone 6 copy:**
   `~/.local/share/agent-avenue-ai-archives/milestone6-baseline.tar.gz` exists (21,097,384 bytes).
   Its SHA-256 is `9264aadbfdabb3045d805f96d898a76c8b180ea39250c9dbe69ce4370cab8b3a`, matching
-  `docs/MILESTONE6_RESULTS.md`; its sidecar also exists. This verifies bytes at that path, not an
-  off-VM backup or restoration test.
-- **Verified absent from this worktree:** `artifacts/`, `runs/`, and `checkpoints/` do not exist;
-  `.gitignore` excludes all three. Thus the checked-out source alone cannot rerun historical q0,
-  q1–q4, or terminal-safety results.
-- **Inferred from committed reports:** Milestone 6 and terminal-safety describe verified ignored
-  archives, checksums, compressed records, checkpoints, and reports. The terminal-safety archive
-  was not present in this worktree or the inspected local archive directory, so its current bytes
-  were not verified.
-- **Unverified durability:** object storage, LFS, remote backups, archive retention policy,
-  restoration drills, and cross-VM persistence were not found or tested. Treat result artifacts as
-  locally retained only until an explicit independent restore/checksum procedure is performed.
+  `docs/MILESTONE6_RESULTS.md`. This is a second path on the same VM, not an off-VM backup.
+- **Verified gap:** no secondary copy of the terminal-safety archive was found in the inspected
+  archive directory. Cross-VM/object-storage durability and a restoration drill remain unverified.
 
 ## VM and orchestration capabilities
 
@@ -71,18 +70,16 @@ uv run --extra web --extra rl pytest  # current fully provisioned check
 | CPU/RAM | `nproc`/`getconf` report 2 online CPUs; `free -h` reported 7.7 GiB RAM and no swap. `cpuset.cpus.effective` is `0-1`. | Use CPU-only, low-parallelism runs; retain `--cpu-threads 1` default unless a measured plan changes it. |
 | Limits | This container exposes cgroup v2 but no visible `cpu.max`, `memory.max`, or `memory.current` at `/sys/fs/cgroup`; shell virtual-memory and CPU-time limits are unlimited. | A hard CPU/RAM quota is **unverified**; observed free memory is not a guarantee. |
 | Shelley | `shelley version` returned `v0.1025.967052336` (`dc54de75c6ec5bea95e53fdc83b9bf7a673f78bd`). | The CLI client is explicitly experimental; pin no automation to undocumented behavior. |
-| Conversations / completion | `shelley client chat -p ... [-c ID]`, `read [-wait] ID`, `list`, `search`, `tag`, and `archive` are present. New chats support `-disable-notifications`; help names push/email/Discord/ntfy end-of-turn notifications. | A long job can send completion into an existing conversation with `shelley client chat -c "$SHELLEY_CONVERSATION_ID" -p "..."`; receiver configuration/delivery is unverified. |
+| Conversations / completion | `shelley client chat -p ... [-c ID]`, `read [-wait] ID`, `list`, `search`, `tag`, and `archive` are present. New chats support `-disable-notifications`; help names push/email/Discord/ntfy end-of-turn notifications. | A long job can send completion into an existing conversation with `shelley client chat -c "$SHELLEY_CONVERSATION_ID" -p "..."`; the setup separately tests one disposable same-conversation continuation message. |
 | Persistent work | `shelley dtach new -s SOCKET -- CMD` starts a detach/reattach terminal session; `shelley dtach attach -s SOCKET` reconnects. No native `shelley task` or `shelley conversation` command exists. | Suitable for a bounded process while the VM/service survives; survival across reboot/service restart is unverified. |
 | Native Codex | `/usr/local/bin/codex` is installed: `codex-cli 0.149.1`; `codex login status` returned `Not logged in`. `codex resume`, `queue`, and `exec` are advertised. | Codex is available but unauthenticated; do not plan API-backed Codex work without an approved login/integration. |
 
 ## Audit commands and limitations
 
-Commands run: `git status --short --branch`, `git ls-files`, source/test searches, project CLI
-`--help`, `shelley version`, `shelley client help chat`, `shelley dtach -h`, `codex --version`,
-`codex login status`, `nproc`, `getconf _NPROCESSORS_ONLN`, `free -h`, cgroup/ulimit inspection,
-and local archive size/SHA-256 checks. `make check` was also run from the initial plain environment:
-Ruff passed, but mypy failed because that Makefile target does not request the optional web/RL
-dependencies. The explicit full check above then passed (158 passed, 1 skipped), and `make check`
-passed after those extras were present. The web module was not started before optional dependencies
-were installed; this does not alter the source-level learned-web finding. Historical training/evaluation
-and archive extraction were intentionally not rerun.
+Commands run by the worker and lead: `git status --short --branch`, `git ls-files`, source/test
+searches, project CLI `--help`, `shelley version`, `shelley client help`, `shelley dtach -h`,
+`codex --help`, `codex --version`, `codex login status`, `nproc`, `getconf _NPROCESSORS_ONLN`,
+`free -h`, cgroup/ulimit inspection, and primary/secondary archive size/SHA-256 checks. The worker's
+isolated worktree correctly lacked ignored run artifacts; the lead rechecked those paths in the
+authoritative primary checkout before integration. Historical training/evaluation and a full
+archive extraction were intentionally not rerun.

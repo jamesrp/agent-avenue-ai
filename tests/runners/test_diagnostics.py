@@ -78,17 +78,20 @@ def test_diagnostics_inventory_restore_and_safe_traces(tmp_path: Path) -> None:
     assert "deck" not in traces["positions"][0]["observation"]
     assert "own_hand" in traces["positions"][0]["observation"]
 
-    stable_output_a = tmp_path / "stable-a"
-    stable_output_b = tmp_path / "stable-b"
+    stable_output_a = root / "runs" / "diagnostic-output"
     run_diagnostics(artifact_root=root, output=stable_output_a, archives=(archive,))
-    run_diagnostics(artifact_root=root, output=stable_output_b, archives=(archive,))
-    for name in (
-        "artifact-catalog.json",
-        "diagnostic-summary.json",
-        "safe-traces.json",
-        "retention-note.md",
-    ):
-        assert (stable_output_a / name).read_bytes() == (stable_output_b / name).read_bytes()
+    first_bytes = {
+        name: (stable_output_a / name).read_bytes()
+        for name in (
+            "artifact-catalog.json",
+            "diagnostic-summary.json",
+            "safe-traces.json",
+            "retention-note.md",
+        )
+    }
+    run_diagnostics(artifact_root=root, output=stable_output_a, archives=(archive,))
+    for name, expected in first_bytes.items():
+        assert (stable_output_a / name).read_bytes() == expected
 
 
 def test_archive_inspection_rejects_payload_checksum_mismatch(tmp_path: Path) -> None:

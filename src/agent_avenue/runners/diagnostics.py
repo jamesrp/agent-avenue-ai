@@ -21,7 +21,12 @@ from agent_avenue.engine import (
 )
 from agent_avenue.observation import observation_to_data, observe
 from agent_avenue.runners.arena import wilson_interval
-from agent_avenue.storage import GameRecord, game_record_fingerprint, load_corpus
+from agent_avenue.storage import (
+    GameRecord,
+    game_record_fingerprint,
+    inspect_source_identity,
+    load_corpus,
+)
 
 DIAGNOSTIC_VERSION = "m7-diagnostic-readiness-v1"
 
@@ -179,24 +184,30 @@ def inspect_archive(path: Path, *, extract_to: Path | None = None) -> dict[str, 
     }
 
 
-def _corpus_directories(root: Path) -> tuple[Path, ...]:
+def _is_below(path: Path, roots: tuple[Path, ...]) -> bool:
+    resolved = path.resolve()
+    return any(resolved == root or resolved.is_relative_to(root) for root in roots)
+
+
+def _corpus_directories(root: Path, excluded: tuple[Path, ...] = ()) -> tuple[Path, ...]:
     return tuple(
         sorted(
             {
                 path.parent
                 for path in root.rglob("manifest.json")
                 if (path.parent / "games.jsonl.gz").is_file()
+                and not _is_below(path.parent, excluded)
             }
         )
     )
 
 
 def _corpus_inventory(
-    root: Path,
+    root: Path, excluded: tuple[Path, ...] = ()
 ) -> tuple[list[dict[str, object]], dict[str, tuple[GameRecord, ...]]]:
     items: list[dict[str, object]] = []
     records_by_path: dict[str, tuple[GameRecord, ...]] = {}
-    for directory in _corpus_directories(root):
+    for directory in _corpus_directories(root, excluded):
         relative = directory.relative_to(root).as_posix()
         try:
             manifest, records = load_corpus(directory, verify_code=False)
@@ -482,6 +493,11 @@ def run_diagnostics(
     output.mkdir(parents=True, exist_ok=True)
     if restore_directory is not None and restore_directory.resolve() == output.resolve():
         raise DiagnosticError("restore directory must not be the output directory")
+    excluded: tuple[Path, ...] = (output.resolve(),)
+    if restore_directory is not None and restore_directory.resolve().is_relative_to(
+        artifact_root.resolve()
+    ):
+        excluded = (*excluded, restore_directory.resolve())
 
     files = [
         path
@@ -492,7 +508,7 @@ def run_diagnostics(
         )
         if base.is_dir()
         for path in sorted(base.rglob("*"))
-        if path.is_file() and not path.is_symlink()
+        if path.is_file() and not path.is_symlink() and not _is_below(path, excluded)
     ]
     lock = artifact_root / "uv.lock"
     if lock.is_file() and not lock.is_symlink():
@@ -504,11 +520,12 @@ def run_diagnostics(
         archive_reports.append(inspect_archive(archive, extract_to=restore))
         if restore is not None:
             restored_paths.append(restore)
-    corpus_items, records_by_path = _corpus_inventory(artifact_root)
+    corpus_items, records_by_path = _corpus_inventory(artifact_root, excluded)
     all_records = tuple(record for records in records_by_path.values() for record in records)
     catalog = {
         "version": DIAGNOSTIC_VERSION,
         "retrospective_historical_evidence": True,
+        "producer_source": inspect_source_identity().to_data(),
         "artifact_root": artifact_root.resolve().as_uri(),
         "live_files": [_file_identity(path, artifact_root) for path in files],
         "archives": archive_reports,

@@ -1,6 +1,6 @@
 # Project status
 
-**As of:** September 3, 2026
+**As of:** September 8, 2026
 **Current selected hybrid champion:** q0-terminal-safety-v1
 **Permanent pure-neural baseline:** historical q0
 **Latest completed learned result:** [Terminal-safety hybrid rerun](TERMINAL_SAFETY_RESULTS.md)
@@ -138,9 +138,12 @@ completed/failed/blocked/stopped work, exact attempts and exit status, output ev
 retries, source freezing, stop/budget state, and one optional Shelley completion message. It wraps
 rather than duplicates the existing experiment runners.
 
-The setup-only cycle is `research/cycles/setup-smoke-v1.json`. Its generated evidence lives under
-ignored `runs/research-cycles/setup-smoke-v1/` and does not support a gameplay-strength claim. No
-real research cycle is approved or running. The proposed first agreement is
+The setup-only declarations are `research/cycles/setup-smoke-v1.json` through v3. V1 retained the
+controlled schema-validation failure and bounded retry; v2 demonstrated detached automatic stage
+progression and Shelley continuation; review-hardened v3 completed with source snapshots and output
+digests. Generated evidence lives under ignored `runs/research-cycles/setup-smoke-v*/` and does not
+support a gameplay-strength claim. See [`RESEARCH_WORKFLOW_SETUP_REPORT.md`](RESEARCH_WORKFLOW_SETUP_REPORT.md).
+No real research cycle is approved or running. The proposed first agreement is
 [`research/cycles/PROPOSED_M7_DIAGNOSTIC_READINESS.md`](../research/cycles/PROPOSED_M7_DIAGNOSTIC_READINESS.md).
 
 Verified setup durability is limited to local files/processes and explicit resume. VM-reboot

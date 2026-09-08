@@ -31,7 +31,7 @@ no surviving local artifact or backing service was confirmed. No secrets are rec
 | Provenance | Source identity records Git revision, `uv.lock` SHA-256, tracked-tree cleanliness, and tracked diff SHA-256. Records/manifests bind rules/code, configuration, seeds, schedule, and per-record hashes. | `src/agent_avenue/storage/{provenance,game_record,corpus,fingerprints}.py` |
 | Artifacts | Corpus manifests and game records are replay-verified; datasets carry lineage/split fingerprints; immutable checkpoints contain manifest, weights, metrics, compatibility metadata, and digests. | `src/agent_avenue/learning/{dataset,checkpoint}.py`; `tests/learning/test_checkpoint.py` |
 | Evaluation/reporting | Pair/seat arena reports; promotion gates and immutable decisions; held-out prior-policy crossplay; replay-derived terminal-safety audits. Human-readable result/protocol documents are committed. | `src/agent_avenue/runners/{arena,promotion,iteration,crossplay,safety_audit}.py`; `docs/EXPERIMENT_PROTOCOL.md` |
-| Regression coverage | The full suite collected and passed 167 tests. Coverage includes corpus interruption/resume, bootstrap, iteration, crossplay, replay, checkpoints, safety, web, and the bounded workflow's retry/interruption/stop/budget/tamper/containment behavior. | `make check` on September 8, 2026 |
+| Regression coverage | The full suite collected and passed 168 tests. Coverage includes corpus interruption/resume, bootstrap, iteration, crossplay, replay, checkpoints, safety, web, and the bounded workflow's retry/interruption/stop/budget/tamper/containment behavior. | `make check` on September 8, 2026 |
 
 Useful bounded commands (write generated outputs outside Git):
 

@@ -21,5 +21,7 @@ may remain Markdown until the user approves it. Approval is a scientific decisio
 change from `"proposed"` to `"approved"`: the lead records what was agreed, then commits the exact
 version before claim-generating execution.
 
-The setup-only executable plan is `setup-smoke-v1.json`. It is explicitly smoke evidence and must
-not be cited as a gameplay-strength result.
+The setup-only executable declarations are `setup-smoke-v1.json` through `setup-smoke-v3.json`.
+V1 intentionally remains the executed failed plan; v2 records the bounded schema repair; v3 records
+the review-hardening repair. They are explicitly smoke evidence and must not be cited as gameplay-
+strength results. See `docs/RESEARCH_WORKFLOW_SETUP_REPORT.md`.

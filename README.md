@@ -18,7 +18,7 @@ The long-term measure of success is an AI that becomes meaningfully stronger thr
 self-play while remaining fair, testable, auditable, and practical to run on a CPU-only development
 machine.
 
-## Current status — September 3, 2026
+## Current status — September 8, 2026
 
 | Milestone | Status | Result |
 | --- | --- | --- |
@@ -287,6 +287,8 @@ match the published base rules.
   experiment, artifact, VM, Shelley, and Codex capabilities.
 - [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md): bounded cycle agreement, durable task
   state, unattended execution, stop/resume, and known durability limits.
+- [`docs/RESEARCH_WORKFLOW_SETUP_REPORT.md`](docs/RESEARCH_WORKFLOW_SETUP_REPORT.md): implemented
+  setup, actual smoke/failure/recovery evidence, reviewer findings, and remaining limitations.
 - [`docs/EXPERIMENT_PROTOCOL.md`](docs/EXPERIMENT_PROTOCOL.md): experiment, metrics, and retention
   policy.
 - [`docs/NEURAL_AI_RESEARCH.md`](docs/NEURAL_AI_RESEARCH.md): research review and algorithm rationale.

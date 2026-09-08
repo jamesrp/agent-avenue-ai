@@ -29,6 +29,7 @@ machine.
 | 5: first learned checkpoint | Complete | q0 trained and evaluated against random and heuristic |
 | [6: frozen self-play and promotion](docs/MILESTONE6.md) | Complete | Four production generations, locked final evaluation, and verified archive |
 | [Terminal-safety hybrid](docs/TERMINAL_SAFETY_RESULTS.md) | Complete | Shielded q0 retained after q1–q4; all-pairs diagnostics and locked final archived |
+| [M7 diagnostic readiness](docs/M7_DIAGNOSTIC_READINESS_RESULTS.md) | Complete | Retention/recompute audit, learned web QA, and next-experiment recommendation |
 | [7: controlled RL experiments](docs/MILESTONE7.md) | Planned | Recipe abstraction, environment adapters, and measured ablations |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
@@ -49,15 +50,21 @@ Full results, the 14,000-game
 all-prior-policy-pairs diagnostic, lineage, and archive checksums are in
 [`docs/TERMINAL_SAFETY_RESULTS.md`](docs/TERMINAL_SAFETY_RESULTS.md).
 
+The September 8 diagnostic-readiness cycle then checksum/restore-validated the retained artifacts,
+recomputed 38 arena reports from individual records without mismatch, and found that target/action
+coverage is a better-isolated next question than increasing model capacity. It recommends—but did
+not start—counterfactual candidate-ranking supervision as the next controlled experiment. See
+[`docs/M7_DIAGNOSTIC_READINESS_RESULTS.md`](docs/M7_DIAGNOSTIC_READINESS_RESULTS.md).
+
 Historical Milestone 6 results remain in
 [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md), and the original q0 evaluation remains in
 [`docs/MILESTONE5_RESULTS.md`](docs/MILESTONE5_RESULTS.md). The living milestone/result index is
 [`docs/STATUS.md`](docs/STATUS.md).
 
-**Milestone 6 is a project milestone, not a sixth neural generation.** It covered generations q1–q4:
-freeze the incumbent, collect one generation of self-play, warm-start a candidate, evaluate it
-against the incumbent and guardrails, and promote it only when the predeclared statistical gate
-passes. The four-generation budget ended without a promotion or practical-equivalence plateau;
+**Milestone 6 is a project milestone, not “generation six.”** It covered generations q1–q4: freeze
+the incumbent, collect one generation of self-play, warm-start a candidate, evaluate it against the
+incumbent and guardrails, and promote it only when the predeclared statistical gate passes. The
+four-generation budget ended without a promotion or practical-equivalence plateau;
 this is reported as `budget_exhausted_inconclusive`; historical q0 remains the incumbent selected by
 that Milestone 6 run.
 
@@ -239,12 +246,15 @@ It currently supports:
 - explicit or generated seeds;
 - human-versus-human hot-seat play;
 - human-versus-random and human-versus-heuristic play;
+- human-versus-historical-q0 and human-versus-terminal-safety-q0 play through opaque server-side
+  allowlist keys;
 - either human seat;
 - semantic form actions and public turn history; and
 - terminal/reproduction metadata without hidden authoritative state.
 
-Learned-checkpoint selection is planned but not yet implemented. When added, checkpoints will come
-from a validated server-side allowlist rather than arbitrary browser-supplied paths. See
+Learned checkpoints are validated and cached on the server. Pages expose the public opponent label
+and immutable checkpoint fingerprint, but no browser field accepts a filesystem path and no response
+contains model logits, tensor digests, or private game state. See
 [`docs/WEB_QA.md`](docs/WEB_QA.md) for the manual checklist.
 
 ## Deterministic rules engine and baseline arena
@@ -289,6 +299,8 @@ match the published base rules.
   state, unattended execution, stop/resume, and known durability limits.
 - [`docs/RESEARCH_WORKFLOW_SETUP_REPORT.md`](docs/RESEARCH_WORKFLOW_SETUP_REPORT.md): implemented
   setup, actual smoke/failure/recovery evidence, reviewer findings, and remaining limitations.
+- [`docs/M7_DIAGNOSTIC_READINESS_RESULTS.md`](docs/M7_DIAGNOSTIC_READINESS_RESULTS.md): retained
+  artifact audit, recomputed evaluations, learned web QA, scientific review, and next recommendation.
 - [`docs/EXPERIMENT_PROTOCOL.md`](docs/EXPERIMENT_PROTOCOL.md): experiment, metrics, and retention
   policy.
 - [`docs/NEURAL_AI_RESEARCH.md`](docs/NEURAL_AI_RESEARCH.md): research review and algorithm rationale.

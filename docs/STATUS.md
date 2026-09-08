@@ -5,6 +5,8 @@
 **Permanent pure-neural baseline:** historical q0
 **Latest completed learned result:** [Terminal-safety hybrid rerun](TERMINAL_SAFETY_RESULTS.md)
 
+**Latest completed research cycle:** [M7 diagnostic readiness](M7_DIAGNOSTIC_READINESS_RESULTS.md)
+
 This document is the concise, living index of completed work and current next steps. Historical
 milestone documents describe the intended scope at the time; `README.md` and this file describe the
 actual present state.
@@ -91,12 +93,15 @@ The QA web UI currently supports:
 
 - human versus human;
 - human versus random;
-- human versus `greedy-public-v1`; and
-- either human seat for automated modes.
+- human versus `greedy-public-v1`;
+- human versus historical q0;
+- human versus `q0-terminal-safety-v1`; and
+- either human seat for every automated mode.
 
-Learned-checkpoint play is not implemented. The intended next UI extension is a server-side registry
-of validated checkpoints such as q0 and the current champion. The browser must not submit arbitrary
-checkpoint paths or receive private model/environment state.
+Learned policies are configured by opaque server-side allowlist keys. The server validates and
+caches immutable inference checkpoints; the browser receives the public label and checkpoint
+fingerprint, never a filesystem path, tensor digest, logits, or private game/model state. See
+[`WEB_QA.md`](WEB_QA.md).
 
 ## Reproducibility status
 
@@ -138,30 +143,26 @@ completed/failed/blocked/stopped work, exact attempts and exit status, output ev
 retries, source freezing, stop/budget state, and one optional Shelley completion message. It wraps
 rather than duplicates the existing experiment runners.
 
-The setup-only declarations are `research/cycles/setup-smoke-v1.json` through v3. V1 retained the
-controlled schema-validation failure and bounded retry; v2 demonstrated detached automatic stage
-progression and Shelley continuation; review-hardened v3 completed with source snapshots and output
-digests. Generated evidence lives under ignored `runs/research-cycles/setup-smoke-v*/` and does not
-support a gameplay-strength claim. See [`RESEARCH_WORKFLOW_SETUP_REPORT.md`](RESEARCH_WORKFLOW_SETUP_REPORT.md).
-No real research cycle is approved or running. The proposed first agreement is
-[`research/cycles/PROPOSED_M7_DIAGNOSTIC_READINESS.md`](../research/cycles/PROPOSED_M7_DIAGNOSTIC_READINESS.md).
+The setup-only declarations are `research/cycles/setup-smoke-v1.json` through v3. See
+[`RESEARCH_WORKFLOW_SETUP_REPORT.md`](RESEARCH_WORKFLOW_SETUP_REPORT.md).
 
-A real retrospective cycle is now approved and in progress:
-[`m7-diagnostic-readiness-v1`](../research/cycles/M7_DIAGNOSTIC_READINESS_V1.md). Its frozen executable
-plan is `research/cycles/m7-diagnostic-readiness-v1.json`. The first retained scan completed but
-exposed an implementation gap: archive/corpus validation passed, while zero arena aggregates were
-actually recomputed. The one preapproved repair is frozen in
-`research/cycles/m7-diagnostic-readiness-v1-repair1.json`; dependent interpretation is provisional
-until that repair validates nonzero matched aggregates. The cycle permits retention/restore validation,
-retained-record diagnostics, learned-checkpoint web QA, independent review, and one briefing; it
-forbids training, promotion, locked-final evaluation, and automatic next-cycle launch.
+The first approved retrospective cycle, `m7-diagnostic-readiness-v1`, is complete with one declared
+operational repair. The repaired run verified 3 archives, all 93 live retained corpora, 90 restored
+corpora, and 38 arena aggregates with zero mismatch; it also implemented and exercised allowlisted
+historical/current learned web opponents. It recommends counterfactual candidate-ranking
+supervision as the most directly isolating next **question**, with mixed-opponent replay a close
+second. This is a diagnostic recommendation, not an authorization or strength result. See
+[`M7_DIAGNOSTIC_READINESS_RESULTS.md`](M7_DIAGNOSTIC_READINESS_RESULTS.md).
 
-Verified setup durability is limited to local files/processes and explicit resume. VM-reboot
-execution resume and off-VM artifact durability are not configured or claimed.
+No research cycle is currently running. The coordinator did not launch the recommended experiment.
+VM-reboot execution resume and off-VM artifact durability remain unconfigured.
 
+## Planned next work
 
-1. predeclare the next data/target experiment, using the terminal-safety hybrid champion while
-   testing mixed-opponent replay and/or counterfactual candidate-ranking supervision rather than
-   extending incumbent-only selected-action Monte Carlo training;
-2. add historical q0/current hybrid champion selection to the optional web QA UI; and
-3. implement the recipe and environment-adapter boundaries described in [Milestone 7](MILESTONE7.md).
+1. decide whether to approve a controlled counterfactual candidate-ranking supervision experiment,
+   mixed-opponent replay instead, or another direction;
+2. if ranking is chosen, predeclare teacher semantics, fixed-corpus construction, independent
+   training replicates, matched development arenas, and guardrails before execution;
+3. implement the recipe/environment-adapter boundaries in [Milestone 7](MILESTONE7.md) only as
+   needed by the approved experiment; and
+4. choose an off-VM retention mechanism if stronger disaster recovery is desired.

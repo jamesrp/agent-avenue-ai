@@ -146,6 +146,12 @@ support a gameplay-strength claim. See [`RESEARCH_WORKFLOW_SETUP_REPORT.md`](RES
 No real research cycle is approved or running. The proposed first agreement is
 [`research/cycles/PROPOSED_M7_DIAGNOSTIC_READINESS.md`](../research/cycles/PROPOSED_M7_DIAGNOSTIC_READINESS.md).
 
+A real retrospective cycle is now approved and in progress:
+[`m7-diagnostic-readiness-v1`](../research/cycles/M7_DIAGNOSTIC_READINESS_V1.md). Its frozen executable
+plan is `research/cycles/m7-diagnostic-readiness-v1.json`. It permits retention/restore validation,
+retained-record diagnostics, learned-checkpoint web QA, independent review, and one briefing; it
+forbids training, promotion, locked-final evaluation, and automatic next-cycle launch.
+
 Verified setup durability is limited to local files/processes and explicit resume. VM-reboot
 execution resume and off-VM artifact durability are not configured or claimed.
 

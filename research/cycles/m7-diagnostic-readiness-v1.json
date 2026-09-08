@@ -1,0 +1,226 @@
+{
+  "agreement": {
+    "frozen_evaluation": "Retrospective retained-record validation, archive restore checks, and private web QA only; no new training, promotion, locked-final evaluation, or strength claim.",
+    "hypotheses": [
+      "Retained evidence will point more strongly to selected-action and opponent coverage than raw network capacity.",
+      "Retrospective diagnostics can narrow the next experiment but cannot establish causal strength improvement.",
+      "Historical q0 and terminal-safety q0 can be exposed through opaque server-side allowlist keys without weakening information safety."
+    ],
+    "question": "Which evidence-supported data or target intervention should be tested first after the completed terminal-safety q1-q4 chain, and can the retained policies be inspected safely in web QA?",
+    "reserved_decisions": "The user retains selection and execution of any new algorithm, data, or target family and any budget, rules, information-boundary, or infrastructure change.",
+    "why_it_matters": "The next expensive training experiment should target a measured failure mode instead of repeating completed q1 work or adding complexity by intuition."
+  },
+  "approval_status": "approved",
+  "cycle_id": "m7-diagnostic-readiness-v1",
+  "limits": {
+    "max_concurrency": 2,
+    "max_substantial_jobs": 1,
+    "wall_time_seconds": 28800
+  },
+  "plan_fingerprint": "14b4162b25eaa18df43c5a5d36a296658ee0634b2b1254ccc0644dde2a18907f",
+  "schema_version": 1,
+  "tasks": [
+    {
+      "claim_generating": false,
+      "claim_relevant": true,
+      "command": [
+        "bash",
+        "-lc",
+        "make check && mkdir -p '{runtime}/checks' && revision=$(git rev-parse HEAD) && printf '{\"source_revision\":\"%s\",\"status\":\"completed\"}\\n' \"$revision\" > '{runtime}/checks/make-check.json'"
+      ],
+      "depends_on": [],
+      "expected_outputs": [
+        {
+          "json_contains": {
+            "status": "completed"
+          },
+          "path": "{runtime}/checks/make-check.json",
+          "required_keys": [
+            "status",
+            "source_revision"
+          ],
+          "type": "json"
+        }
+      ],
+      "freeze_source": true,
+      "id": "frozen-source-checks",
+      "kind": "check",
+      "max_retries": 1,
+      "resource_class": "light",
+      "resume_safe": true,
+      "timeout_seconds": 900,
+      "working_directory": "{repo}"
+    },
+    {
+      "claim_generating": false,
+      "claim_relevant": true,
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "agent_avenue",
+        "diagnostics",
+        "{runtime}/raw",
+        "--artifact-root",
+        "{repo}",
+        "--archive",
+        "{repo}/artifacts/archive/q0-artifacts-2026-09-02.tar.gz",
+        "--archive",
+        "{repo}/artifacts/milestone6/milestone6-baseline.tar.gz",
+        "--archive",
+        "{repo}/artifacts/archive/terminal-safety-v1-artifacts-2026-09-03.tar.gz",
+        "--restore-directory",
+        "{runtime}/restore",
+        "--trace-limit",
+        "6"
+      ],
+      "depends_on": [
+        "frozen-source-checks"
+      ],
+      "expected_outputs": [
+        {
+          "path": "{runtime}/raw/artifact-catalog.json",
+          "required_keys": [
+            "version",
+            "producer_source",
+            "archives",
+            "corpora"
+          ],
+          "type": "json"
+        },
+        {
+          "path": "{runtime}/raw/diagnostic-summary.json",
+          "required_keys": [
+            "version",
+            "coverage",
+            "arena_recomputations",
+            "historical_evidence",
+            "restore_semantic_checks"
+          ],
+          "type": "json"
+        },
+        {
+          "path": "{runtime}/raw/safe-traces.json",
+          "required_keys": [
+            "version",
+            "positions",
+            "information_safety"
+          ],
+          "type": "json"
+        },
+        {
+          "min_bytes": 200,
+          "path": "{runtime}/raw/retention-note.md",
+          "type": "file"
+        }
+      ],
+      "freeze_source": true,
+      "id": "retained-artifact-diagnostics",
+      "kind": "analysis",
+      "max_retries": 1,
+      "resource_class": "substantial",
+      "resume_safe": true,
+      "timeout_seconds": 7200,
+      "working_directory": "{repo}"
+    },
+    {
+      "claim_generating": false,
+      "claim_relevant": true,
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "scripts/run_learned_web_qa_evidence.py",
+        "{runtime}/web/actual-checkpoints.json"
+      ],
+      "depends_on": [
+        "frozen-source-checks"
+      ],
+      "expected_outputs": [
+        {
+          "json_contains": {
+            "status": "completed"
+          },
+          "path": "{runtime}/web/actual-checkpoints.json",
+          "required_keys": [
+            "version",
+            "status",
+            "cases",
+            "information_boundary"
+          ],
+          "type": "json"
+        }
+      ],
+      "freeze_source": true,
+      "id": "learned-web-qa-evidence",
+      "kind": "check",
+      "max_retries": 1,
+      "resource_class": "light",
+      "resume_safe": true,
+      "timeout_seconds": 300,
+      "working_directory": "{repo}"
+    },
+    {
+      "claim_generating": false,
+      "claim_relevant": true,
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "agent_avenue",
+        "diagnostics-analyze",
+        "{runtime}/raw",
+        "{runtime}/web/actual-checkpoints.json",
+        "{runtime}/analysis"
+      ],
+      "depends_on": [
+        "retained-artifact-diagnostics",
+        "learned-web-qa-evidence"
+      ],
+      "expected_outputs": [
+        {
+          "json_contains": {
+            "evidence_class": "retrospective-historical-diagnostic",
+            "status": "completed"
+          },
+          "path": "{runtime}/analysis/analysis.json",
+          "required_keys": [
+            "version",
+            "status",
+            "validity",
+            "signals",
+            "recommendation",
+            "scientific_limit"
+          ],
+          "type": "json"
+        },
+        {
+          "min_bytes": 300,
+          "path": "{runtime}/analysis/tables.md",
+          "type": "file"
+        },
+        {
+          "min_bytes": 500,
+          "path": "{runtime}/analysis/safe-traces.md",
+          "type": "file"
+        },
+        {
+          "min_bytes": 500,
+          "path": "{runtime}/analysis/diagnostic-signals.svg",
+          "type": "file"
+        }
+      ],
+      "freeze_source": true,
+      "id": "independent-diagnostic-interpretation",
+      "kind": "analysis",
+      "max_retries": 1,
+      "resource_class": "light",
+      "resume_safe": true,
+      "timeout_seconds": 300,
+      "working_directory": "{repo}"
+    }
+  ],
+  "version": "bounded-research-workflow-v1"
+}

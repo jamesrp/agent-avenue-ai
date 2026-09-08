@@ -51,6 +51,13 @@ from .promotion import (
     detect_plateau,
     evaluate_promotion,
 )
+from .ranking_experiment import (
+    RankingExperimentConfig,
+    RankingExperimentError,
+    RankingExperimentPlan,
+    resolve_ranking_experiment_plan,
+    run_ranking_experiment,
+)
 from .self_play import (
     GENERATION_EPSILONS,
     GenerationConfig,
@@ -86,6 +93,9 @@ __all__ = [
     "PromotionDecision",
     "PromotionEvidence",
     "PromotionPolicy",
+    "RankingExperimentConfig",
+    "RankingExperimentError",
+    "RankingExperimentPlan",
     "RetainedArenaResult",
     "SeatStats",
     "advance_until_human_or_terminal",
@@ -104,9 +114,11 @@ __all__ = [
     "paired_bootstrap_interval",
     "planned_epsilon",
     "resolve_iteration_plan",
+    "resolve_ranking_experiment_plan",
     "run_arena",
     "run_game",
     "run_iteration",
+    "run_ranking_experiment",
     "run_resumable_arena",
     "run_resumable_corpus",
     "schedule_arena",

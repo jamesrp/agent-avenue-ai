@@ -230,6 +230,29 @@ def _parser() -> argparse.ArgumentParser:
     crossplay.add_argument("--terminal-safety", action="store_true")
     crossplay.add_argument("--dry-run", action="store_true")
 
+    ranking = subparsers.add_parser(
+        "ranking-experiment",
+        help="run or resume the approved fixed-corpus heuristic-ranking comparison",
+    )
+    ranking.add_argument("output", type=Path)
+    ranking.add_argument("--corpus", type=Path, required=True)
+    ranking.add_argument("--mc-dataset", type=Path, required=True)
+    ranking.add_argument("--parent", type=Path, required=True)
+    ranking.add_argument("--historical-q1", type=Path, required=True)
+    ranking.add_argument("--seed", type=int, default=2026090801)
+    ranking.add_argument("--replicates", type=int, default=3)
+    ranking.add_argument("--direct-pairs", type=int, default=500)
+    ranking.add_argument("--parent-pairs", type=int, default=500)
+    ranking.add_argument("--heuristic-pairs", type=int, default=300)
+    ranking.add_argument("--random-pairs", type=int, default=200)
+    ranking.add_argument("--max-epochs", type=int, default=50)
+    ranking.add_argument("--batch-size", type=int, default=1024)
+    ranking.add_argument("--patience", type=int, default=8)
+    ranking.add_argument("--learning-rate", type=float, default=1e-3)
+    ranking.add_argument("--weight-decay", type=float, default=1e-4)
+    ranking.add_argument("--cpu-threads", type=int, default=1)
+    ranking.add_argument("--dry-run", action="store_true")
+
     iterate = subparsers.add_parser(
         "iterate", help="run or resume one complete frozen self-play generation"
     )
@@ -629,6 +652,39 @@ def _run_checkpoint_inspect_command(args: argparse.Namespace) -> dict[str, objec
     }
 
 
+def _run_ranking_experiment_command(args: argparse.Namespace) -> dict[str, object]:
+    from .runners import (
+        RankingExperimentConfig,
+        resolve_ranking_experiment_plan,
+        run_ranking_experiment,
+    )
+
+    plan = resolve_ranking_experiment_plan(
+        RankingExperimentConfig(
+            output=args.output,
+            corpus=args.corpus,
+            mc_dataset=args.mc_dataset,
+            parent_checkpoint=args.parent,
+            historical_q1_checkpoint=args.historical_q1,
+            root_seed=args.seed,
+            replicates=args.replicates,
+            direct_pairs=args.direct_pairs,
+            parent_pairs=args.parent_pairs,
+            heuristic_pairs=args.heuristic_pairs,
+            random_pairs=args.random_pairs,
+            max_epochs=args.max_epochs,
+            batch_size=args.batch_size,
+            patience=args.patience,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            cpu_threads=args.cpu_threads,
+        )
+    )
+    if args.dry_run:
+        return plan.to_data()
+    return run_ranking_experiment(plan)
+
+
 def _run_iterate_command(args: argparse.Namespace) -> dict[str, object]:
     from .runners import IterationConfig, resolve_iteration_plan, run_iteration
 
@@ -682,6 +738,8 @@ def main() -> None:
         result = _run_diagnostics_analysis_command(args)
     elif args.command == "crossplay-evaluate":
         result = _run_crossplay_command(args)
+    elif args.command == "ranking-experiment":
+        result = _run_ranking_experiment_command(args)
     else:
         result = _run_iterate_command(args)
     print(json.dumps(result, sort_keys=True))

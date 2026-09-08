@@ -337,37 +337,56 @@ def _safe_traces(records: Iterable[GameRecord], limit: int) -> list[dict[str, ob
 
 
 def _arena_recomputation(
-    root: Path, records_by_path: Mapping[str, tuple[GameRecord, ...]]
+    root: Path,
+    records_by_path: Mapping[str, tuple[GameRecord, ...]],
+    excluded: tuple[Path, ...] = (),
 ) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
     for report_path in sorted(root.rglob("*.json")):
+        if _is_below(report_path, excluded):
+            continue
         relative = report_path.relative_to(root).as_posix()
         if "/arenas/" not in f"/{relative}" and "/development/" not in f"/{relative}":
             continue
         try:
-            report = _read_json(report_path)
+            outer = _read_json(report_path)
+            nested_report = outer.get("report")
+            report = nested_report if isinstance(nested_report, dict) else outer
             agents = report.get("agents")
-            if not isinstance(agents, dict) or not isinstance(agents.get("a"), dict):
-                continue
-            agent_a = agents["a"].get("id")
+            agent_a = outer.get("agent_a_id")
+            if not isinstance(agent_a, str):
+                agent_a_data = agents.get("a") if isinstance(agents, dict) else None
+                agent_a = agent_a_data.get("id") if isinstance(agent_a_data, dict) else None
             if not isinstance(agent_a, str):
                 continue
-            name = report_path.stem
-            candidates = (
-                report_path.parent.parent / "arena-records" / name,
-                report_path.parent.parent / "development-records" / name,
-            )
-            matching = next(
-                (
-                    path
-                    for path in candidates
-                    if path.relative_to(root).as_posix() in records_by_path
-                ),
-                None,
-            )
-            if matching is None:
+            records_data = outer.get("records")
+            if not isinstance(records_data, dict):
+                records_data = report.get("records")
+            raw_records_path = records_data.get("path") if isinstance(records_data, dict) else None
+            candidates: tuple[Path, ...]
+            if isinstance(raw_records_path, str):
+                candidate = Path(raw_records_path)
+                if not candidate.is_absolute():
+                    candidate = report_path.parent.parent / candidate
+                candidates = (candidate,)
+            else:
+                name = report_path.stem
+                candidates = (
+                    report_path.parent.parent / "arena-records" / name,
+                    report_path.parent.parent / "development-records" / name,
+                )
+            records_relative = None
+            for candidate in candidates:
+                try:
+                    relative_candidate = candidate.resolve().relative_to(root.resolve()).as_posix()
+                except ValueError:
+                    continue
+                if relative_candidate in records_by_path:
+                    records_relative = relative_candidate
+                    break
+            if records_relative is None:
                 continue
-            records = records_by_path[matching.relative_to(root).as_posix()]
+            records = records_by_path[records_relative]
             wins = 0
             margins = 0
             turns = 0
@@ -415,7 +434,7 @@ def _arena_recomputation(
             results.append(
                 {
                     "report": relative,
-                    "records": matching.relative_to(root).as_posix(),
+                    "records": records_relative,
                     "status": "matched" if matches else "mismatch",
                     "recomputed": recomputed,
                 }
@@ -425,12 +444,14 @@ def _arena_recomputation(
     return results
 
 
-def _historical_reports(root: Path) -> dict[str, object]:
+def _historical_reports(root: Path, excluded: tuple[Path, ...] = ()) -> dict[str, object]:
     guardrails: list[dict[str, object]] = []
     calibration: list[dict[str, object]] = []
     transfer: list[dict[str, object]] = []
     source_identities: list[dict[str, object]] = []
     for path in sorted(root.rglob("*.json")):
+        if _is_below(path, excluded):
+            continue
         try:
             data = _read_json(path)
         except DiagnosticError:
@@ -557,7 +578,7 @@ def run_diagnostics(
         "archives": archive_reports,
         "corpora": corpus_items,
     }
-    recomputations = _arena_recomputation(artifact_root, records_by_path)
+    recomputations = _arena_recomputation(artifact_root, records_by_path, excluded)
     summary = {
         "version": DIAGNOSTIC_VERSION,
         "retrospective_historical_evidence": True,
@@ -568,7 +589,7 @@ def run_diagnostics(
         "input_catalog_sha256": hashlib.sha256(_canonical_json(catalog)).hexdigest(),
         "coverage": _action_coverage(all_records),
         "arena_recomputations": recomputations,
-        "historical_evidence": _historical_reports(artifact_root),
+        "historical_evidence": _historical_reports(artifact_root, excluded),
         "restore_semantic_checks": [
             {
                 "restore": restored.resolve().as_uri(),

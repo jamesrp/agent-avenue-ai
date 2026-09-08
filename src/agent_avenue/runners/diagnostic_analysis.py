@@ -292,6 +292,7 @@ def analyze_diagnostic_pack(raw: Path, web_evidence: Path, output: Path) -> dict
     if (
         invalid_corpora
         or mismatches
+        or not recomputations
         or restore_invalid
         or bad_archives
         or web.get("status") != "completed"

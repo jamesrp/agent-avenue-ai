@@ -582,6 +582,32 @@ def _finish_attempt(
             _event(state, "task_failed", task_id=task_id, reason=error)
 
 
+def _signal_running_tasks(state: dict[str, object], *, reason: str) -> None:
+    for task_id, task_state in _state_tasks(state).items():
+        if task_state["status"] != "running":
+            continue
+        attempts = cast(list[dict[str, object]], task_state["attempts"])
+        latest = attempts[-1] if attempts else None
+        pid = latest.get("wrapper_pid") if latest else None
+        marker = f"{reason}_signal_sent"
+        if (
+            latest is not None
+            and not latest.get(marker)
+            and isinstance(pid, int)
+            and _pid_alive(pid)
+        ):
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(pid, signal.SIGTERM)
+                latest[marker] = True
+                _event(
+                    state,
+                    "task_signal_sent",
+                    task_id=task_id,
+                    signal="SIGTERM",
+                    reason=reason,
+                )
+
+
 def _block_dependents(plan: Mapping[str, object], state: dict[str, object]) -> None:
     task_states = _state_tasks(state)
     changed = True
@@ -805,6 +831,8 @@ def run_workflow(
             _event(state, "stop_cleared")
         control = _read_stop_control(runtime)
         if control and control.get("stop_requested"):
+            if not state.get("stop_requested"):
+                _event(state, "stop_observed", reason=control.get("reason"))
             state["stop_requested"] = True
             state["stop_reason"] = control.get("reason")
         _validate_completed_evidence(plan, state, runtime, repo)
@@ -829,6 +857,8 @@ def run_workflow(
             disk_state = _read_object(runtime / "state.json")
             control = _read_stop_control(runtime)
             if control and control.get("stop_requested"):
+                if not state.get("stop_requested"):
+                    _event(state, "stop_observed", reason=control.get("reason"))
                 state["stop_requested"] = True
                 state["stop_reason"] = control.get("reason")
             elif disk_state.get("stop_requested"):
@@ -840,6 +870,7 @@ def run_workflow(
             task_states = _state_tasks(state)
 
             if state.get("stop_requested"):
+                _signal_running_tasks(state, reason="stop")
                 for task_id, task_state in task_states.items():
                     if task_state["status"] == "queued":
                         task_state["status"] = "intentionally_stopped"
@@ -853,24 +884,7 @@ def run_workflow(
                         task_state["last_error"] = "workflow wall-time budget exhausted"
                         _event(state, "task_blocked", task_id=task_id, reason="budget_exhausted")
                     elif task_state["status"] == "running":
-                        attempts = cast(list[dict[str, object]], task_state["attempts"])
-                        latest = attempts[-1]
-                        pid = latest.get("wrapper_pid")
-                        if (
-                            not latest.get("budget_signal_sent")
-                            and isinstance(pid, int)
-                            and _pid_alive(pid)
-                        ):
-                            with contextlib.suppress(ProcessLookupError):
-                                os.killpg(pid, signal.SIGTERM)
-                                latest["budget_signal_sent"] = True
-                                _event(
-                                    state,
-                                    "task_signal_sent",
-                                    task_id=task_id,
-                                    signal="SIGTERM",
-                                    reason="budget_exhausted",
-                                )
+                        _signal_running_tasks(state, reason="budget")
                 if not any(task["status"] == "running" for task in task_states.values()):
                     state["status"] = "budget_exhausted"
                     if state.get("finished_at") is None:
@@ -931,24 +945,24 @@ def workflow_status(plan_path: Path, runtime: Path) -> dict[str, object]:
 def request_stop(plan_path: Path, runtime: Path, *, reason: str) -> dict[str, object]:
     plan = load_plan(plan_path)
     runtime = runtime.resolve()
+    runtime.mkdir(parents=True, exist_ok=True)
+    control_path = _control_path(runtime)
     _atomic_json(
-        _control_path(runtime),
+        control_path,
         {"stop_requested": True, "reason": reason, "updated_at": _now()},
     )
-    state = _prepare_runtime(plan, plan_path, runtime)
-    state["stop_requested"] = True
-    state["stop_reason"] = reason
-    _event(state, "stop_requested", reason=reason)
-    for task_id, task_state in _state_tasks(state).items():
+    state_path = runtime / "state.json"
+    state = _read_object(state_path) if state_path.exists() else _initial_state(plan, plan_path)
+    for task_state in _state_tasks(state).values():
         if task_state["status"] != "running":
             continue
         attempts = cast(list[dict[str, object]], task_state["attempts"])
         pid = attempts[-1].get("wrapper_pid") if attempts else None
         if isinstance(pid, int) and _pid_alive(pid):
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.killpg(pid, signal.SIGTERM)
-                _event(state, "task_signal_sent", task_id=task_id, signal="SIGTERM")
-            except ProcessLookupError:
-                pass
-    _atomic_json(runtime / "state.json", state)
-    return state
+    response = dict(state)
+    response["stop_requested"] = True
+    response["stop_reason"] = reason
+    response["control_path"] = str(control_path)
+    return response

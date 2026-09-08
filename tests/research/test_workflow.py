@@ -15,6 +15,7 @@ from agent_avenue.research import (
     request_stop,
     run_workflow,
     validate_plan,
+    workflow_status,
 )
 
 
@@ -321,6 +322,26 @@ def test_stop_halts_running_job_and_prevents_new_dispatch(tmp_path: Path) -> Non
     assert state["tasks"]["analysis"]["status"] == "intentionally_stopped"
     assert state["tasks"]["briefing"]["status"] == "intentionally_stopped"
     assert not (runtime / "should-not-exist").exists()
+
+
+def test_stop_control_does_not_concurrently_rewrite_state(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    task = _task("analysis", "pass")
+    path = _write_plan(tmp_path / "plan.json", _plan([task]))
+
+    workflow_status(path, runtime)
+    state_path = runtime / "state.json"
+    before = state_path.read_bytes()
+    response = request_stop(path, runtime, reason="pre-dispatch stop")
+
+    assert state_path.read_bytes() == before
+    assert response["stop_requested"] is True
+    control = json.loads((runtime / "control.json").read_text())
+    assert control == {
+        "reason": "pre-dispatch stop",
+        "stop_requested": True,
+        "updated_at": control["updated_at"],
+    }
 
 
 def test_completed_output_digest_is_revalidated_before_resume(tmp_path: Path) -> None:

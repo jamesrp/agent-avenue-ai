@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import tarfile
 from collections import Counter
@@ -128,6 +129,7 @@ def inspect_archive(path: Path, *, extract_to: Path | None = None) -> dict[str, 
             raise DiagnosticError("archive manifest has no entries, members, or files list")
         prefix = manifest_names[0].removesuffix("archive-manifest.json")
         checked = 0
+        payload_members: list[tuple[tarfile.TarInfo, str, int]] = []
         for item in payloads:
             if not isinstance(item, dict):
                 raise DiagnosticError("archive payload manifest item is malformed")
@@ -157,22 +159,45 @@ def inspect_archive(path: Path, *, extract_to: Path | None = None) -> dict[str, 
                 digest.update(chunk)
             if digest.hexdigest() != expected:
                 raise DiagnosticError(f"archive payload checksum mismatch: {relative}")
+            payload_members.append((member, expected, size))
             checked += 1
+        restore_reused = False
         if extract_to is not None:
             if extract_to.exists() and any(extract_to.iterdir()):
-                raise DiagnosticError("restore destination must be empty")
-            extract_to.mkdir(parents=True, exist_ok=True)
-            for name, member in members.items():
-                destination = extract_to / name
-                if member.isdir():
-                    destination.mkdir(parents=True, exist_ok=True)
-                else:
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    source = archive.extractfile(member)
-                    if source is None:  # pragma: no cover
-                        raise DiagnosticError("unable to extract archive member")
-                    with destination.open("wb") as target:
-                        shutil.copyfileobj(source, target)
+                for member, expected, size in payload_members:
+                    destination = extract_to / member.name
+                    if (
+                        not destination.is_file()
+                        or destination.stat().st_size != size
+                        or _sha256(destination) != expected
+                    ):
+                        raise DiagnosticError(
+                            f"existing restore payload is incomplete or changed: {member.name}"
+                        )
+                restore_reused = True
+            else:
+                stage = extract_to.with_name(f".{extract_to.name}.partial-{actual_digest[:12]}")
+                if stage.exists():
+                    shutil.rmtree(stage)
+                stage.mkdir(parents=True)
+                try:
+                    for name, member in members.items():
+                        destination = stage / name
+                        if member.isdir():
+                            destination.mkdir(parents=True, exist_ok=True)
+                        else:
+                            destination.parent.mkdir(parents=True, exist_ok=True)
+                            source = archive.extractfile(member)
+                            if source is None:  # pragma: no cover
+                                raise DiagnosticError("unable to extract archive member")
+                            with destination.open("wb") as target:
+                                shutil.copyfileobj(source, target)
+                    if extract_to.exists():
+                        extract_to.rmdir()
+                    os.replace(stage, extract_to)
+                except Exception:
+                    shutil.rmtree(stage, ignore_errors=True)
+                    raise
     return {
         "path": path.resolve().as_uri(),
         "sha256": actual_digest,
@@ -181,6 +206,7 @@ def inspect_archive(path: Path, *, extract_to: Path | None = None) -> dict[str, 
         "member_checksum_count": checked,
         "archive_manifest": manifest_names[0],
         "extracted_to": extract_to.resolve().as_uri() if extract_to is not None else None,
+        "restore_reused": restore_reused,
     }
 
 

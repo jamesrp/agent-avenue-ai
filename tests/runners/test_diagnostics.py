@@ -74,6 +74,10 @@ def test_diagnostics_inventory_restore_and_safe_traces(tmp_path: Path) -> None:
     assert catalog["corpora"][0]["status"] == "verified"
     assert summary["arena_recomputations"][0]["status"] == "matched"
     assert summary["restore_semantic_checks"][0]["corpora"][0]["status"] == "verified"
+    assert (
+        inspect_archive(archive, extract_to=tmp_path / "restore" / "archive-00")["restore_reused"]
+        is True
+    )
     assert len(traces["positions"]) == 2
     assert "deck" not in traces["positions"][0]["observation"]
     assert "own_hand" in traces["positions"][0]["observation"]

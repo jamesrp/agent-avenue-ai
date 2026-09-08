@@ -1,0 +1,149 @@
+{
+  "agreement": {
+    "frozen_evaluation": "Three paired training replicates on the retained terminal-safety q1 corpus; fresh development arenas only; no locked-final evaluation or promotion.",
+    "hypotheses": [
+      "All-legal-action public heuristic ranking pretraining improves the final MC candidate relative to a matched MC-only control.",
+      "Ranking preserves the q1 parent gain while avoiding the heuristic non-regression failure.",
+      "Any heuristic-opponent improvement may be teacher imitation and requires direct treatment-control, parent, random, seat, and safety guardrails."
+    ],
+    "operational_repair": "The original frozen run failed after valid replicate-1 artifacts because a TYPE_CHECKING-only Tensor name was evaluated by typing.cast at runtime. Repair source 2de410b imports Tensor locally in the optional RL load path and adds a regression round-trip test. The repaired run restarts from the same fixed inputs, recipes, seeds, arena sizes, and decision criteria; original partial artifacts are validation evidence only and are not used for claims.",
+    "question": "On the exact retained terminal-safety q1 corpus, does an information-safe heuristic candidate-ranking warm start improve the subsequent selected-action Monte Carlo candidate relative to an otherwise identical MC-only control?",
+    "reserved_decisions": "Fresh corpus collection, mixed-opponent replay, locked-final evaluation, promotion, recipe changes, larger budgets, and external retention require new user approval.",
+    "why_it_matters": "This isolates target/action-ordering coverage on the first retained failure corpus before changing data collection, representation, or capacity."
+  },
+  "approval_status": "approved",
+  "cycle_id": "m7-heuristic-ranking-warmstart-v1-repair1",
+  "limits": {
+    "max_concurrency": 1,
+    "max_substantial_jobs": 1,
+    "wall_time_seconds": 28800
+  },
+  "plan_fingerprint": "05470c56456532928d3d6b60f23b8b8c8a5c93804969379a3d8b1e853a20acf9",
+  "schema_version": 1,
+  "tasks": [
+    {
+      "claim_generating": false,
+      "claim_relevant": true,
+      "command": [
+        "bash",
+        "-lc",
+        "make check && mkdir -p '{runtime}/checks' && revision=$(git rev-parse HEAD) && printf '{\"source_revision\":\"%s\",\"status\":\"completed\"}\\n' \"$revision\" > '{runtime}/checks/make-check.json'"
+      ],
+      "depends_on": [],
+      "expected_outputs": [
+        {
+          "json_contains": {
+            "status": "completed"
+          },
+          "path": "{runtime}/checks/make-check.json",
+          "required_keys": [
+            "status",
+            "source_revision"
+          ],
+          "type": "json"
+        }
+      ],
+      "freeze_source": true,
+      "id": "frozen-source-checks",
+      "kind": "check",
+      "max_retries": 0,
+      "resource_class": "light",
+      "resume_safe": true,
+      "timeout_seconds": 900,
+      "working_directory": "{repo}"
+    },
+    {
+      "claim_generating": true,
+      "claim_relevant": true,
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "agent_avenue",
+        "ranking-experiment",
+        "{runtime}/experiment",
+        "--corpus",
+        "{repo}/runs/terminal-safety-v1/q1-a1/corpus",
+        "--mc-dataset",
+        "{repo}/runs/terminal-safety-v1/q1-a1/dataset.npz",
+        "--parent",
+        "{repo}/runs/terminal-safety-v1/q0-a1/checkpoint",
+        "--historical-q1",
+        "{repo}/runs/terminal-safety-v1/q1-a1/candidate",
+        "--seed",
+        "2026090801",
+        "--replicates",
+        "3",
+        "--direct-pairs",
+        "500",
+        "--parent-pairs",
+        "500",
+        "--heuristic-pairs",
+        "300",
+        "--random-pairs",
+        "200"
+      ],
+      "depends_on": [
+        "frozen-source-checks"
+      ],
+      "expected_outputs": [
+        {
+          "json_contains": {
+            "evidence_class": "fixed-corpus-development-recipe-comparison",
+            "status": "completed"
+          },
+          "path": "{runtime}/experiment/result.json",
+          "required_keys": [
+            "version",
+            "status",
+            "evidence_class",
+            "plan_fingerprint",
+            "replicates",
+            "nested_intervals",
+            "conditions",
+            "decision",
+            "result_fingerprint"
+          ],
+          "type": "json"
+        },
+        {
+          "json_contains": {
+            "status": "completed"
+          },
+          "path": "{runtime}/experiment/input-audit.json",
+          "required_keys": [
+            "version",
+            "status",
+            "plan_fingerprint",
+            "inputs",
+            "ranking_dataset_fingerprint",
+            "ranking_dataset_arrays_sha256",
+            "ranking_counts",
+            "artifact_fingerprint"
+          ],
+          "type": "json"
+        },
+        {
+          "path": "{runtime}/experiment/training-summary.json",
+          "required_keys": [
+            "version",
+            "plan_fingerprint",
+            "replicates",
+            "control_reproduction"
+          ],
+          "type": "json"
+        }
+      ],
+      "freeze_source": true,
+      "id": "ranking-recipe-comparison",
+      "kind": "experiment",
+      "max_retries": 0,
+      "resource_class": "substantial",
+      "resume_safe": true,
+      "timeout_seconds": 25200,
+      "working_directory": "{repo}"
+    }
+  ],
+  "version": "bounded-research-workflow-v1"
+}

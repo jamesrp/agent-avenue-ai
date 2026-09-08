@@ -57,6 +57,17 @@ def test_learned_checkpoint_agent_runs_without_recording_local_path(tmp_path: Pa
     assert str(checkpoint) not in game.stdout
 
 
+def test_diagnostics_help_explains_retained_artifact_inputs() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "agent_avenue", "diagnostics", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "--artifact-root" in result.stdout
+    assert "--restore-directory" in result.stdout
+
+
 def test_module_without_command_reports_helpful_error() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "agent_avenue"],

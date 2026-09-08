@@ -172,6 +172,35 @@ def _parser() -> argparse.ArgumentParser:
     safety_audit.add_argument("--output", type=Path)
     safety_audit.add_argument("--allow-code-mismatch", action="store_true")
 
+    diagnostics = subparsers.add_parser(
+        "diagnostics",
+        help="inventory and retrospectively audit retained M6/terminal-safety artifacts",
+    )
+    diagnostics.add_argument(
+        "output", type=Path, help="directory for deterministic diagnostic files"
+    )
+    diagnostics.add_argument(
+        "--artifact-root",
+        type=Path,
+        required=True,
+        help="repository root containing ignored runs/, artifacts/, and checkpoints/",
+    )
+    diagnostics.add_argument(
+        "--archive",
+        type=Path,
+        action="append",
+        default=[],
+        help="retained tar.gz archive to checksum and inspect; repeat for each archive",
+    )
+    diagnostics.add_argument(
+        "--restore-directory",
+        type=Path,
+        help="empty disposable directory for archive extraction and semantic corpus checks",
+    )
+    diagnostics.add_argument(
+        "--trace-limit", type=int, default=4, help="number of information-safe positions to emit"
+    )
+
     crossplay = subparsers.add_parser(
         "crossplay-evaluate",
         help="evaluate qn on held-out records from every prior-policy pair",
@@ -522,6 +551,18 @@ def _run_safety_audit_command(args: argparse.Namespace) -> dict[str, object]:
     return result
 
 
+def _run_diagnostics_command(args: argparse.Namespace) -> dict[str, object]:
+    from .runners.diagnostics import run_diagnostics
+
+    return run_diagnostics(
+        artifact_root=args.artifact_root,
+        output=args.output,
+        archives=tuple(args.archive),
+        restore_directory=args.restore_directory,
+        trace_limit=args.trace_limit,
+    )
+
+
 def _parse_prior(value: str) -> tuple[str, Path]:
     label, separator, raw_path = value.partition("=")
     if not separator or not label or not raw_path:
@@ -621,6 +662,8 @@ def main() -> None:
         result = _run_bootstrap_command(args)
     elif args.command == "safety-audit":
         result = _run_safety_audit_command(args)
+    elif args.command == "diagnostics":
+        result = _run_diagnostics_command(args)
     elif args.command == "crossplay-evaluate":
         result = _run_crossplay_command(args)
     else:

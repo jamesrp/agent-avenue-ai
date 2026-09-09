@@ -10,7 +10,8 @@ h1,h2,h3,h4,p { margin-top:0; } h1 { font-size:clamp(2rem,7vw,4rem); line-height
 .eyebrow { color:var(--green); font-size:.78rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
 .panel,.player-panel,.card,.metadata { background:var(--panel); border:1px solid var(--line); border-radius:.75rem; box-shadow:var(--shadow); padding:1.25rem; }
 .narrow { max-width:38rem; margin-inline:auto; }.handoff { text-align:center; padding:clamp(1.5rem,6vw,4rem); }
-label { display:block; font-weight:700; margin-bottom:.4rem; }input:not([type=hidden]),select { width:100%; border:2px solid #89968e; border-radius:.4rem; background:white; font:inherit; padding:.75rem; }select { margin-bottom:.8rem; }
+label { display:block; font-weight:700; margin-bottom:.4rem; }input:not([type=hidden]):not([type=checkbox]),select { width:100%; border:2px solid #89968e; border-radius:.4rem; background:white; font:inherit; padding:.75rem; }select { margin-bottom:.8rem; }
+.checkbox-row { align-items:flex-start; display:flex; gap:.65rem; margin:.9rem 0 .35rem; }.checkbox-row input { flex:0 0 auto; height:1.2rem; margin:.15rem 0 0; width:1.2rem; }.checkbox-row span { font-weight:700; }
 .hint,.optional { color:var(--muted); font-size:.9rem; }
 button,.button { display:inline-block; border:2px solid var(--green); border-radius:.45rem; background:var(--green); color:white; cursor:pointer; font:inherit; font-weight:750; padding:.7rem 1rem; text-decoration:none; }
 button:hover,.button:hover { background:#0f4733; }button.secondary { background:transparent; color:var(--green); }

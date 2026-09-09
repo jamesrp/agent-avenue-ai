@@ -31,6 +31,7 @@ class WebGame:
     state: GameState
     stage: WebStage = WebStage.PASS
     revealed_actor: PlayerId | None = None
+    skip_take_control: bool = False
     controllers: tuple[SeatController, SeatController] = field(default_factory=_human_controllers)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
@@ -70,12 +71,15 @@ class SessionRepository:
         session: BrowserSession,
         state: GameState,
         controllers: tuple[SeatController, SeatController] | None = None,
+        *,
+        skip_take_control: bool = False,
     ) -> WebGame:
         with self._lock:
             game = WebGame(
                 secrets.token_urlsafe(18),
                 secrets.token_urlsafe(18),
                 state,
+                skip_take_control=skip_take_control,
                 controllers=controllers or _human_controllers(),
             )
             session.games[game.game_id] = game

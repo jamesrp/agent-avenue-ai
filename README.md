@@ -249,7 +249,7 @@ make web
 It currently supports:
 
 - explicit or generated seeds;
-- human-versus-human hot-seat play;
+- human-versus-human hot-seat play, with an optional single-person QA mode that skips take-control screens;
 - human-versus-random and human-versus-heuristic play;
 - human-versus-historical-q0 and human-versus-terminal-safety-q0 play through opaque server-side
   allowlist keys;

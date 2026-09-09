@@ -22,17 +22,22 @@ def _new_game(
     seed: str = "17",
     mode: str = "human-human",
     human_seat: str = "player_one",
+    *,
+    skip_take_control: bool = False,
 ) -> tuple[str, str]:
     landing = client.get("/")
     token = _csrf(landing.text)
+    data = {
+        "csrf_token": token,
+        "seed": seed,
+        "mode": mode,
+        "human_seat": human_seat,
+    }
+    if skip_take_control:
+        data["skip_take_control"] = "on"
     response = client.post(
         "/games",
-        data={
-            "csrf_token": token,
-            "seed": seed,
-            "mode": mode,
-            "human_seat": human_seat,
-        },
+        data=data,
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -104,6 +109,52 @@ def test_pass_page_and_direct_decision_get_do_not_reveal_private_cards() -> None
     assert direct.status_code == 303
     assert direct.headers["location"].endswith("/pass")
     assert all(card.value not in response.text for card in game.state.hands[0])
+
+
+def test_skip_take_control_advances_directly_between_human_views() -> None:
+    app = create_app()
+    client = TestClient(app)
+    landing = client.get("/")
+    assert 'name="skip_take_control"' in landing.text
+
+    game_id, token = _new_game(client, "17", skip_take_control=True)
+    game = _stored_game(client, app, game_id)
+    assert game.skip_take_control
+    assert game.revealed_actor is not None
+    assert game.revealed_actor.value == PlayerId.PLAYER_ONE.value
+    assert client.get(f"/games/{game_id}").status_code == 200
+
+    play = legal_actions(game.state)[0]
+    assert isinstance(play, PlayOfferAction)
+    response = client.post(
+        f"/games/{game_id}/actions",
+        data=_action_data(play, token),
+        follow_redirects=False,
+    )
+    assert response.headers["location"] == f"/games/{game_id}"
+    assert game.revealed_actor is not None
+    assert game.revealed_actor.value == PlayerId.PLAYER_TWO.value
+    assert (
+        client.get(f"/games/{game_id}/pass", follow_redirects=False).headers["location"]
+        == f"/games/{game_id}"
+    )
+
+    recruit = legal_actions(game.state)[0]
+    assert isinstance(recruit, RecruitAction)
+    response = client.post(
+        f"/games/{game_id}/actions",
+        data=_action_data(recruit, token),
+        follow_redirects=False,
+    )
+    assert response.headers["location"] == f"/games/{game_id}/turn-result"
+    continued = client.post(
+        f"/games/{game_id}/turn-result/continue",
+        data={"csrf_token": token},
+        follow_redirects=False,
+    )
+    assert continued.headers["location"] == f"/games/{game_id}"
+    assert game.revealed_actor is not None
+    assert game.revealed_actor.value == PlayerId.PLAYER_TWO.value
 
 
 def test_recruiter_never_receives_hidden_offer_value() -> None:
@@ -207,6 +258,19 @@ def test_human_can_play_random_or_heuristic_from_either_seat() -> None:
             assert game.revealed_actor is not None
             assert game.revealed_actor.value == human_seat
         assert all(controller.kind in {"human", "agent"} for controller in game.controllers)
+
+
+def test_skip_take_control_is_ignored_for_ai_games() -> None:
+    app = create_app()
+    client = TestClient(app)
+    game_id, _ = _new_game(
+        client,
+        "23",
+        "human-random",
+        "player_one",
+        skip_take_control=True,
+    )
+    assert not _stored_game(client, app, game_id).skip_take_control
 
 
 def test_agent_web_flow_never_renders_hidden_face_down_or_diagnostics() -> None:

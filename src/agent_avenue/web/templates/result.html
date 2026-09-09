@@ -11,6 +11,7 @@
     <input type="hidden" name="seed" value="{{ metadata.seed }}">
     <input type="hidden" name="mode" value="{{ metadata.mode }}">
     <input type="hidden" name="human_seat" value="{{ metadata.human_seat }}">
+    {% if metadata.skip_take_control %}<input type="hidden" name="skip_take_control" value="on">{% endif %}
     <button type="submit" class="secondary">Replay this seed</button>
   </form>
 </section>

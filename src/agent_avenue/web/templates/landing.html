@@ -25,6 +25,11 @@
       <option value="player_two">Player Two</option>
     </select>
     <p class="hint">The seat choice is ignored for human-versus-human games.</p>
+    <label class="checkbox-row" for="skip-take-control">
+      <input id="skip-take-control" name="skip_take_control" type="checkbox">
+      <span>Skip take-control screens in human-versus-human games</span>
+    </label>
+    <p class="hint">Useful for single-person engine QA. Both players’ private views will be shown without a handoff prompt.</p>
     <label for="seed">Seed <span class="optional">(optional)</span></label>
     <input id="seed" name="seed" inputmode="numeric" pattern="[0-9]*" placeholder="Generated when blank">
     <p class="hint">Use a value from 0 through 18446744073709551615.</p>

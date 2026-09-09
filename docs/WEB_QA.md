@@ -17,8 +17,10 @@ Open `http://localhost:8000`. The server binds to `0.0.0.0:8000` and must run wi
 active sessions are in memory.
 
 The landing page supports human-versus-human, human-versus-random, human-versus-heuristic, and the
-two server-allowlisted learned policies. Learned checkpoints are loaded and validated lazily on the
-server when selected. The browser submits only an opaque allowlist key, never a filesystem path.
+two server-allowlisted learned policies. Human-versus-human games can optionally skip every
+pass-device/take-control screen for single-person engine QA. Learned checkpoints are loaded and
+validated lazily on the server when selected. The browser submits only an opaque allowlist key,
+never a filesystem path.
 
 ## Complete-game smoke pass
 
@@ -36,6 +38,9 @@ server when selected. The browser submits only an opaque allowlist key, never a 
 - [ ] Finish the game and verify winner, reason, resolution, seed, replay ID, rules/shuffle versions,
       and public fingerprint.
 - [ ] Use **Replay this seed** and confirm the initial hand matches.
+- [ ] Start a human-versus-human game with **Skip take-control screens** selected; confirm play,
+      recruit, and next-turn decisions advance directly to the correct player view while the public
+      turn-result screen remains visible.
 - [ ] Start human-versus-random and human-versus-heuristic games with the human in each seat;
       confirm an AI opening advances directly to the first human decision.
 - [ ] After each human action in an AI game, confirm automated decisions advance only until the

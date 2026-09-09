@@ -91,6 +91,14 @@ def _advance_agents(game: WebGame) -> None:
     game.state = session.state
 
 
+def _reveal_current_human(game: WebGame) -> None:
+    actor = decision_actor(game.state)
+    if actor is None or not _current_is_human(game):
+        raise RuntimeError("current decision does not belong to a human")
+    game.revealed_actor = actor
+    game.stage = WebStage.DECISION
+
+
 def _checkpoint_fingerprint(config: Mapping[str, object]) -> str | None:
     direct = config.get("checkpoint_fingerprint")
     if isinstance(direct, str):
@@ -143,6 +151,7 @@ def _metadata(game: WebGame, opponents: LearnedOpponentRegistry) -> dict[str, ob
         "controllers": [controller.kind for controller in game.controllers],
         "mode": mode,
         "human_seat": human_seat,
+        "skip_take_control": game.skip_take_control,
         "controller_label": controller_label,
         "opponent_label": opponent_label,
         "checkpoint_fingerprint": checkpoint_fingerprint,
@@ -174,6 +183,7 @@ def build_router(repository: SessionRepository, opponents: LearnedOpponentRegist
         seed: Annotated[str, Form()] = "",
         mode: Annotated[str, Form()] = "human-human",
         human_seat: Annotated[str, Form()] = PlayerId.PLAYER_ONE.value,
+        skip_take_control: Annotated[str | None, Form()] = None,
     ) -> RedirectResponse:
         _csrf(request, csrf_token)
         try:
@@ -228,8 +238,16 @@ def build_router(repository: SessionRepository, opponents: LearnedOpponentRegist
                 status.HTTP_400_BAD_REQUEST,
                 "Seed, mode, or human seat is invalid",
             ) from exc
-        game = repository.create_game(_session(request), state, controllers)
+        game = repository.create_game(
+            _session(request),
+            state,
+            controllers,
+            skip_take_control=mode == "human-human" and skip_take_control == "on",
+        )
         if _is_hot_seat(game):
+            if game.skip_take_control:
+                _reveal_current_human(game)
+                return _redirect(f"/games/{game.game_id}")
             return _redirect(f"/games/{game.game_id}/pass")
         _advance_agents(game)
         if game.state.phase is Phase.TERMINAL:
@@ -246,6 +264,10 @@ def build_router(repository: SessionRepository, opponents: LearnedOpponentRegist
             if not _is_hot_seat(game):
                 if game.state.phase is Phase.TERMINAL:
                     return _redirect(f"/games/{game_id}/result")
+                return _redirect(f"/games/{game_id}")
+            if game.skip_take_control:
+                if game.stage is WebStage.PASS:
+                    _reveal_current_human(game)
                 return _redirect(f"/games/{game_id}")
             if game.stage is WebStage.DECISION:
                 return _redirect(f"/games/{game_id}")
@@ -372,6 +394,9 @@ def build_router(repository: SessionRepository, opponents: LearnedOpponentRegist
             if was_recruit:
                 game.stage = WebStage.SUMMARY
                 return _redirect(f"/games/{game_id}/turn-result")
+            if game.skip_take_control:
+                _reveal_current_human(game)
+                return _redirect(f"/games/{game_id}")
             game.stage = WebStage.PASS
             return _redirect(f"/games/{game_id}/pass")
 
@@ -411,6 +436,9 @@ def build_router(repository: SessionRepository, opponents: LearnedOpponentRegist
             if game.state.phase is Phase.TERMINAL:
                 game.stage = WebStage.TERMINAL
                 return _redirect(f"/games/{game_id}/result")
+            if game.skip_take_control:
+                _reveal_current_human(game)
+                return _redirect(f"/games/{game_id}")
             game.stage = WebStage.PASS
             return _redirect(f"/games/{game_id}/pass")
 

@@ -68,6 +68,12 @@ from .self_play import (
     schedule_generation,
     schedule_heuristic_bootstrap,
 )
+from .strength_audit import (
+    StrengthAuditError,
+    audit_public_forced_wins,
+    audit_recruit_patterns,
+    paired_policy_difference_interval,
+)
 
 __all__ = [
     "GENERATION_EPSILONS",
@@ -98,9 +104,12 @@ __all__ = [
     "RankingExperimentPlan",
     "RetainedArenaResult",
     "SeatStats",
+    "StrengthAuditError",
     "advance_until_human_or_terminal",
     "arena_report_from_records",
     "assess_attempt",
+    "audit_public_forced_wins",
+    "audit_recruit_patterns",
     "bootstrap_mean_interval",
     "corpus_declaration",
     "create_agent_session",
@@ -112,6 +121,7 @@ __all__ = [
     "iter_games",
     "learned_self_play_agent",
     "paired_bootstrap_interval",
+    "paired_policy_difference_interval",
     "planned_epsilon",
     "resolve_iteration_plan",
     "resolve_ranking_experiment_plan",

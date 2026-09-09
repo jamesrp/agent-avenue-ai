@@ -18,6 +18,14 @@ from .random_source import (
     derive_seed,
 )
 from .scripted import ScriptCallback, ScriptedAgent
+from .terminal_offense import (
+    SELECTION_VERSION,
+    TERMINAL_OFFENSE_VERSION,
+    WIN_DEFINITION_VERSION,
+    TerminalOffenseAgent,
+    TerminalOffenseFilter,
+    filter_immediate_win_actions,
+)
 from .terminal_safety import (
     FALLBACK_VERSION,
     RESOLUTION_SCOPE,
@@ -27,6 +35,7 @@ from .terminal_safety import (
     TerminalSafetyFilter,
     filter_terminal_actions,
     information_consistent_face_down_cards,
+    terminal_outcomes_for_action,
 )
 
 __all__ = [
@@ -35,8 +44,11 @@ __all__ = [
     "RESOLUTION_SCOPE",
     "RNG_ALGORITHM",
     "SEED_DERIVATION",
+    "SELECTION_VERSION",
+    "TERMINAL_OFFENSE_VERSION",
     "TERMINAL_SAFETY_VERSION",
     "UNCERTAINTY_VERSION",
+    "WIN_DEFINITION_VERSION",
     "Agent",
     "AgentTurn",
     "DeterministicRandom",
@@ -50,12 +62,16 @@ __all__ = [
     "RandomSource",
     "ScriptCallback",
     "ScriptedAgent",
+    "TerminalOffenseAgent",
+    "TerminalOffenseFilter",
     "TerminalSafetyAgent",
     "TerminalSafetyFilter",
     "choose_agent_action",
     "derive_seed",
+    "filter_immediate_win_actions",
     "filter_terminal_actions",
     "information_consistent_face_down_cards",
     "score_actions",
+    "terminal_outcomes_for_action",
     "visible_unknown_multiset",
 ]

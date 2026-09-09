@@ -11,6 +11,7 @@ from agent_avenue.engine.model import (
     PlayerId,
     PlayOfferAction,
     RecruitAction,
+    TerminalOutcome,
     player_index,
 )
 from agent_avenue.engine.terminal import TERMINAL_EVALUATOR_VERSION, adjudicate_position
@@ -69,13 +70,51 @@ def _deck_empty_after_action(
     return observation.remaining_deck_count == draw_count
 
 
-def _loses_after_assignment(
+def terminal_outcomes_for_action(
+    observation: PlayerObservation, action: PlayOfferAction | RecruitAction
+) -> tuple[TerminalOutcome | None, ...]:
+    """Resolve every public-information-consistent current-turn assignment."""
+    deck_empty = _deck_empty_after_action(observation, action)
+    assignments: tuple[tuple[CardName, CardName], ...]
+    if isinstance(action, PlayOfferAction):
+        # The opponent may recruit either slot; the offerer receives the other card.
+        assignments = (
+            (action.face_down, action.face_up),
+            (action.face_up, action.face_down),
+        )
+    else:
+        decision = observation.decision
+        if not isinstance(decision, RecruitContext):
+            raise ValueError("recruit action requires public recruit context")
+        hidden_cards = (
+            (decision.known_face_down,)
+            if decision.known_face_down is not None
+            else information_consistent_face_down_cards(observation, decision.face_up)
+        )
+        assignments = tuple(
+            (decision.face_up, hidden)
+            if action.slot is OfferSlot.FACE_UP
+            else (hidden, decision.face_up)
+            for hidden in hidden_cards
+        )
+    return tuple(
+        _outcome_after_assignment(
+            observation,
+            viewer_card=viewer_card,
+            opponent_card=opponent_card,
+            deck_empty=deck_empty,
+        )
+        for viewer_card, opponent_card in assignments
+    )
+
+
+def _outcome_after_assignment(
     observation: PlayerObservation,
     *,
     viewer_card: CardName,
     opponent_card: CardName,
     deck_empty: bool,
-) -> bool:
+) -> TerminalOutcome | None:
     viewer = _public_player(observation, observation.viewer)
     opponent = _public_player(observation, observation.viewer.other())
     scores = [0, 0]
@@ -87,7 +126,7 @@ def _loses_after_assignment(
         effect = recruit_effect(card, cards.count(card))
         scores[index] = public.score + (effect.points if effect.kind == "score" else 0)
     next_player = observation.active_player.other()
-    outcome = adjudicate_position(
+    return adjudicate_position(
         scores=(scores[0], scores[1]),
         recruited=(recruited[0], recruited[1]),
         active_player=observation.active_player,
@@ -95,51 +134,23 @@ def _loses_after_assignment(
         deck_empty=deck_empty,
         next_player_hand_size=_public_player(observation, next_player).hand_size,
     )
-    return outcome is not None and outcome.winner is not observation.viewer
+
+
+def _is_viewer_loss(outcome: TerminalOutcome | None, viewer: PlayerId) -> bool:
+    return outcome is not None and outcome.winner is not viewer
 
 
 def _play_is_unsafe(observation: PlayerObservation, action: PlayOfferAction) -> bool:
-    deck_empty = _deck_empty_after_action(observation, action)
-    # The opponent may recruit either slot; the offerer receives the other card.
-    return _loses_after_assignment(
-        observation,
-        viewer_card=action.face_down,
-        opponent_card=action.face_up,
-        deck_empty=deck_empty,
-    ) or _loses_after_assignment(
-        observation,
-        viewer_card=action.face_up,
-        opponent_card=action.face_down,
-        deck_empty=deck_empty,
+    return any(
+        _is_viewer_loss(outcome, observation.viewer)
+        for outcome in terminal_outcomes_for_action(observation, action)
     )
 
 
 def _recruit_is_unsafe(observation: PlayerObservation, action: RecruitAction) -> bool:
-    decision = observation.decision
-    if not isinstance(decision, RecruitContext):
-        raise ValueError("recruit action requires public recruit context")
-    hidden_cards = (
-        (decision.known_face_down,)
-        if decision.known_face_down is not None
-        else information_consistent_face_down_cards(observation, decision.face_up)
-    )
-    deck_empty = _deck_empty_after_action(observation, action)
-    losses = []
-    for hidden in hidden_cards:
-        if action.slot is OfferSlot.FACE_UP:
-            viewer_card, opponent_card = decision.face_up, hidden
-        else:
-            viewer_card, opponent_card = hidden, decision.face_up
-        losses.append(
-            _loses_after_assignment(
-                observation,
-                viewer_card=viewer_card,
-                opponent_card=opponent_card,
-                deck_empty=deck_empty,
-            )
-        )
+    outcomes = terminal_outcomes_for_action(observation, action)
     # A recruit action is provably losing only across the entire public information set.
-    return all(losses)
+    return all(_is_viewer_loss(outcome, observation.viewer) for outcome in outcomes)
 
 
 def filter_terminal_actions(

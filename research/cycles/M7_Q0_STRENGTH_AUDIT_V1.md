@@ -1,9 +1,10 @@
 # Approved research-cycle agreement: q0 strength and tactical-leak audit
 
-**Cycle ID:** `m7-q0-strength-audit-v1`  
-**Status:** Approved by user  
-**Approved:** September 9, 2026  
-**Selected policy:** `q0-terminal-safety-v1`  
+**Cycle ID:** `m7-q0-strength-audit-v1`
+**Status:** Complete
+**Approved and completed:** September 9, 2026
+**Result:** [`docs/Q0_STRENGTH_AUDIT_RESULTS.md`](../../docs/Q0_STRENGTH_AUDIT_RESULTS.md)
+**Selected policy:** `q0-terminal-safety-v1`
 **Parent evidence:** [`docs/TERMINAL_SAFETY_RESULTS.md`](../../docs/TERMINAL_SAFETY_RESULTS.md)
 
 ## Research question

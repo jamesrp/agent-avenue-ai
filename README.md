@@ -18,7 +18,7 @@ The long-term measure of success is an AI that becomes meaningfully stronger thr
 self-play while remaining fair, testable, auditable, and practical to run on a CPU-only development
 machine.
 
-## Current status — September 8, 2026
+## Current status — September 9, 2026
 
 | Milestone | Status | Result |
 | --- | --- | --- |
@@ -31,7 +31,8 @@ machine.
 | [Terminal-safety hybrid](docs/TERMINAL_SAFETY_RESULTS.md) | Complete | Shielded q0 retained after q1–q4; all-pairs diagnostics and locked final archived |
 | [M7 diagnostic readiness](docs/M7_DIAGNOSTIC_READINESS_RESULTS.md) | Complete | Retention/recompute audit, learned web QA, and next-experiment recommendation |
 | [M7 ranking warm start](docs/M7_HEURISTIC_RANKING_RESULTS.md) | Complete; did not advance | Three paired recipe replicates and 15,600 fresh development games |
-| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress | First controlled recipe screen complete; broader experiment program remains open |
+| [q0 strength audit](docs/Q0_STRENGTH_AUDIT_RESULTS.md) | Complete | 72,000 fresh games; exact missed-lethal and exploit-surface diagnostics |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress | First recipe screen and q0 strength audit complete |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
 **q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
@@ -60,6 +61,15 @@ non-regression difference was -18.17 percentage points with a nested 95% bootstr
 [-24.17, -12.28]. Shielded q0 remains the selected champion. See
 [`docs/M7_DIAGNOSTIC_READINESS_RESULTS.md`](docs/M7_DIAGNOSTIC_READINESS_RESULTS.md) and
 [`docs/M7_HEURISTIC_RANKING_RESULTS.md`](docs/M7_HEURISTIC_RANKING_RESULTS.md).
+
+The September 9 strength audit then ran 72,000 fresh games across selected q0, a diagnostic
+immediate-win wrapper, q1–q4, historical q0, the heuristic, and random. Selected q0 remained strong
+against random (81.3%), the heuristic (68.45%), and historical q0 (54.45%), but won only
+19.2%–25.65% against q1–q4. It missed 589 of 1,832 publicly guaranteed current-turn wins; the narrow
+wrapper converted every such opportunity on its own trajectories and improved q0 by 0.25–1.60
+percentage points across all shared opponents. This establishes that q0 is competent but not
+optimal, and that “selected champion” is protocol-relative rather than “strongest observed policy.”
+See [`docs/Q0_STRENGTH_AUDIT_RESULTS.md`](docs/Q0_STRENGTH_AUDIT_RESULTS.md).
 
 Historical Milestone 6 results remain in
 [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md), and the original q0 evaluation remains in

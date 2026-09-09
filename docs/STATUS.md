@@ -1,11 +1,11 @@
 # Project status
 
-**As of:** September 8, 2026
+**As of:** September 9, 2026
 **Current selected hybrid champion:** q0-terminal-safety-v1
 **Permanent pure-neural baseline:** historical q0
 **Latest completed learned experiment:** [M7 heuristic ranking warm-start screen](M7_HEURISTIC_RANKING_RESULTS.md)
 
-**Latest completed research cycle:** [M7 heuristic ranking warm start](M7_HEURISTIC_RANKING_RESULTS.md)
+**Latest completed research cycle:** [q0 strength and tactical-leak audit](Q0_STRENGTH_AUDIT_RESULTS.md)
 
 This document is the concise, living index of completed work and current next steps. Historical
 milestone documents describe the intended scope at the time; `README.md` and this file describe the
@@ -22,7 +22,8 @@ actual present state.
 | [5: first learned checkpoint](NEURAL_AI_PLAN.md#milestone-5-learned-agent-and-first-usable-checkpoint) | Complete | [q0 result and reproduction contract](MILESTONE5_RESULTS.md) |
 | [6: frozen iterative self-play](MILESTONE6.md) | Complete | [q1–q4 decisions, final evaluation, and archive](MILESTONE6_RESULTS.md) |
 | [Terminal-safety hybrid](TERMINAL_SAFETY_EXPERIMENT.md) | Complete | [Shielded q0–q4 result, all-pairs diagnostics, and archive](TERMINAL_SAFETY_RESULTS.md) |
-| [7: controlled RL experiments](MILESTONE7.md) | In progress; first recipe screen complete | [Heuristic ranking warm start did not advance](M7_HEURISTIC_RANKING_RESULTS.md) |
+| [q0 strength audit](Q0_STRENGTH_AUDIT_RESULTS.md) | Complete | 72,000 fresh games; exact missed-lethal and exploit-surface diagnostics |
+| [7: controlled RL experiments](MILESTONE7.md) | In progress; recipe screen and strength audit complete | [Ranking warm start did not advance](M7_HEURISTIC_RANKING_RESULTS.md) |
 
 ## Current measured policies
 
@@ -31,7 +32,7 @@ actual present state.
 | `random-v1` | None | Symmetry/control baseline |
 | `greedy-public-v1` | Hand-authored public heuristic | 86.25% vs random over 400 games |
 | historical q0 | 4,000 epsilon-heuristic games, 62,184 decisions | Locked final: 75.5% vs random and 57.3% vs heuristic over 1,000 games each |
-| q0-terminal-safety-v1 | 4,000 shielded epsilon-heuristic games, 65,746 decisions | Locked final: 77.9% vs random, 67.4% vs heuristic, and 56.7% vs historical q0 |
+| q0-terminal-safety-v1 | 4,000 shielded epsilon-heuristic games, 65,746 decisions | Fresh strength audit: 81.3% vs random, 68.45% vs heuristic, 54.45% vs historical q0; 19.2%–25.65% vs q1–q4 |
 
 The hybrid q0 paired-bootstrap intervals are 75.3%–80.5% against random, 64.4%–70.4% against the
 heuristic, and 54.1%–59.3% against historical q0. Historical and hybrid final blocks use different
@@ -104,6 +105,29 @@ not show that all ranking supervision is harmful; it rejects this exact parent-i
 warm-start recipe on this fixed corpus. The selected champion remains unchanged. See
 [`M7_HEURISTIC_RANKING_RESULTS.md`](M7_HEURISTIC_RANKING_RESULTS.md).
 
+## q0 strength and tactical-leak audit
+
+The September 9 audit reused one fresh common 1,000-setup block across all 36 unordered matchups in
+a nine-policy field, for 72,000 seat-balanced games and 1,015,338 decisions. Selected q0 remained
+strong against the three available anchors but was decisively beaten by every q1–q4 descendant. The
+descendants were rejected under prior frozen heuristic non-regression criteria; they must not be
+described as absolutely weaker than q0. Fresh q3 had no point-estimate loss against the other seven
+core policies, although q1/q4 comparisons were statistically close and all descendants share one
+training lineage.
+
+The exact public-information audit found 1,832 guaranteed current-turn wins for q0 and 589 misses
+(32.15%). Of those misses, 444 did not win immediately and 119 eventually lost. A diagnostic wrapper
+forced these wins, missed zero on its own trajectories, and improved q0 by 0.25–1.60 percentage
+points against every shared opponent. It did not materially close the q1–q4 gap. q0 still executed
+zero avoidable provable immediate losses, confirming that the new leak is offensive rather than a
+failure of the terminal-safety shield.
+
+The audit also found highly predictable recruit responses: q0 took visible Saboteur 0% of the time,
+visible Sentinel 95.1%, visible Double Agent 77.6%, and visible Codebreaker 12.4%. The old
+Codebreaker-up/Saboteur-down trap persisted descriptively, but true hidden-offer slices are
+opponent-known offline diagnostics rather than clean causal estimates. See
+[`Q0_STRENGTH_AUDIT_RESULTS.md`](Q0_STRENGTH_AUDIT_RESULTS.md).
+
 ## Web status
 
 The QA web UI currently supports:
@@ -131,17 +155,19 @@ The repository currently records:
 - deterministic game-level data splits;
 - paired, seat-swapped arena blocks;
 - immutable promotion decisions;
-- replay-derived immediate-loss safety diagnostics; and
+- replay-derived immediate-loss safety and guaranteed-current-turn-win diagnostics;
+- fresh common-block all-pairs policy tournaments; and
 - held-out, setup-disjoint all-pairs prior-policy evaluation plans and reports.
 
 The q0 source corpus, dataset, checkpoint, logs, and reports remain retained. The q0 historical arena
-aggregates predate the individual-record policy. Every Milestone 6, terminal-safety, and M7 ranking
-evaluation arena retains compressed semantic records. The completed ranking screen adds a
-versioned all-legal-action dataset, three paired training replicates per recipe, nested
-training/block bootstrap intervals, and independently recomputed arena and safety artifacts. These
-completed lines are packaged in verified ignored archives with embedded member checksums. Generated
-artifacts stay out of ordinary Git history; compact results and exact source revisions remain
-committed. See the [M7 ranking result](M7_HEURISTIC_RANKING_RESULTS.md),
+aggregates predate the individual-record policy. Every Milestone 6, terminal-safety, M7 ranking, and
+q0 strength-audit arena retains compressed semantic records. The strength audit adds 72,000 fresh
+games, exact information-safe lethal conversion, matched terminal-offense contrasts, repeatable
+recruit-response slices, and full independent recomputation. These completed lines are packaged in
+verified ignored archives with embedded member checksums. Generated artifacts stay out of ordinary
+Git history; compact results and exact source revisions remain committed. See the
+[q0 strength audit](Q0_STRENGTH_AUDIT_RESULTS.md),
+[M7 ranking result](M7_HEURISTIC_RANKING_RESULTS.md),
 [terminal-safety result](TERMINAL_SAFETY_RESULTS.md), [Milestone 6 result](MILESTONE6_RESULTS.md),
 and [experiment protocol](EXPERIMENT_PROTOCOL.md).
 
@@ -154,6 +180,7 @@ and [experiment protocol](EXPERIMENT_PROTOCOL.md).
 | Milestone 6 production q1–q4 and final evaluation | `139318bad909438e8a3e1cb9dd962c80653875d0` | `5a66a4a63f7c5680f3db81e83dfebf53af63f73d29b653645850bb013a45ba0c` |
 | Terminal-safety q0–q4, all-pairs diagnostics, and final | `19c2871080503c62a53522415e0645913d7674b0` | `9c8b39bb4e81bb29e0902c56198557f63b7e9992bdaff845967c562fc064f429` |
 | M7 heuristic ranking warm-start repaired run | `240d33495c29e227c57afe2b58d73ad792fbdbd8` | `9f9e78d1c4a5a124a12d8f01056788520a65bc86bec652ffa113da24e5975b49` |
+| q0 strength and tactical-leak fresh run | `2cefd151383e9cf3a614e2b58ee3ac2450727a61` | `ae8cd87f4b60c4b32a2b0ac728b1c3c0ec51f74944b9afb4d5089a1547d2e4e5` |
 
 ## Research workflow status
 
@@ -182,16 +209,20 @@ replicate-1 tensors match exactly. The repaired run retained 22 arenas containin
 recomputed every aggregate and safety report, and concluded that the frozen recipe does not advance.
 See [`M7_HEURISTIC_RANKING_RESULTS.md`](M7_HEURISTIC_RANKING_RESULTS.md).
 
+The approved q0 strength audit completed through one validator-only operational repair. Its 72,000
+fresh games and exact tactical audits reproduced independently. The repair corrected only the
+validator's result-fingerprint normalization and did not change claim-generating evidence. See
+[`Q0_STRENGTH_AUDIT_RESULTS.md`](Q0_STRENGTH_AUDIT_RESULTS.md).
+
 No research cycle is currently running. VM-reboot execution resume and off-VM artifact durability
 remain unconfigured.
 
 ## Planned next work
 
-1. decide whether to approve a diagnostic-only teacher-retention/washout audit on the existing
-   parent, initializer, control, and treatment artifacts;
-2. use that audit to characterize endpoint teacher retention, calibration, phase/action effects, and
-   shield-veto concentration, narrowing—but not causally separating—persistence, washout, and
-   ordinal/value mismatch hypotheses without new training or gameplay;
-3. if diagnostics do not justify a narrow target repair, consider mixed-opponent replay as the next
-   substantive data intervention; and
+1. decide whether to confirm and deploy the narrow immediate-win wrapper after auditing exact neural
+   ties and policy-ID permutation sensitivity;
+2. evaluate q0 and the q1–q4 lineage against independently designed stronger opponents and disjoint
+   setup blocks, with multiple training replicates before making a broader champion claim;
+3. consider a shallow search or stronger heuristic challenger to create an external tactical
+   reference rather than relying mainly on one self-play lineage; and
 4. choose an off-VM retention mechanism if stronger disaster recovery is desired.

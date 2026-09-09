@@ -8,40 +8,87 @@
 {% set board = view %}{% include "_board.html" %}
 {% if view.decision.kind == "play" %}
 <section aria-labelledby="decision-heading">
-  <h2 id="decision-heading">Choose an offer</h2>
-  <p>Select an ordered pair: one card will be face up and one face down.</p>
-  <div class="hand" aria-label="Your hand">
-  {% for card in view.own_hand %}
-    <article class="card"><h3>{{ card.label }}</h3><p>{{ card.effect }}</p></article>
-  {% endfor %}
-  </div>
-  <div class="actions">
-  {% for action in actions %}
-    <form method="post" action="/games/{{ game_id }}/actions">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="revision" value="{{ action.revision }}">
-      <input type="hidden" name="face_up" value="{{ action.face_up.value }}">
-      <input type="hidden" name="face_down" value="{{ action.face_down.value }}">
-      <button type="submit"><strong>Face up:</strong> {{ action.face_up.value|replace('_', ' ')|title }}<br><strong>Face down:</strong> {{ action.face_down.value|replace('_', ' ')|title }}</button>
-    </form>
-  {% endfor %}
-  </div>
+  <h2 id="decision-heading">Create an offer</h2>
+  <p>Choose one card to play face up and a differently named card to play face down.</p>
+  <noscript><p class="panel">Offer selection requires JavaScript in this QA interface.</p></noscript>
+  <form
+    method="post"
+    action="/games/{{ game_id }}/actions"
+    class="offer-builder"
+    data-offer-builder
+    data-allow-matching="{{ 'true' if view.allow_matching_offer else 'false' }}"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="revision" value="{{ view.decision.revision }}">
+    <input type="hidden" name="face_up" value="" data-offer-value="face_up">
+    <input type="hidden" name="face_down" value="" data-offer-value="face_down">
+
+    <div class="offer-preview" aria-label="Offer preview">
+      <article class="preview-slot">
+        <p class="eyebrow">Face up</p>
+        <div class="card-placeholder" data-preview-placeholder="face_up">Choose a face-up card</div>
+        <img class="card-image preview-image" data-preview-image="face_up" src="" alt="" width="98" height="136" hidden>
+      </article>
+      <article class="preview-slot">
+        <p class="eyebrow">Face down</p>
+        <div class="card-placeholder" data-preview-placeholder="face_down">Choose a face-down card</div>
+        <img class="card-image preview-image" data-preview-image="face_down" src="{{ url_for('static', path='/cards/card-back.png') }}" alt="Face-down card" width="98" height="136" hidden>
+      </article>
+    </div>
+
+    <div class="hand offer-hand" aria-label="Your hand">
+    {% for card in view.own_hand %}
+      <article
+        class="hand-card"
+        data-hand-card
+        data-card-index="{{ loop.index0 }}"
+        data-card-name="{{ card.value }}"
+        data-card-alt="{{ card.alt }}"
+        data-card-image="{{ url_for('static', path='/' ~ card.image) }}"
+      >
+        <img class="card-image" src="{{ url_for('static', path='/' ~ card.image) }}" alt="{{ card.alt }}" width="98" height="136">
+        <div class="card-controls" aria-label="Play {{ card.label }}">
+          <button type="button" class="card-role-button" data-select-slot="face_up" aria-pressed="false">
+            <span data-selection-label>Face up</span>
+            <span data-undo-label hidden><span class="trash-icon" aria-hidden="true">🗑</span><span class="sr-only">Undo face-up selection</span></span>
+          </button>
+          <button type="button" class="card-role-button secondary" data-select-slot="face_down" aria-pressed="false">
+            <span data-selection-label>Face down</span>
+            <span data-undo-label hidden><span class="trash-icon" aria-hidden="true">🗑</span><span class="sr-only">Undo face-down selection</span></span>
+          </button>
+        </div>
+      </article>
+    {% endfor %}
+    </div>
+
+    <div class="offer-confirmation">
+      <p class="selection-status" data-selection-status aria-live="polite">Choose both cards to continue.</p>
+      <button type="submit" data-confirm-offer disabled>Confirm offer</button>
+    </div>
+  </form>
 </section>
 {% else %}
 <section aria-labelledby="decision-heading">
-  <h2 id="decision-heading">Recruit one offer slot</h2>
-  <p>The other card goes to {{ view.active_player }}. The face-down identity remains hidden until recruitment resolves.</p>
-  <div class="offer-grid">
-    <article class="card face-up"><p class="eyebrow">Face up</p><h3>{{ view.offer.face_up.label }}</h3><p>{{ view.offer.face_up.effect }}</p></article>
-    <article class="card face-down"><p class="eyebrow">Face down</p><h3>Hidden agent</h3><p>Identity unrevealed</p></article>
-  </div>
-  <div class="actions two">
+  <h2 id="decision-heading">Recruit one card</h2>
+  <p>The other card goes to {{ view.active_player }}. Click the card you want to recruit.</p>
+  <div class="recruit-choices">
   {% for action in actions %}
-    <form method="post" action="/games/{{ game_id }}/actions">
+    <form method="post" action="/games/{{ game_id }}/actions" class="recruit-choice-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="revision" value="{{ action.revision }}">
       <input type="hidden" name="slot" value="{{ action.slot.value }}">
-      <button type="submit">Recruit {{ action.slot.value|replace('_', ' ')|title }}</button>
+      {% if action.slot.value == "face_up" %}
+      <p class="eyebrow">Face up</p>
+      <button type="submit" class="card-choice" aria-label="Recruit face up: {{ view.offer.face_up.alt }}">
+        <img class="card-image" src="{{ url_for('static', path='/' ~ view.offer.face_up.image) }}" alt="{{ view.offer.face_up.alt }}" width="98" height="136">
+      </button>
+      {% else %}
+      <p class="eyebrow">Face down</p>
+      <button type="submit" class="card-choice" aria-label="Recruit face-down card">
+        <img class="card-image" src="{{ url_for('static', path='/cards/card-back.png') }}" alt="Face-down card" width="98" height="136">
+      </button>
+      <span class="sr-only">Hidden agent — identity unrevealed</span>
+      {% endif %}
     </form>
   {% endfor %}
   </div>
@@ -50,3 +97,4 @@
 {% set history = view.history %}{% include "_history.html" %}
 {% include "_metadata.html" %}
 {% endblock %}
+{% block scripts %}{% if view.decision.kind == "play" %}<script src="{{ url_for('static', path='/game.js') }}" defer></script>{% endif %}{% endblock %}

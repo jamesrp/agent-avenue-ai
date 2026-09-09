@@ -6,7 +6,14 @@ from urllib.parse import urlparse
 
 from fastapi.testclient import TestClient
 
-from agent_avenue.engine import Phase, PlayerId, PlayOfferAction, RecruitAction, legal_actions
+from agent_avenue.engine import (
+    CardName,
+    Phase,
+    PlayerId,
+    PlayOfferAction,
+    RecruitAction,
+    legal_actions,
+)
 from agent_avenue.web import create_app
 from agent_avenue.web.sessions import BrowserSession, SessionRepository, WebGame
 
@@ -73,6 +80,76 @@ def _action_data(action: PlayOfferAction | RecruitAction, token: str) -> dict[st
     else:
         data["slot"] = action.slot.value
     return data
+
+
+def test_card_images_are_served_as_individual_static_assets() -> None:
+    app = create_app()
+    client = TestClient(app)
+    names = [card.value.replace("_", "-") for card in CardName] + ["card-back"]
+
+    for name in names:
+        response = client.get(f"/static/cards/{name}.png")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.content.startswith(b"\x89PNG")
+
+
+def test_play_page_uses_card_images_and_one_confirmed_offer_form() -> None:
+    app = create_app()
+    client = TestClient(app)
+    game_id, token = _new_game(client, "17")
+    game = _stored_game(client, app, game_id)
+    _reveal(client, game_id, token)
+
+    page = client.get(f"/games/{game_id}")
+    assert page.status_code == 200
+    assert page.text.count(f'action="/games/{game_id}/actions"') == 1
+    assert page.text.count("data-hand-card") == 4
+    assert page.text.count('data-select-slot="face_up"') == 4
+    assert page.text.count('data-select-slot="face_down"') == 4
+    assert "data-confirm-offer disabled" in page.text
+    assert 'data-preview-placeholder="face_up"' in page.text
+    assert "/static/game.js" in page.text
+    for card in game.state.hands[0]:
+        label = card.value.replace("_", " ").title()
+        assert f'alt="{label} ' in page.text
+        assert f"/static/cards/{card.value.replace('_', '-')}.png" in page.text
+
+
+def test_recruit_page_makes_the_face_and_card_back_images_the_choices() -> None:
+    app = create_app()
+    client = TestClient(app)
+    game_id, token = _new_game(client, "17")
+    game = _stored_game(client, app, game_id)
+    _reveal(client, game_id, token)
+    play = legal_actions(game.state)[0]
+    assert isinstance(play, PlayOfferAction)
+    client.post(
+        f"/games/{game_id}/actions",
+        data=_action_data(play, token),
+        follow_redirects=False,
+    )
+    _reveal(client, game_id, token)
+
+    page = client.get(f"/games/{game_id}")
+    assert page.status_code == 200
+    assert page.text.count('class="card-choice"') == 2
+    assert f"/static/cards/{play.face_up.value.replace('_', '-')}.png" in page.text
+    assert "/static/cards/card-back.png" in page.text
+    assert "Recruit face up:" in page.text
+    assert "Recruit face-down card" in page.text
+
+    recruit = legal_actions(game.state)[0]
+    assert isinstance(recruit, RecruitAction)
+    response = client.post(
+        f"/games/{game_id}/actions",
+        data=_action_data(recruit, token),
+        follow_redirects=False,
+    )
+    summary = client.get(response.headers["location"])
+    assert summary.text.count('class="recruited-stack"') == 2
+    assert summary.text.count('class="card-image recruited-card"') == 2
+    assert "\N{MULTIPLICATION SIGN}1" in summary.text
 
 
 def test_health_and_seeded_creation_are_reproducible() -> None:

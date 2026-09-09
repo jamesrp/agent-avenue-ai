@@ -27,14 +27,19 @@ never a filesystem path.
 - [ ] Start one game with a known seed and another with a blank seed; confirm both displayed seeds.
 - [ ] On every handoff, confirm the pass-device page names only the next player and shows no hand or
       offer card.
-- [ ] As the active player, confirm only your hand is visible and every legal ordered offer is a
-      keyboard-focusable button.
+- [ ] As the active player, confirm only your hand is visible as card images with descriptive alt
+      text and a face-up/face-down button under each card.
+- [ ] Select a face-up card; confirm every other face-up button is disabled, the selected button
+      becomes a trash icon, and face-down is disabled on duplicate copies of that card name. Repeat
+      symmetrically for a face-down selection.
+- [ ] Confirm the offer preview shows the selected face-up card and a card back for the face-down
+      card, and that the confirmation button stays disabled until both selections are made.
 - [ ] Submit an offer, refresh, and confirm the action is not repeated.
-- [ ] As the recruiter, confirm the face-up card is named and the face-down card remains “Hidden
-      agent,” including in page source and form values.
+- [ ] As the recruiter, confirm the face-up card image is descriptive and the other choice is a card
+      back; page source and form values must not reveal the hidden identity.
 - [ ] Recruit each slot at least once during the game.
-- [ ] After recruitment, verify both revealed cards, assignments, score changes, public tableaux,
-      and history before continuing.
+- [ ] After recruitment, verify both revealed cards, assignments, score changes, stacked card-image
+      public tableaux, and history before continuing.
 - [ ] Finish the game and verify winner, reason, resolution, seed, replay ID, rules/shuffle versions,
       and public fingerprint.
 - [ ] Use **Replay this seed** and confirm the initial hand matches.
@@ -77,6 +82,7 @@ uv sync --extra web --extra rl
       confirm no opposing hand, deck order, or unrevealed face-down value appears.
 - [ ] Check the play and recruit screens around 390 px and 1280 px widths.
 - [ ] Navigate every control using Tab/Shift-Tab and confirm the gold focus outline is visible.
-- [ ] Disable JavaScript and complete at least one full turn.
+- [ ] Disable JavaScript and confirm the play screen explains that offer selection requires it and
+      cannot submit an incomplete offer.
 
 Automated coverage is available with `make test-web` and the full required check is `make check`.

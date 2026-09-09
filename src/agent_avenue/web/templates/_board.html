@@ -8,9 +8,24 @@
       <p>{{ player.hand_size }} cards in hand</p>
       <h4>Recruited agents</h4>
       {% if player.recruited %}
-      <ul class="compact-list">
-        {% for card in player.recruited %}<li>{{ card.label }} × {{ card.count }}</li>{% endfor %}
-      </ul>
+      <div class="recruited-groups">
+        {% for card in player.recruited %}
+        <div class="recruited-group" aria-label="{{ card.label }}, {{ card['count'] }} recruited">
+          <div class="recruited-stack">
+            {% for copy in range(card['count']) %}
+            <img
+              class="card-image recruited-card"
+              src="{{ url_for('static', path='/' ~ card.image) }}"
+              alt="{{ card.alt if loop.first else '' }}"
+              width="98"
+              height="136"
+            >
+            {% endfor %}
+          </div>
+          <span class="recruited-count" aria-hidden="true">×{{ card['count'] }}</span>
+        </div>
+        {% endfor %}
+      </div>
       {% else %}<p>None yet.</p>{% endif %}
     </article>
   {% endfor %}

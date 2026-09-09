@@ -20,14 +20,26 @@ class CardView(TypedDict):
     value: str
     label: str
     effect: str
+    alt: str
+    image: str
 
 
 def card_view(card: CardName) -> CardView:
     definition = CARD_DEFINITIONS[card]
     effects = []
-    for effect in definition.effects:
-        effects.append(effect.kind.upper() if effect.kind != "score" else f"{effect.points:+d}")
-    return {"value": card.value, "label": CARD_LABELS[card], "effect": " / ".join(effects)}
+    for card_effect in definition.effects:
+        effects.append(
+            card_effect.kind.upper() if card_effect.kind != "score" else f"{card_effect.points:+d}"
+        )
+    effect = " / ".join(effects)
+    label = CARD_LABELS[card]
+    return {
+        "value": card.value,
+        "label": label,
+        "effect": effect,
+        "alt": f"{label} {effect}",
+        "image": f"cards/{card.value.replace('_', '-')}.png",
+    }
 
 
 def recruited_views(cards: tuple[CardName, ...]) -> list[dict[str, object]]:
@@ -65,6 +77,7 @@ def observation_view(observation: PlayerObservation) -> dict[str, object]:
         "phase": observation.phase.value.title(),
         "remaining_deck_count": observation.remaining_deck_count,
         "own_hand": [card_view(card) for card in observation.own_hand],
+        "allow_matching_offer": len(set(observation.own_hand)) == 1,
         "players": players,
         "decision": decision,
         "offer": offer,

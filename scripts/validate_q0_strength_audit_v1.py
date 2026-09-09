@@ -105,7 +105,8 @@ def main() -> int:
     plan_payload = {key: value for key, value in plan.items() if key != "plan_fingerprint"}
     if _fingerprint(plan_payload) != plan["plan_fingerprint"]:
         raise RuntimeError("plan fingerprint mismatch")
-    result_payload = {key: value for key, value in result.items() if key != "result_fingerprint"}
+    result_payload = dict(result)
+    result_payload["result_fingerprint"] = ""
     if _fingerprint(result_payload) != result["result_fingerprint"]:
         raise RuntimeError("result fingerprint mismatch")
 

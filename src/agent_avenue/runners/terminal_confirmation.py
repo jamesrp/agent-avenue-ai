@@ -58,14 +58,8 @@ BOOTSTRAP_UPPER_INDEX: Final = 19_499
 BOOTSTRAP_DOMAIN: Final = f"{CYCLE_ID}:stratified-common-block-bootstrap:v1"
 PRACTICAL_LIFT_THRESHOLD: Final = 0.0025
 CONFIRMATION_AUDIT_VERSION: Final = "terminal-offense-confirmation-replay-audit-v1"
-DEFAULT_EXCLUDED_SETUP_ROOTS: Final = (
-    Path("runs/m7-q0-strength-audit-v1"),
-    Path("runs/terminal-safety-v1"),
-    Path("runs/milestone6"),
-    Path("runs/q0-corpus"),
-    Path("runs/research-cycles/m7-heuristic-ranking-warmstart-v1"),
-    Path("runs/research-cycles/m7-heuristic-ranking-warmstart-v1-repair1"),
-)
+SETUP_HOLDOUT_SCOPE_VERSION: Final = "all-completed-corpora-under-runs-v1"
+DEFAULT_EXCLUDED_SETUP_ROOTS: Final = (Path("runs"),)
 CONFIRMATION_STATISTICS_VERSION: Final = "terminal-offense-confirmation-statistics-v1"
 
 CandidateScorer = Callable[[PlayerObservation, tuple[Action, ...]], LearnedCandidateScores]
@@ -370,6 +364,13 @@ def scan_prior_setup_blocks(
     ]
     data: dict[str, object] = {
         "version": "terminal-offense-confirmation-setup-holdout-v1",
+        "scope": {
+            "version": SETUP_HOLDOUT_SCOPE_VERSION,
+            "declared_roots": [str(path) for path in excluded_roots],
+            "recursive": True,
+            "completed_corpus_detection": "manifest-and-games-jsonl-gzip-v1",
+            "excludes_current_output_subtree": current_output is not None,
+        },
         "status": "passed" if not overlaps else "failed",
         "excluded_roots": root_rows,
         "current_output": None if current_output is None else str(current_output.resolve()),
@@ -647,6 +648,17 @@ def confirmation_statistics(
         "anchor_macro": anchor,
         "field_macro": raw_metrics["field_macro"],
         "direct_treatment_win_rate": raw_metrics["direct_treatment_win_rate"],
+        "direct_treatment_vs_control_interpretation": {
+            "classification": "descriptive-only-shared-within-game-rng-identity",
+            "reason": (
+                "control and treatment intentionally share q0-terminal-core-v1 within each "
+                "direct game, so this result is not causal matched evidence"
+            ),
+            "used_for_structural_adoption": False,
+            "used_for_practical_lift_claim": False,
+            "causal_matched_evidence": False,
+            "causal_matched_evidence_scope": "shared-opponent control/treatment cells only",
+        },
         "practical_lift_claim": {
             "criterion": "anchor-macro 95% lower bound > +0.25 percentage points",
             "threshold": PRACTICAL_LIFT_THRESHOLD,

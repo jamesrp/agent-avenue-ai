@@ -312,8 +312,23 @@ def test_tiny_confirmation_smoke_is_resumable_immutable_and_validatable(
     result = json.loads((output / "result.json").read_text())
     assert plan["frozen_default_design"]["pairs_per_family"] == DEFAULT_PAIRS_PER_FAMILY
     assert plan["frozen_default_design"]["total_games"] == 60_000
-    assert plan["execution"]["evidence_class"] == "smoke-only-nondefault"
-    assert plan["excluded_setup_roots"]
+    assert plan["setup_holdout_scope"] == {
+        "version": "all-completed-corpora-under-runs-v1",
+        "declared_roots": ["runs"],
+        "recursive": True,
+        "excludes_current_output_subtree": True,
+    }
+    assert plan["execution_budget"]["claim_run_cutoff"] == "7h45m"
+    assert plan["execution_budget"]["whole_step_compute_budget"] == "8h"
+    assert plan["execution_budget"]["allowed_resume_retries"] == 1
+    assert result["direct_treatment_vs_control"]["causal_matched_evidence"] is False
+    assert result["direct_treatment_vs_control"]["used_for_practical_lift_claim"] is False
+    assert (
+        result["statistics"]["direct_treatment_vs_control_interpretation"][
+            "used_for_structural_adoption"
+        ]
+        is False
+    )
     assert result["setup_block_holdout"]["status"] == "passed"
     assert result["setup_block_holdout"]["overlap_count"] == 0
     assert len(result["setup_block_holdout"]["artifact_fingerprint"]) == 64

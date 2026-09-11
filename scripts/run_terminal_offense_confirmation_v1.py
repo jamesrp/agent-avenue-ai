@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,7 @@ from agent_avenue.runners import (
     FIELD_OPPONENTS,
     Q0_RNG_IDENTITY,
     ROOT_SEED,
+    SETUP_HOLDOUT_SCOPE_VERSION,
     TREATMENT_ID,
     AgentSpec,
     ArenaConfig,
@@ -55,6 +57,10 @@ Q_IDS = tuple(f"q{generation}-terminal-safety-v1" for generation in range(1, 5))
 HISTORICAL_ID = "historical-q0"
 HEURISTIC_ID = "greedy-public-v1"
 RANDOM_ID = "random"
+CLAIM_RUN_CUTOFF_SECONDS = 7 * 60 * 60 + 45 * 60
+WHOLE_STEP_COMPUTE_BUDGET_SECONDS = 8 * 60 * 60
+ALLOWED_RESUME_RETRIES = 1
+
 CHECKPOINT_PATHS = {
     CONTROL_ID: Path("runs/terminal-safety-v1/q0-a1/checkpoint"),
     TREATMENT_ID: Path("runs/terminal-safety-v1/q0-a1/checkpoint"),
@@ -64,6 +70,55 @@ CHECKPOINT_PATHS = {
     Q_IDS[3]: Path("runs/terminal-safety-v1/q4-a1/candidate"),
     HISTORICAL_ID: Path("runs/terminal-safety-v1/inputs/historical-q0"),
 }
+
+
+class ClaimRunCutoffError(RuntimeError):
+    """Raised when the frozen claim-run cutoff prevents further execution."""
+
+
+def _ensure_within_claim_cutoff(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise ClaimRunCutoffError(
+            "claim-run cutoff reached; no result was emitted and only one resume/retry is allowed"
+        )
+
+
+def _begin_execution_attempt(output: Path, plan_fingerprint: object) -> Path:
+    """Record one initial execution or the sole permitted resume/retry."""
+    if not isinstance(plan_fingerprint, str):
+        raise RuntimeError("plan fingerprint is malformed")
+    path = output / "execution-state.json"
+    if path.exists():
+        state = _read(path)
+        if state.get("plan_fingerprint") != plan_fingerprint:
+            raise RuntimeError("execution state belongs to another immutable plan")
+        attempts = state.get("attempt_count")
+        if type(attempts) is not int or attempts < 1:
+            raise RuntimeError("execution state attempt count is malformed")
+        if attempts > ALLOWED_RESUME_RETRIES:
+            raise RuntimeError("the one allowed confirmation resume/retry has already been used")
+        attempt_count = attempts + 1
+    else:
+        attempt_count = 1
+    data = {
+        "version": "terminal-offense-confirmation-execution-state-v1",
+        "plan_fingerprint": plan_fingerprint,
+        "attempt_count": attempt_count,
+        "allowed_resume_retries": ALLOWED_RESUME_RETRIES,
+        "status": "running",
+    }
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(data, sort_keys=True, indent=2) + "\n")
+    temporary.replace(path)
+    return path
+
+
+def _complete_execution_attempt(path: Path) -> None:
+    data = _read(path)
+    data["status"] = "completed"
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(data, sort_keys=True, indent=2) + "\n")
+    temporary.replace(path)
 
 
 @dataclass(frozen=True)
@@ -321,15 +376,37 @@ def build_plan(
             "total_games": len(cells) * pairs_per_family * 2,
             "output": str(output.resolve()),
         },
+        "execution_budget": {
+            "claim_run_cutoff_seconds": CLAIM_RUN_CUTOFF_SECONDS,
+            "claim_run_cutoff": "7h45m",
+            "whole_step_compute_budget_seconds": WHOLE_STEP_COMPUTE_BUDGET_SECONDS,
+            "whole_step_compute_budget": "8h",
+            "incomplete_execution": "no result is emitted before every cell and audit completes",
+            "allowed_resume_retries": ALLOWED_RESUME_RETRIES,
+        },
         "root_seed": ROOT_SEED,
         "seed_validation": seed_validation,
-        "excluded_setup_roots": [str(path) for path in DEFAULT_EXCLUDED_SETUP_ROOTS],
+        "setup_holdout_scope": {
+            "version": SETUP_HOLDOUT_SCOPE_VERSION,
+            "declared_roots": [str(path) for path in DEFAULT_EXCLUDED_SETUP_ROOTS],
+            "recursive": True,
+            "excludes_current_output_subtree": True,
+        },
         "setup_holdout": {
             "artifact_fingerprint": setup_holdout["artifact_fingerprint"],
             "status": setup_holdout["status"],
             "overlap_count": setup_holdout["overlap_count"],
             "current_setup_fingerprint": setup_holdout["current_setup_fingerprint"],
             "prior_setup_fingerprint": setup_holdout["prior_setup_fingerprint"],
+        },
+        "direct_treatment_vs_control": {
+            "interpretation": (
+                "descriptive only: both arms intentionally share one RNG identity within "
+                "a direct game"
+            ),
+            "causal_matched_evidence": False,
+            "used_for_structural_adoption": False,
+            "used_for_practical_lift_claim": False,
         },
         "policies": policies,
         "cells": cells,
@@ -375,12 +452,15 @@ def _run_cells(
     output: Path,
     plan: dict[str, Any],
     bundle: PolicyBundle,
+    *,
+    deadline: float,
 ) -> tuple[dict[str, ArenaReport], dict[str, Path], dict[str, str]]:
     reports: dict[str, ArenaReport] = {}
     directories: dict[str, Path] = {}
     artifact_fingerprints: dict[str, str] = {}
     cells = confirmation_cells()
     for index, cell in enumerate(cells, start=1):
+        _ensure_within_claim_cutoff(deadline)
         print(f"[{index:02d}/{len(cells)}] {cell.key}", flush=True)
         config = ArenaConfig(
             run_id=cell.run_id,
@@ -537,6 +617,7 @@ def _result(
             "pairs_per_family": plan["execution"]["pairs_per_family"],
         },
         "statistics": statistics,
+        "direct_treatment_vs_control": statistics["direct_treatment_vs_control_interpretation"],
         "replay_audit": audit,
         "integrity": integrity,
         "setup_block_holdout": setup_holdout,
@@ -612,7 +693,15 @@ def main() -> int:
         print(json.dumps(result, sort_keys=True, indent=2))
         return 0
 
-    reports, directories, cell_artifacts = _run_cells(args.output, plan, bundle)
+    execution_state = _begin_execution_attempt(args.output, plan["plan_fingerprint"])
+    deadline = time.monotonic() + CLAIM_RUN_CUTOFF_SECONDS
+    reports, directories, cell_artifacts = _run_cells(
+        args.output,
+        plan,
+        bundle,
+        deadline=deadline,
+    )
+    _ensure_within_claim_cutoff(deadline)
     rng_identities = {agent_id: spec.rng_identity for agent_id, spec in bundle.specs.items()}
     integrity = validate_confirmation_corpora(
         directories,
@@ -630,6 +719,7 @@ def main() -> int:
         verify_replays=False,
     )
     _write_immutable(args.output / "analysis" / "replay-audit.json", audit)
+    _ensure_within_claim_cutoff(deadline)
     result = _result(
         plan,
         statistics=statistics,
@@ -639,6 +729,7 @@ def main() -> int:
         cell_artifacts=cell_artifacts,
     )
     _write_immutable(result_path, result)
+    _complete_execution_attempt(execution_state)
     print(json.dumps(result, sort_keys=True, indent=2))
     return 0
 

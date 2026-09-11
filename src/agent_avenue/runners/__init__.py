@@ -83,7 +83,10 @@ from .strength_audit import (
 )
 from .terminal_confirmation import (
     ANCHOR_OPPONENTS,
+    BOOTSTRAP_DOMAIN,
+    BOOTSTRAP_LOWER_INDEX,
     BOOTSTRAP_RESAMPLES,
+    BOOTSTRAP_UPPER_INDEX,
     CONFIRMATION_AUDIT_VERSION,
     CONFIRMATION_STATISTICS_VERSION,
     CONTROL_ID,
@@ -95,6 +98,7 @@ from .terminal_confirmation import (
     PRACTICAL_LIFT_THRESHOLD,
     Q0_RNG_IDENTITY,
     ROOT_SEED,
+    SETUP_HOLDOUT_SCOPE_VERSION,
     TREATMENT_ID,
     CandidateScorer,
     ConfirmationCell,
@@ -116,7 +120,10 @@ from .terminal_confirmation import (
 
 __all__ = [
     "ANCHOR_OPPONENTS",
+    "BOOTSTRAP_DOMAIN",
+    "BOOTSTRAP_LOWER_INDEX",
     "BOOTSTRAP_RESAMPLES",
+    "BOOTSTRAP_UPPER_INDEX",
     "CONFIRMATION_AUDIT_VERSION",
     "CONFIRMATION_STATISTICS_VERSION",
     "CONTROL_ID",
@@ -129,6 +136,7 @@ __all__ = [
     "PRACTICAL_LIFT_THRESHOLD",
     "Q0_RNG_IDENTITY",
     "ROOT_SEED",
+    "SETUP_HOLDOUT_SCOPE_VERSION",
     "TREATMENT_ID",
     "AdvanceResult",
     "AgentController",

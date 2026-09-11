@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 11, 2026
-**Overall state:** Step 1 design and implementation
+**Overall state:** Step 1 claim run ready to dispatch
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -37,24 +37,45 @@ public-history signaling, and specializes to narrow self-play distributions.
 
 | Step | State | Exact agreement | Implementation | Claim run | Result |
 | --- | --- | --- | --- | --- | --- |
-| 1. Terminal offense/RNG | Designing | Pending | Pending | Pending | Pending |
+| 1. Terminal offense/RNG | Claim-ready | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | Pending | Pending |
 | 2. Population replay v1 | Authorized, waiting | Pending | Pending | Pending | Pending |
 | 3. Structured model v2 | Authorized, waiting | Pending | Pending | Pending | Pending |
 | 4. Counterfactual rollouts | Authorized, waiting | Pending | Pending | Pending | Pending |
 | 5. Independent league | Authorized, waiting | Pending | Pending | Pending | Pending |
 
-## Current step: intended work packages
+## Current step: frozen execution
 
-1. Independently review the runner RNG identity problem and exact tie-audit design.
-2. Implement an explicit normalized RNG identity/domain seam without changing existing schedules by
-   default.
-3. Add exact learned-policy maximum-tie diagnostics and policy-ID permutation tests.
-4. Freeze fresh confirmation opponents, seeds, pair counts, statistics, and adoption criteria.
-5. Run one aligned control/treatment suite, independently recompute it, review, archive, report, and
-   advance to step 2.
+Step 1 is frozen at 60,000 fresh games: two disjoint 1,000-pair seed families, 30 cells, aligned
+control/treatment RNG identity, exhaustive prior-corpus setup holdout over `runs/`, independent public
+forced-win oracle, exact neural tie audit, matched action-prefix audit, stratified common-block
+bootstrap, and an independent same-source validator. The direct treatment/control arena is
+explicitly descriptive because both arms share one RNG identity inside a game.
+
+Structural adoption and practical lift are separate. If all exact safety/oracle/RNG/prefix criteria
+pass, the terminal-offense envelope becomes fixed for steps 2–4 even if the anchor-macro lift is
+small. “Measurably stronger” additionally requires the anchor-macro 95% lower endpoint above +0.25
+percentage points.
+
+## Completed implementation work
+
+- `de1872a`: explicit agent RNG identities with backward-compatible default schedules.
+- `b99cc2d`: terminal-offense confirmation runner, independent public oracle, tie diagnostics, and
+  validator foundation.
+- `b18a13e`: exhaustive setup holdout and corrected guaranteed-win prefix endpoints.
+- `23fe496`: independent validator path, frozen provenance checks, whole-step budget metadata, and
+  descriptive-only direct comparison.
+- Current validation: Ruff and strict mypy pass; 223 tests pass.
 
 ## Decision log
 
+- **September 11 — step-1 freeze:** use 60,000 fresh games with aligned RNG identities, exhaustive
+  prior setup exclusion, independent oracle/tie/prefix validation, and a +0.25 percentage-point
+  anchor-macro lower-bound threshold for the separate practical-lift claim. Structural correctness
+  does not depend on lift significance.
+- **September 11 — subagent execution:** one worker implemented the RNG seam; a second implemented
+  the confirmation machinery and two bounded preflight hardening passes; a separate fresh reviewer
+  identified and resolved agreement, validation-independence, holdout-scope, and direct-RNG
+  interpretation issues before claim dispatch.
 - **September 11 — user approval:** execute all five steps in order, use subagents with Shelley as
   orchestrator, allow up to eight compute hours per step, and preserve goal/plan/progress notes.
 - **September 11 — program boundary:** no champion or web default changes before step 5. The exact

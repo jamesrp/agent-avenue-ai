@@ -7,6 +7,8 @@ from agent_avenue.agents import (
     RandomAgent,
     RandomAgentConfig,
     ScriptedAgent,
+    TerminalOffenseAgent,
+    derive_seed,
 )
 from agent_avenue.engine import (
     GameConfig,
@@ -60,6 +62,99 @@ def test_resumable_arena_retains_verified_compressed_records(tmp_path) -> None: 
     assert first.report.to_data()["wins"] == second.report.to_data()["wins"]
     assert (tmp_path / "records" / "manifest.json").is_file()
     assert (tmp_path / "records" / "games.jsonl.gz").is_file()
+
+
+def test_agent_spec_defaults_rng_identity_without_changing_existing_rng_schedule() -> None:
+    default_a = _random_spec("a")
+    default_b = _random_spec("b")
+    explicit_a = AgentSpec("a", default_a.config, RandomAgent, rng_identity="a")
+    explicit_b = AgentSpec("b", default_b.config, RandomAgent, rng_identity="b")
+
+    assert default_a.rng_identity == default_a.agent_id
+    assert default_a.rng_domain == "agent:a"
+    default_games = tuple(schedule_arena(ArenaConfig("compatible", default_a, default_b, 1, 99)))
+    explicit_games = tuple(schedule_arena(ArenaConfig("compatible", explicit_a, explicit_b, 1, 99)))
+    assert default_games == explicit_games
+    assert default_games[0].agent_seeds == (
+        derive_seed(99, "arena:pair:0:agent:a"),
+        derive_seed(99, "arena:pair:0:agent:b"),
+    )
+    renamed_games = tuple(
+        schedule_arena(ArenaConfig("compatible", _random_spec("x"), _random_spec("y"), 1, 99))
+    )
+    assert [game.setup_seed for game in renamed_games] == [
+        game.setup_seed for game in default_games
+    ]
+    assert tuple(seat.rng_domain for seat in run_game(default_games[0]).seats) == (
+        "agent:a",
+        "agent:b",
+    )
+
+
+def test_agent_spec_rejects_empty_explicit_rng_identity() -> None:
+    with pytest.raises(ValueError, match="rng_identity"):
+        AgentSpec("a", RandomAgentConfig().to_data(), RandomAgent, rng_identity="")
+
+
+def test_distinct_agents_can_share_rng_identity_across_arena_seat_swaps() -> None:
+    random_agent = RandomAgent()
+    offense_agent = TerminalOffenseAgent(RandomAgent())
+    baseline = AgentSpec(
+        "q0",
+        random_agent.config.to_data(),
+        lambda: random_agent,
+        rng_identity="q0-matched-control",
+    )
+    treatment = AgentSpec(
+        "q0-terminal-offense",
+        offense_agent.config_to_data(),
+        lambda: offense_agent,
+        rng_identity="q0-matched-control",
+    )
+
+    first, second = tuple(schedule_arena(ArenaConfig("matched", baseline, treatment, 1, 1234)))
+    expected_seed = derive_seed(1234, "arena:pair:0:agent:q0-matched-control")
+    assert first.setup_seed == second.setup_seed
+    assert first.agent_seeds == second.agent_seeds == (expected_seed, expected_seed)
+    assert (
+        first.agent_rng_domains
+        == second.agent_rng_domains
+        == (
+            "agent:q0-matched-control",
+            "agent:q0-matched-control",
+        )
+    )
+
+    records = (run_game(first), run_game(second))
+    assert {seat.agent_id for record in records for seat in record.seats} == {
+        "q0",
+        "q0-terminal-offense",
+    }
+    assert {(seat.seed, seat.rng_domain) for record in records for seat in record.seats} == {
+        (expected_seed, "agent:q0-matched-control")
+    }
+
+
+def test_direct_game_supports_shared_rng_identity_for_distinct_agent_ids() -> None:
+    first = AgentSpec(
+        "control",
+        RandomAgentConfig().to_data(),
+        RandomAgent,
+        rng_identity="matched",
+    )
+    second = AgentSpec(
+        "treatment",
+        RandomAgentConfig().to_data(),
+        RandomAgent,
+        rng_identity="matched",
+    )
+    record = run_game(
+        GameSpec("direct", "shared", None, GameConfig(), 17, (first, second), (23, 23))
+    )
+    assert tuple((seat.seed, seat.rng_domain) for seat in record.seats) == (
+        (23, "agent:matched"),
+        (23, "agent:matched"),
+    )
 
 
 def test_seeded_games_reproduce_and_agent_randomness_is_separate_from_setup() -> None:

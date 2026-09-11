@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from agent_avenue.agents import RandomAgent, RandomAgentConfig
 from agent_avenue.engine import GameConfig
 from agent_avenue.runners import AgentSpec, GameSpec, run_game, run_resumable_corpus
-from agent_avenue.runners.corpus import corpus_declaration
+from agent_avenue.runners.corpus import corpus_declaration, validate_record_matches_spec
 from agent_avenue.storage import (
     CorpusDeclaration,
     CorpusError,
@@ -43,6 +44,64 @@ def _declaration(specs: tuple[GameSpec, ...]) -> CorpusDeclaration:
         configuration={"fixture": True},
     )
     return declaration
+
+
+def test_corpus_schedule_fingerprints_rng_identity_without_changing_defaults() -> None:
+    default = _specs(1)
+    default_spec = default[0]
+    explicit_defaults = (
+        replace(
+            default_spec,
+            seats=(
+                AgentSpec(
+                    default_spec.seats[0].agent_id,
+                    default_spec.seats[0].config,
+                    RandomAgent,
+                    rng_identity=default_spec.seats[0].agent_id,
+                ),
+                AgentSpec(
+                    default_spec.seats[1].agent_id,
+                    default_spec.seats[1].config,
+                    RandomAgent,
+                    rng_identity=default_spec.seats[1].agent_id,
+                ),
+            ),
+        ),
+    )
+    shared_identity = (
+        replace(
+            default_spec,
+            seats=(
+                AgentSpec(
+                    default_spec.seats[0].agent_id,
+                    default_spec.seats[0].config,
+                    RandomAgent,
+                    rng_identity="matched",
+                ),
+                AgentSpec(
+                    default_spec.seats[1].agent_id,
+                    default_spec.seats[1].config,
+                    RandomAgent,
+                    rng_identity="matched",
+                ),
+            ),
+        ),
+    )
+
+    assert _declaration(explicit_defaults).fingerprint == _declaration(default).fingerprint
+    assert _declaration(shared_identity).fingerprint != _declaration(default).fingerprint
+
+
+def test_corpus_validation_rejects_rng_domain_mismatch() -> None:
+    specs = _specs(1)
+    record = run_game(specs[0])
+    tampered_seats = (
+        replace(record.seats[0], rng_domain="agent:not-random-a"),
+        record.seats[1],
+    )
+
+    with pytest.raises(CorpusError, match="scheduled game"):
+        validate_record_matches_spec(replace(record, seats=tampered_seats), specs[0])
 
 
 def test_interrupted_corpus_resumes_only_missing_games_and_matches_clean_run(

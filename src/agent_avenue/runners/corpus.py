@@ -19,6 +19,19 @@ from agent_avenue.storage import (
 from .game import GameSpec, run_game
 
 
+def _seat_spec_data(spec: GameSpec, index: int) -> dict[str, object]:
+    seat = spec.seats[index]
+    data: dict[str, object] = {
+        "agent_id": seat.agent_id,
+        "config": json.loads(json.dumps(dict(seat.config), sort_keys=True)),
+        "seed": spec.agent_seeds[index],
+        "seed_derivation": spec.agent_seed_derivations[index],
+    }
+    if seat.rng_identity != seat.agent_id:
+        data["rng_identity"] = seat.rng_identity
+    return data
+
+
 def _spec_data(spec: GameSpec) -> dict[str, object]:
     from agent_avenue.engine.setup import normalize_config
 
@@ -28,15 +41,7 @@ def _spec_data(spec: GameSpec) -> dict[str, object]:
         "pair_id": spec.pair_id,
         "game_config": normalize_config(spec.config),
         "setup_seed": spec.setup_seed,
-        "seats": [
-            {
-                "agent_id": seat.agent_id,
-                "config": json.loads(json.dumps(dict(seat.config), sort_keys=True)),
-                "seed": spec.agent_seeds[index],
-                "seed_derivation": spec.agent_seed_derivations[index],
-            }
-            for index, seat in enumerate(spec.seats)
-        ],
+        "seats": [_seat_spec_data(spec, index) for index in range(2)],
     }
 
 
@@ -61,6 +66,7 @@ def _record_matches_spec(record: GameRecord, spec: GameSpec) -> bool:
             and dict(record.seats[index].config) == dict(spec.seats[index].config)
             and record.seats[index].seed == spec.agent_seeds[index]
             and record.seats[index].seed_derivation == spec.agent_seed_derivations[index]
+            and record.seats[index].rng_domain == spec.agent_rng_domains[index]
             for index in range(2)
         )
     )

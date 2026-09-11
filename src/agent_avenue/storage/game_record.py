@@ -33,6 +33,12 @@ class AgentSeatRecord:
     seed_derivation: str = "supplied"
     rng_domain: str = ""
 
+    @property
+    def rng_identity(self) -> str:
+        """Return the logical identity encoded by the agent RNG domain."""
+        prefix = "agent:"
+        return self.rng_domain[len(prefix) :] if self.rng_domain.startswith(prefix) else ""
+
 
 @dataclass(frozen=True, slots=True)
 class GameRecord:
@@ -118,7 +124,7 @@ def verify_game_record(record: GameRecord, *, verify_code: bool = True) -> GameS
         or not seat.agent_id
         or seat.rng_algorithm != RNG_ALGORITHM
         or not seat.seed_derivation
-        or not seat.rng_domain
+        or not seat.rng_identity
         for seat in record.seats
     ):
         raise GameRecordError("seat records contain invalid identity or RNG metadata")

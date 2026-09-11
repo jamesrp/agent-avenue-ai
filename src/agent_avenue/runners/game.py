@@ -94,16 +94,34 @@ def _agent_config(agent: Agent) -> dict[str, object]:
     raise ValueError("runnable agents must expose normalized configuration metadata")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class AgentSpec:
     agent_id: str
     config: Mapping[str, object]
     factory: AgentFactory
+    rng_identity: str
 
-    def __post_init__(self) -> None:
-        if not self.agent_id:
+    def __init__(
+        self,
+        agent_id: str,
+        config: Mapping[str, object],
+        factory: AgentFactory,
+        rng_identity: str | None = None,
+    ) -> None:
+        if not agent_id:
             raise ValueError("agent_id must be non-empty")
-        object.__setattr__(self, "config", MappingProxyType(_copy_config(self.config)))
+        normalized_rng_identity = agent_id if rng_identity is None else rng_identity
+        if not isinstance(normalized_rng_identity, str) or not normalized_rng_identity:
+            raise ValueError("rng_identity must be non-empty")
+        object.__setattr__(self, "agent_id", agent_id)
+        object.__setattr__(self, "config", MappingProxyType(_copy_config(config)))
+        object.__setattr__(self, "factory", factory)
+        object.__setattr__(self, "rng_identity", normalized_rng_identity)
+
+    @property
+    def rng_domain(self) -> str:
+        """Return the runtime random-stream domain for this logical RNG identity."""
+        return f"agent:{self.rng_identity}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +134,11 @@ class GameSpec:
     seats: tuple[AgentSpec, AgentSpec]
     agent_seeds: tuple[int, int]
     agent_seed_derivations: tuple[str, str] = ("supplied", "supplied")
+
+    @property
+    def agent_rng_domains(self) -> tuple[str, str]:
+        """Return the normalized runtime random-stream domain for each seat."""
+        return (self.seats[0].rng_domain, self.seats[1].rng_domain)
 
 
 def decision_actor(state: GameState) -> PlayerId | None:
@@ -142,9 +165,7 @@ def create_agent_session(spec: GameSpec) -> GameSession:
                 config=_copy_config(spec.seats[index].config),
                 seed=spec.agent_seeds[index],
                 agent=agent,
-                rng=DeterministicRandom(
-                    spec.agent_seeds[index], f"agent:{spec.seats[index].agent_id}"
-                ),
+                rng=DeterministicRandom(spec.agent_seeds[index], spec.agent_rng_domains[index]),
             )
         )
     return GameSession(new_game(spec.config, spec.setup_seed), (controllers[0], controllers[1]))
@@ -219,7 +240,7 @@ def run_game(spec: GameSpec) -> GameRecord:
             spec.agent_seeds[index],
             RNG_ALGORITHM,
             spec.agent_seed_derivations[index],
-            f"agent:{spec.seats[index].agent_id}",
+            spec.agent_rng_domains[index],
         )
         for index, player in enumerate(PlayerId)
     )

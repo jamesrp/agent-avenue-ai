@@ -32,6 +32,20 @@ def test_game_record_round_trip_replays_outcome_and_fingerprints() -> None:
     assert tuple(seat.player for seat in record.seats) == tuple(PlayerId)
 
 
+def test_record_verifies_explicit_rng_identity_metadata() -> None:
+    config = RandomAgentConfig().to_data()
+    first = AgentSpec("control", config, RandomAgent, rng_identity="matched")
+    second = AgentSpec("treatment", config, RandomAgent, rng_identity="matched")
+    record = run_game(GameSpec("run", "matched", None, GameConfig(), 17, (first, second), (1, 1)))
+
+    verify_game_record(record)
+    assert tuple(seat.rng_identity for seat in record.seats) == ("matched", "matched")
+
+    malformed_seats = (replace(record.seats[0], rng_domain="matched"), record.seats[1])
+    with pytest.raises(GameRecordError, match="RNG metadata"):
+        verify_game_record(replace(record, seats=malformed_seats))
+
+
 def test_record_verification_rejects_derived_metadata_tampering() -> None:
     record = _record()
     with pytest.raises(GameRecordError, match="metadata"):

@@ -224,8 +224,12 @@ def schedule_arena(config: ArenaConfig) -> Iterator[GameSpec]:
     for pair_index in range(config.pair_count):
         pair_domain = f"arena:pair:{pair_index}"
         setup_seed = derive_seed(config.master_seed, f"{pair_domain}:setup") & ((1 << 64) - 1)
-        seed_a = derive_seed(config.master_seed, f"{pair_domain}:agent:{config.agent_a.agent_id}")
-        seed_b = derive_seed(config.master_seed, f"{pair_domain}:agent:{config.agent_b.agent_id}")
+        seed_a = derive_seed(
+            config.master_seed, f"{pair_domain}:agent:{config.agent_a.rng_identity}"
+        )
+        seed_b = derive_seed(
+            config.master_seed, f"{pair_domain}:agent:{config.agent_b.rng_identity}"
+        )
         pair_id = f"pair-{pair_index:06d}"
         yield GameSpec(
             config.run_id,

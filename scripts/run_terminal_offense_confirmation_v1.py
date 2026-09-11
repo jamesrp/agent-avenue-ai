@@ -26,6 +26,7 @@ from agent_avenue.runners import (
     ANCHOR_OPPONENTS,
     CONTROL_ID,
     CYCLE_ID,
+    DEFAULT_EXCLUDED_SETUP_ROOTS,
     DEFAULT_PAIRS_PER_FAMILY,
     FAMILY_IDS,
     FIELD_OPPONENTS,
@@ -43,6 +44,7 @@ from agent_avenue.runners import (
     family_seed_domain,
     family_setup_seeds,
     run_resumable_arena,
+    scan_prior_setup_blocks,
     setup_seed_fingerprint,
     validate_confirmation_corpora,
     validate_seed_families,
@@ -255,6 +257,7 @@ def build_plan(
     bundle: PolicyBundle,
     *,
     pairs_per_family: int,
+    setup_holdout: dict[str, object],
 ) -> dict[str, object]:
     source = inspect_source_identity()
     default_execution = (
@@ -299,7 +302,7 @@ def build_plan(
             "pairs_per_family": DEFAULT_PAIRS_PER_FAMILY,
             "cells_per_family": 15,
             "total_cells": 30,
-            "total_games": 75_000,
+            "total_games": 60_000,
             "control_id": CONTROL_ID,
             "treatment_id": TREATMENT_ID,
             "shared_q0_rng_identity": Q0_RNG_IDENTITY,
@@ -320,6 +323,14 @@ def build_plan(
         },
         "root_seed": ROOT_SEED,
         "seed_validation": seed_validation,
+        "excluded_setup_roots": [str(path) for path in DEFAULT_EXCLUDED_SETUP_ROOTS],
+        "setup_holdout": {
+            "artifact_fingerprint": setup_holdout["artifact_fingerprint"],
+            "status": setup_holdout["status"],
+            "overlap_count": setup_holdout["overlap_count"],
+            "current_setup_fingerprint": setup_holdout["current_setup_fingerprint"],
+            "prior_setup_fingerprint": setup_holdout["prior_setup_fingerprint"],
+        },
         "policies": policies,
         "cells": cells,
         "tactical_oracles": {
@@ -333,12 +344,13 @@ def build_plan(
         "adoption": {
             "structural_criteria": [
                 "frozen and disjoint seed families",
+                "zero overlap with declared prior setup blocks",
                 "record/replay/schedule integrity",
                 "independent-production oracle agreement",
                 "zero treatment guaranteed-win misses and false wins",
                 "zero q0 avoidable immediate losses",
                 "all learned selections belong to exact maximum logits",
-                "zero pre-intervention control/treatment prefix mismatches",
+                "zero pre-endpoint control/treatment prefix mismatches and treatment failures",
             ],
             "practical_lift_claim": ("anchor-macro 95% lower bound > +0.25 percentage points"),
             "failed_practical_lift_blocks_structural_adoption": False,
@@ -437,6 +449,7 @@ def _result(
     statistics: dict[str, Any],
     audit: dict[str, Any],
     integrity: dict[str, Any],
+    setup_holdout: dict[str, Any],
     cell_artifacts: dict[str, str],
 ) -> dict[str, object]:
     tactics = audit["guaranteed_win_and_safety"]
@@ -453,6 +466,16 @@ def _result(
             and plan["seed_validation"]["status"] == "passed"
             and integrity["family_blocks_disjoint"],
             plan["seed_validation"],
+        ),
+        _criterion(
+            "zero overlap with declared prior setup blocks",
+            setup_holdout["status"] == "passed" and setup_holdout["overlap_count"] == 0,
+            {
+                "artifact_fingerprint": setup_holdout["artifact_fingerprint"],
+                "scanned_corpus_count": setup_holdout["scanned_corpus_count"],
+                "scanned_record_count": setup_holdout["scanned_record_count"],
+                "overlap_count": setup_holdout["overlap_count"],
+            },
         ),
         _criterion(
             "record/replay/schedule integrity",
@@ -492,10 +515,10 @@ def _result(
             },
         ),
         _criterion(
-            "zero pre-intervention prefix mismatches",
+            "zero pre-endpoint prefix mismatches and treatment failures",
             prefixes["metadata_mismatches"] == 0
-            and prefixes["pre_intervention_prefix_mismatches"] == 0
-            and prefixes["treatment_intervention_conversion_failures"] == 0,
+            and prefixes["pre_endpoint_prefix_mismatches"] == 0
+            and prefixes["treatment_endpoint_failures"] == 0,
             prefixes,
         ),
     ]
@@ -516,6 +539,7 @@ def _result(
         "statistics": statistics,
         "replay_audit": audit,
         "integrity": integrity,
+        "setup_block_holdout": setup_holdout,
         "cell_artifact_fingerprints": dict(sorted(cell_artifacts.items())),
         "structural_adoption": {
             "eligible_default_design": default_design,
@@ -539,7 +563,15 @@ def main() -> int:
         type=Path,
         default=Path("runs/m7-terminal-offense-confirm-v1"),
     )
-    parser.add_argument("--pairs-per-family", type=int, default=DEFAULT_PAIRS_PER_FAMILY)
+    parser.add_argument(
+        "--pairs-per-family",
+        type=int,
+        default=DEFAULT_PAIRS_PER_FAMILY,
+        help=(
+            "paired setups in each of two seed families "
+            f"(frozen claim default: {DEFAULT_PAIRS_PER_FAMILY}; 60,000 games total)"
+        ),
+    )
     parser.add_argument(
         "--toy-agents",
         action="store_true",
@@ -550,9 +582,24 @@ def main() -> int:
         parser.error("--pairs-per-family must be positive")
 
     bundle = _toy_bundle() if args.toy_agents else _learned_bundle()
-    plan = build_plan(args.output, bundle, pairs_per_family=args.pairs_per_family)
+    setup_holdout = scan_prior_setup_blocks(
+        pair_count=args.pairs_per_family,
+        excluded_roots=DEFAULT_EXCLUDED_SETUP_ROOTS,
+        current_output=args.output,
+    )
+    plan = build_plan(
+        args.output,
+        bundle,
+        pairs_per_family=args.pairs_per_family,
+        setup_holdout=setup_holdout,
+    )
     plan_path = args.output / "plan.json"
     _write_immutable(plan_path, plan)
+    _write_immutable(args.output / "analysis" / "setup-block-holdout.json", setup_holdout)
+    if setup_holdout["overlap_count"] != 0:
+        raise RuntimeError(
+            "confirmation setup block overlaps declared prior corpora; no games were started"
+        )
 
     result_path = args.output / "result.json"
     if result_path.exists():
@@ -588,6 +635,7 @@ def main() -> int:
         statistics=statistics,
         audit=audit,
         integrity=integrity,
+        setup_holdout=setup_holdout,
         cell_artifacts=cell_artifacts,
     )
     _write_immutable(result_path, result)

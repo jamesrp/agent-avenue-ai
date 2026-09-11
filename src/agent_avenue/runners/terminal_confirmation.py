@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -22,6 +22,7 @@ from agent_avenue.agents import (
 from agent_avenue.agents.ordering import semantic_action_key
 from agent_avenue.engine import (
     Action,
+    GameConfig,
     GameState,
     Phase,
     PlayOfferAction,
@@ -30,6 +31,7 @@ from agent_avenue.engine import (
     new_game,
 )
 from agent_avenue.engine.model import player_index
+from agent_avenue.engine.setup import normalize_config
 from agent_avenue.observation import observe
 from agent_avenue.observation.model import PlayerObservation
 from agent_avenue.storage import GameRecord, game_record_fingerprint, load_corpus
@@ -39,7 +41,7 @@ from .public_win_oracle import independent_public_forced_win_oracle
 
 CYCLE_ID: Final = "m7-terminal-offense-confirm-v1"
 ROOT_SEED: Final = 2026091101
-DEFAULT_PAIRS_PER_FAMILY: Final = 1_250
+DEFAULT_PAIRS_PER_FAMILY: Final = 1_000
 FAMILY_IDS: Final = ("seed-family-a", "seed-family-b")
 CONTROL_ID: Final = "q0-terminal-safety-control-v1"
 TREATMENT_ID: Final = "q0-terminal-offense-treatment-v1"
@@ -56,6 +58,14 @@ BOOTSTRAP_UPPER_INDEX: Final = 19_499
 BOOTSTRAP_DOMAIN: Final = f"{CYCLE_ID}:stratified-common-block-bootstrap:v1"
 PRACTICAL_LIFT_THRESHOLD: Final = 0.0025
 CONFIRMATION_AUDIT_VERSION: Final = "terminal-offense-confirmation-replay-audit-v1"
+DEFAULT_EXCLUDED_SETUP_ROOTS: Final = (
+    Path("runs/m7-q0-strength-audit-v1"),
+    Path("runs/terminal-safety-v1"),
+    Path("runs/milestone6"),
+    Path("runs/q0-corpus"),
+    Path("runs/research-cycles/m7-heuristic-ranking-warmstart-v1"),
+    Path("runs/research-cycles/m7-heuristic-ranking-warmstart-v1-repair1"),
+)
 CONFIRMATION_STATISTICS_VERSION: Final = "terminal-offense-confirmation-statistics-v1"
 
 CandidateScorer = Callable[[PlayerObservation, tuple[Action, ...]], LearnedCandidateScores]
@@ -185,6 +195,202 @@ def validate_seed_families(pair_count: int, *, root_seed: int = ROOT_SEED) -> di
         "families_disjoint": disjoint,
         "status": "passed" if unique_within and disjoint else "failed",
     }
+
+
+def _canonical_json(value: object) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode()
+
+
+def _setup_identity(game_config: Mapping[str, object], setup_seed: int) -> str:
+    return hashlib.sha256(
+        _canonical_json({"game_config": dict(game_config), "setup_seed": setup_seed})
+    ).hexdigest()
+
+
+def _identity_set_fingerprint(identities: Iterable[str]) -> str:
+    return hashlib.sha256(_canonical_json(sorted(set(identities)))).hexdigest()
+
+
+def scan_prior_setup_blocks(
+    *,
+    pair_count: int,
+    excluded_roots: tuple[Path, ...] = DEFAULT_EXCLUDED_SETUP_ROOTS,
+    current_output: Path | None = None,
+    game_config: GameConfig | None = None,
+) -> dict[str, object]:
+    """Compare the confirmation setup block with completed corpora under excluded roots.
+
+    Corpus loads deliberately skip code and replay execution because this is a fast holdout-identity
+    scan; corpus/record fingerprints, JSON shape, ordering, counts, and current rules compatibility
+    remain enforced by storage. A malformed completed corpus under a present root is fatal.
+    """
+    if pair_count < 1:
+        raise TerminalConfirmationError("setup holdout scan requires a positive pair count")
+    if not excluded_roots:
+        raise TerminalConfirmationError("setup holdout scan requires excluded roots")
+    actual_game_config = game_config or GameConfig()
+    normalized_config = normalize_config(actual_game_config)
+    current: dict[str, dict[str, object]] = {}
+    for family in FAMILY_IDS:
+        for pair_index, setup_seed in enumerate(family_setup_seeds(family, pair_count)):
+            identity = _setup_identity(normalized_config, setup_seed)
+            if identity in current:
+                raise TerminalConfirmationError("confirmation setup families are not disjoint")
+            current[identity] = {
+                "family": family,
+                "pair_index": pair_index,
+                "setup_seed": setup_seed,
+                "game_config": normalized_config,
+            }
+
+    output = current_output.resolve() if current_output is not None else None
+    seen_manifests: set[Path] = set()
+    prior_sources: dict[str, list[str]] = {}
+    prior_material: dict[str, dict[str, object]] = {}
+    root_rows: list[dict[str, object]] = []
+    corpus_rows: list[dict[str, object]] = []
+    scanned_record_count = 0
+    for declared_root in excluded_roots:
+        root = declared_root.resolve()
+        if output is not None and root == output:
+            root_rows.append(
+                {
+                    "declared_root": str(declared_root),
+                    "resolved_root": str(root),
+                    "status": "excluded-current-output",
+                    "corpus_count": 0,
+                    "record_count": 0,
+                    "ignored_manifest_count": 0,
+                    "current_output_excluded": True,
+                }
+            )
+            continue
+        if not root.exists():
+            root_rows.append(
+                {
+                    "declared_root": str(declared_root),
+                    "resolved_root": str(root),
+                    "status": "missing",
+                    "corpus_count": 0,
+                    "record_count": 0,
+                    "ignored_manifest_count": 0,
+                    "current_output_excluded": output is not None and output.is_relative_to(root),
+                }
+            )
+            continue
+        if not root.is_dir():
+            raise TerminalConfirmationError(
+                f"excluded setup root is present but is not a directory: {declared_root}"
+            )
+        corpus_count = 0
+        record_count = 0
+        ignored_count = 0
+        for manifest_path in sorted(root.rglob("manifest.json")):
+            resolved_manifest = manifest_path.resolve()
+            if output is not None and resolved_manifest.is_relative_to(output):
+                continue
+            if resolved_manifest in seen_manifests:
+                continue
+            seen_manifests.add(resolved_manifest)
+            records_path = manifest_path.parent / "games.jsonl.gz"
+            try:
+                manifest_data = json.loads(manifest_path.read_text())
+            except (OSError, json.JSONDecodeError) as exc:
+                if records_path.exists():
+                    raise TerminalConfirmationError(
+                        f"malformed completed corpus manifest: {manifest_path}"
+                    ) from exc
+                ignored_count += 1
+                continue
+            is_corpus = records_path.exists() or (
+                isinstance(manifest_data, dict) and "records_file" in manifest_data
+            )
+            if not is_corpus:
+                ignored_count += 1
+                continue
+            try:
+                manifest, records = load_corpus(
+                    manifest_path.parent,
+                    verify_code=False,
+                    verify_replays=False,
+                )
+            except (OSError, ValueError) as exc:
+                raise TerminalConfirmationError(
+                    f"unable to load completed excluded corpus: {manifest_path.parent}"
+                ) from exc
+            corpus_count += 1
+            record_count += len(records)
+            scanned_record_count += len(records)
+            source = str(manifest_path.parent)
+            corpus_rows.append(
+                {
+                    "path": source,
+                    "corpus_fingerprint": manifest.corpus_fingerprint,
+                    "record_count": len(records),
+                }
+            )
+            for record in records:
+                config_data = normalize_config(record.replay.config)
+                identity = _setup_identity(config_data, record.replay.seed)
+                prior_sources.setdefault(identity, []).append(source)
+                prior_material.setdefault(
+                    identity,
+                    {
+                        "setup_seed": record.replay.seed,
+                        "game_config": config_data,
+                    },
+                )
+        root_rows.append(
+            {
+                "declared_root": str(declared_root),
+                "resolved_root": str(root),
+                "status": "present",
+                "corpus_count": corpus_count,
+                "record_count": record_count,
+                "ignored_manifest_count": ignored_count,
+                "current_output_excluded": output is not None and output.is_relative_to(root),
+            }
+        )
+
+    overlaps = sorted(set(current) & set(prior_sources))
+    overlap_examples = [
+        {
+            "setup_identity": identity,
+            "current": current[identity],
+            "prior": prior_material[identity],
+            "prior_corpora": sorted(set(prior_sources[identity])),
+        }
+        for identity in overlaps[:24]
+    ]
+    data: dict[str, object] = {
+        "version": "terminal-offense-confirmation-setup-holdout-v1",
+        "status": "passed" if not overlaps else "failed",
+        "excluded_roots": root_rows,
+        "current_output": None if current_output is None else str(current_output.resolve()),
+        "current_setup_count": len(current),
+        "current_setup_fingerprint": _identity_set_fingerprint(current),
+        "prior_unique_setup_count": len(prior_sources),
+        "prior_setup_fingerprint": _identity_set_fingerprint(prior_sources),
+        "scanned_corpus_count": len(corpus_rows),
+        "scanned_record_count": scanned_record_count,
+        "scanned_corpora": sorted(corpus_rows, key=lambda row: str(row["path"])),
+        "overlap_count": len(overlaps),
+        "overlap_fingerprint": _identity_set_fingerprint(overlaps),
+        "overlap_examples": overlap_examples,
+        "artifact_fingerprint": "",
+    }
+    data["artifact_fingerprint"] = hashlib.sha256(
+        _canonical_json(
+            {key: value for key, value in data.items() if key != "artifact_fingerprint"}
+        )
+    ).hexdigest()
+    return data
 
 
 def validate_confirmation_corpora(
@@ -611,11 +817,13 @@ def _prefix_comparison(control: GameRecord, treatment: GameRecord) -> dict[str, 
         return {
             "metadata_aligned": False,
             "prefix_aligned": False,
-            "intervention_found": False,
+            "guaranteed_win_endpoint_found": False,
+            "endpoint_classification": None,
             "aligned_actions": 0,
             "failure_reason": "matched RNG/setup metadata differ",
             "failure_action_index": None,
-            "treatment_converted_at_intervention": False,
+            "control_converted_at_endpoint": False,
+            "treatment_converted_at_endpoint": False,
         }
 
     control_state = new_game(control.replay.config, control.replay.seed)
@@ -628,11 +836,13 @@ def _prefix_comparison(control: GameRecord, treatment: GameRecord) -> dict[str, 
             return {
                 "metadata_aligned": True,
                 "prefix_aligned": False,
-                "intervention_found": False,
+                "guaranteed_win_endpoint_found": False,
+                "endpoint_classification": None,
                 "aligned_actions": index,
-                "failure_reason": "authoritative states diverged before intervention",
+                "failure_reason": "authoritative states diverged before alignment endpoint",
                 "failure_action_index": index,
-                "treatment_converted_at_intervention": False,
+                "control_converted_at_endpoint": False,
+                "treatment_converted_at_endpoint": False,
             }
         actor = (
             control_state.active_player
@@ -652,27 +862,43 @@ def _prefix_comparison(control: GameRecord, treatment: GameRecord) -> dict[str, 
                 if isinstance(control_action, PlayOfferAction)
                 else (),
             )
-            if oracle.forced_win_actions and control_action not in oracle.forced_win_actions:
-                converted = treatment_action in oracle.forced_win_actions
+            if oracle.forced_win_actions:
+                control_converted = control_action in oracle.forced_win_actions
+                treatment_converted = treatment_action in oracle.forced_win_actions
+                classification = (
+                    "both_converted"
+                    if control_converted and treatment_converted
+                    else "control_missed_treatment_converted"
+                    if treatment_converted
+                    else "treatment_failed_guaranteed_win"
+                )
                 return {
                     "metadata_aligned": True,
                     "prefix_aligned": True,
-                    "intervention_found": True,
+                    "guaranteed_win_endpoint_found": True,
+                    "endpoint_classification": classification,
                     "aligned_actions": index,
-                    "failure_reason": None,
+                    "failure_reason": (
+                        None
+                        if treatment_converted
+                        else "treatment did not choose a guaranteed action at alignment endpoint"
+                    ),
                     "failure_action_index": None,
-                    "intervention_action_index": index,
-                    "treatment_converted_at_intervention": converted,
+                    "endpoint_action_index": index,
+                    "control_converted_at_endpoint": control_converted,
+                    "treatment_converted_at_endpoint": treatment_converted,
                 }
         if control_action != treatment_action:
             return {
                 "metadata_aligned": True,
                 "prefix_aligned": False,
-                "intervention_found": False,
+                "guaranteed_win_endpoint_found": False,
+                "endpoint_classification": None,
                 "aligned_actions": index,
-                "failure_reason": "actions diverged before a missed control guaranteed win",
+                "failure_reason": "actions diverged before guaranteed-win alignment endpoint",
                 "failure_action_index": index,
-                "treatment_converted_at_intervention": False,
+                "control_converted_at_endpoint": False,
+                "treatment_converted_at_endpoint": False,
             }
         control_state = apply_action(control_state, control_action)
         treatment_state = apply_action(treatment_state, treatment_action)
@@ -681,11 +907,13 @@ def _prefix_comparison(control: GameRecord, treatment: GameRecord) -> dict[str, 
     return {
         "metadata_aligned": True,
         "prefix_aligned": complete,
-        "intervention_found": False,
+        "guaranteed_win_endpoint_found": False,
+        "endpoint_classification": None,
         "aligned_actions": index,
-        "failure_reason": None if complete else "record lengths diverged before intervention",
+        "failure_reason": None if complete else "record lengths diverged before alignment endpoint",
         "failure_action_index": None if complete else index,
-        "treatment_converted_at_intervention": False,
+        "control_converted_at_endpoint": False,
+        "treatment_converted_at_endpoint": False,
     }
 
 
@@ -710,10 +938,12 @@ def _prefix_row(
         {
             "matched_games": 0,
             "metadata_mismatches": 0,
-            "pre_intervention_prefix_mismatches": 0,
-            "games_with_intervention": 0,
-            "games_without_intervention": 0,
-            "treatment_intervention_conversion_failures": 0,
+            "pre_endpoint_prefix_mismatches": 0,
+            "guaranteed_win_endpoints": 0,
+            "control_missed_treatment_converted": 0,
+            "both_converted": 0,
+            "treatment_endpoint_failures": 0,
+            "games_without_guaranteed_win_endpoint": 0,
             "aligned_actions": 0,
         }
     )
@@ -723,26 +953,31 @@ def _prefix_row(
         aligned_actions = comparison["aligned_actions"]
         if type(aligned_actions) is not int:
             raise TerminalConfirmationError("prefix aligned-action count is malformed")
-        intervention_found = bool(comparison["intervention_found"])
+        endpoint_found = bool(comparison["guaranteed_win_endpoint_found"])
         metadata_aligned = bool(comparison["metadata_aligned"])
         prefix_aligned = bool(comparison["prefix_aligned"])
-        treatment_converted = bool(comparison["treatment_converted_at_intervention"])
+        treatment_converted = bool(comparison["treatment_converted_at_endpoint"])
+        classification = comparison["endpoint_classification"]
+        if classification is not None and not isinstance(classification, str):
+            raise TerminalConfirmationError("prefix endpoint classification is malformed")
         values = {
             "matched_games": 1,
             "metadata_mismatches": int(not metadata_aligned),
-            "pre_intervention_prefix_mismatches": int(not prefix_aligned),
-            "games_with_intervention": int(intervention_found),
-            "games_without_intervention": int(not intervention_found),
-            "treatment_intervention_conversion_failures": int(
-                intervention_found and not treatment_converted
+            "pre_endpoint_prefix_mismatches": int(not prefix_aligned),
+            "guaranteed_win_endpoints": int(endpoint_found),
+            "control_missed_treatment_converted": int(
+                classification == "control_missed_treatment_converted"
             ),
+            "both_converted": int(classification == "both_converted"),
+            "treatment_endpoint_failures": int(endpoint_found and not treatment_converted),
+            "games_without_guaranteed_win_endpoint": int(not endpoint_found),
             "aligned_actions": aligned_actions,
         }
         row.update(values)
         if (
             not metadata_aligned
             or not prefix_aligned
-            or (intervention_found and not treatment_converted)
+            or (endpoint_found and not treatment_converted)
         ) and len(failures) < 24:
             failures.append(
                 {
@@ -766,8 +1001,8 @@ def _prefix_data(
         overall.update(row)
     return {
         "definition": (
-            "histories identical until the first control decision with an independent "
-            "guaranteed win that control does not take"
+            "histories identical before the first control guaranteed-win opportunity; "
+            "at that endpoint treatment must choose any guaranteed action"
         ),
         "counts": dict(overall),
         "by_family_opponent": {key: dict(value) for key, value in sorted(rows.items())},

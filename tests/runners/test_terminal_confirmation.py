@@ -8,9 +8,12 @@ from pathlib import Path
 from agent_avenue.agents import (
     RandomAgent,
     RandomAgentConfig,
+    ScriptedAgent,
     TerminalOffenseAgent,
     TerminalSafetyAgent,
 )
+from agent_avenue.engine import Phase, PlayerId, PlayOfferAction, apply_action, new_game
+from agent_avenue.observation import observe
 from agent_avenue.runners import (
     CONTROL_ID,
     DEFAULT_PAIRS_PER_FAMILY,
@@ -20,10 +23,12 @@ from agent_avenue.runners import (
     TREATMENT_ID,
     AgentSpec,
     ArenaConfig,
+    GameSpec,
     compare_matched_action_prefixes,
     confirmation_cells,
     family_master_seed,
     family_setup_seeds,
+    independent_public_forced_win_oracle,
     run_game,
     schedule_arena,
     stratified_joint_bootstrap,
@@ -92,6 +97,37 @@ def test_control_and_treatment_share_q0_rng_stream_against_shared_opponent() -> 
         assert control_game.agent_rng_domains[control_q0] == "agent:q0-terminal-core-v1"
 
 
+def test_agent_id_aliases_with_shared_rng_identity_preserve_behavior_and_outcome() -> None:
+    first_agent = TerminalSafetyAgent(RandomAgent())
+    second_agent = TerminalSafetyAgent(RandomAgent())
+    first = AgentSpec(
+        "behavior-alias-a",
+        first_agent.config_to_data(),
+        lambda: TerminalSafetyAgent(RandomAgent()),
+        rng_identity="behavior-identical-core",
+    )
+    second = AgentSpec(
+        "behavior-alias-b",
+        second_agent.config_to_data(),
+        lambda: TerminalSafetyAgent(RandomAgent()),
+        rng_identity="behavior-identical-core",
+    )
+    opponent = _random_spec("alias-opponent")
+    master_seed = 81173
+    first_spec = next(schedule_arena(ArenaConfig("alias-a", first, opponent, 1, master_seed)))
+    second_spec = next(schedule_arena(ArenaConfig("alias-b", second, opponent, 1, master_seed)))
+
+    first_record = run_game(first_spec)
+    second_record = run_game(second_spec)
+
+    assert first_spec.setup_seed == second_spec.setup_seed
+    assert first_spec.agent_seeds == second_spec.agent_seeds
+    assert first_record.replay.actions == second_record.replay.actions
+    assert first_record.replay.final_fingerprint == second_record.replay.final_fingerprint
+    assert first_record.winner == second_record.winner
+    assert first_record.final_scores == second_record.final_scores
+
+
 def test_stratified_bootstrap_resamples_aligned_metrics_jointly() -> None:
     metrics = {
         FAMILY_IDS[0]: {
@@ -115,7 +151,7 @@ def test_stratified_bootstrap_resamples_aligned_metrics_jointly() -> None:
     assert first["blocks_per_stratum"] == {family: 3 for family in FAMILY_IDS}
 
 
-def test_matched_prefix_audit_accepts_aligned_rng_until_intervention() -> None:
+def test_matched_prefix_audit_accepts_alignment_until_guaranteed_win_endpoint() -> None:
     control_agent = TerminalSafetyAgent(FirstLegalAgent())
     treatment_agent = TerminalOffenseAgent(TerminalSafetyAgent(FirstLegalAgent()))
     control = AgentSpec(
@@ -144,11 +180,109 @@ def test_matched_prefix_audit_accepts_aligned_rng_until_intervention() -> None:
         )
         assert comparison["metadata_aligned"] is True
         assert comparison["prefix_aligned"] is True
-        if comparison["intervention_found"]:
+        if comparison["guaranteed_win_endpoint_found"]:
             found = comparison
             break
     assert found is not None
-    assert found["treatment_converted_at_intervention"] is True
+    assert found["treatment_converted_at_endpoint"] is True
+    assert found["endpoint_classification"] in {
+        "control_missed_treatment_converted",
+        "both_converted",
+    }
+
+
+def test_different_guaranteed_actions_are_valid_at_prefix_alignment_endpoint() -> None:
+    control_agent = TerminalSafetyAgent(FirstLegalAgent())
+    control = AgentSpec(
+        CONTROL_ID,
+        control_agent.config_to_data(),
+        lambda: TerminalSafetyAgent(FirstLegalAgent()),
+        rng_identity=Q0_RNG_IDENTITY,
+    )
+    opponent = _random_spec("prefix-regression-opponent")
+    selected = None
+    for master_seed in range(1, 500):
+        control_spec = next(
+            schedule_arena(ArenaConfig("prefix-regression", control, opponent, 1, master_seed))
+        )
+        record = run_game(control_spec)
+        state = new_game(record.replay.config, record.replay.seed)
+        for action_index, action in enumerate(record.replay.actions):
+            actor = (
+                state.active_player if state.phase is Phase.PLAY else state.active_player.other()
+            )
+            if record.seats[0 if actor is PlayerId.PLAYER_ONE else 1].agent_id == CONTROL_ID:
+                observation = observe(state, actor)
+                oracle = independent_public_forced_win_oracle(
+                    observation,
+                    observation.legal_actions,
+                    authoritative_state=state,
+                    exact_play_actions=(action,) if isinstance(action, PlayOfferAction) else (),
+                )
+                if oracle.forced_win_actions:
+                    if action in oracle.forced_win_actions and len(oracle.forced_win_actions) > 1:
+                        alternate = next(
+                            candidate
+                            for candidate in oracle.forced_win_actions
+                            if candidate != action
+                        )
+                        selected = (record, action_index, alternate)
+                    break
+            state = apply_action(state, action)
+        if selected is not None:
+            break
+    assert selected is not None
+    control_record, endpoint_index, alternate = selected
+    modified_actions = list(control_record.replay.actions)
+    modified_actions[endpoint_index] = alternate
+    scripts = {
+        player: tuple(action for action in modified_actions if action.actor is player)
+        for player in PlayerId
+    }
+
+    def scripted_spec(player: PlayerId) -> AgentSpec:
+        agent_id = TREATMENT_ID if player is PlayerId.PLAYER_ONE else "prefix-regression-opponent"
+        identity = Q0_RNG_IDENTITY if player is PlayerId.PLAYER_ONE else agent_id
+        name = f"endpoint-{player.value}"
+        actions = scripts[player]
+        scripted = ScriptedAgent(actions, name=name)
+        return AgentSpec(
+            agent_id,
+            scripted.config_to_data(),
+            lambda actions=actions, name=name: ScriptedAgent(actions, name=name),
+            rng_identity=identity,
+        )
+
+    treatment_record = run_game(
+        GameSpec(
+            "prefix-regression-treatment",
+            "pair-000000-a-first",
+            "pair-000000",
+            control_record.replay.config,
+            control_record.replay.seed,
+            (
+                scripted_spec(PlayerId.PLAYER_ONE),
+                scripted_spec(PlayerId.PLAYER_TWO),
+            ),
+            (control_record.seats[0].seed, control_record.seats[1].seed),
+            (
+                control_record.seats[0].seed_derivation,
+                control_record.seats[1].seed_derivation,
+            ),
+        )
+    )
+
+    comparison = compare_matched_action_prefixes(control_record, treatment_record)
+
+    assert (
+        control_record.replay.actions[endpoint_index]
+        != treatment_record.replay.actions[endpoint_index]
+    )
+    assert comparison["prefix_aligned"] is True
+    assert comparison["guaranteed_win_endpoint_found"] is True
+    assert comparison["endpoint_classification"] == "both_converted"
+    assert comparison["control_converted_at_endpoint"] is True
+    assert comparison["treatment_converted_at_endpoint"] is True
 
 
 def test_tiny_confirmation_smoke_is_resumable_immutable_and_validatable(
@@ -177,8 +311,12 @@ def test_tiny_confirmation_smoke_is_resumable_immutable_and_validatable(
     plan = json.loads((output / "plan.json").read_text())
     result = json.loads((output / "result.json").read_text())
     assert plan["frozen_default_design"]["pairs_per_family"] == DEFAULT_PAIRS_PER_FAMILY
-    assert plan["frozen_default_design"]["total_games"] == 75_000
+    assert plan["frozen_default_design"]["total_games"] == 60_000
     assert plan["execution"]["evidence_class"] == "smoke-only-nondefault"
+    assert plan["excluded_setup_roots"]
+    assert result["setup_block_holdout"]["status"] == "passed"
+    assert result["setup_block_holdout"]["overlap_count"] == 0
+    assert len(result["setup_block_holdout"]["artifact_fingerprint"]) == 64
     assert result["games"]["total"] == 60
     assert (
         result["replay_audit"]["independent_production_oracle_agreement"]["counts"][
@@ -204,8 +342,8 @@ def test_tiny_confirmation_smoke_is_resumable_immutable_and_validatable(
     )
     prefix_counts = result["replay_audit"]["matched_action_prefixes"]["counts"]
     assert prefix_counts["metadata_mismatches"] == 0
-    assert prefix_counts["pre_intervention_prefix_mismatches"] == 0
-    assert prefix_counts["treatment_intervention_conversion_failures"] == 0
+    assert prefix_counts["pre_endpoint_prefix_mismatches"] == 0
+    assert prefix_counts["treatment_endpoint_failures"] == 0
 
     validation = subprocess.run(
         (sys.executable, str(validator), str(output)),

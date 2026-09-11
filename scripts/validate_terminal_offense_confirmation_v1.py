@@ -17,6 +17,7 @@ from agent_avenue.observation.model import PlayerObservation
 from agent_avenue.runners import (
     CONTROL_ID,
     CYCLE_ID,
+    DEFAULT_EXCLUDED_SETUP_ROOTS,
     DEFAULT_PAIRS_PER_FAMILY,
     Q0_RNG_IDENTITY,
     ROOT_SEED,
@@ -29,6 +30,7 @@ from agent_avenue.runners import (
     confirmation_cells,
     confirmation_statistics,
     family_master_seed,
+    scan_prior_setup_blocks,
     validate_confirmation_corpora,
     validate_seed_families,
 )
@@ -108,6 +110,33 @@ def main() -> int:
         raise RuntimeError("plan cycle or root seed differs from frozen design")
     if plan["frozen_default_design"]["pairs_per_family"] != DEFAULT_PAIRS_PER_FAMILY:
         raise RuntimeError("plan default pair count differs from frozen design")
+    if plan["frozen_default_design"]["total_games"] != 60_000:
+        raise RuntimeError("plan default game count differs from frozen design")
+    if plan["excluded_setup_roots"] != [str(path) for path in DEFAULT_EXCLUDED_SETUP_ROOTS]:
+        raise RuntimeError("plan excluded setup roots differ from frozen design")
+    retained_holdout = _read(root / "analysis" / "setup-block-holdout.json")
+    holdout_payload = {
+        key: value for key, value in retained_holdout.items() if key != "artifact_fingerprint"
+    }
+    if _fingerprint(holdout_payload) != retained_holdout["artifact_fingerprint"]:
+        raise RuntimeError("setup-block holdout artifact fingerprint mismatch")
+    recomputed_holdout = scan_prior_setup_blocks(
+        pair_count=int(plan["execution"]["pairs_per_family"]),
+        excluded_roots=tuple(Path(value) for value in plan["excluded_setup_roots"]),
+        current_output=root,
+    )
+    if recomputed_holdout != retained_holdout:
+        raise RuntimeError("setup-block holdout scan differs from recomputation")
+    if retained_holdout["overlap_count"] != 0:
+        raise RuntimeError("confirmation setup block overlaps prior retained corpora")
+    if plan["setup_holdout"] != {
+        "artifact_fingerprint": retained_holdout["artifact_fingerprint"],
+        "status": retained_holdout["status"],
+        "overlap_count": retained_holdout["overlap_count"],
+        "current_setup_fingerprint": retained_holdout["current_setup_fingerprint"],
+        "prior_setup_fingerprint": retained_holdout["prior_setup_fingerprint"],
+    }:
+        raise RuntimeError("plan setup holdout summary mismatch")
 
     policy_data = plan["policies"]
     specs: dict[str, AgentSpec] = {}
@@ -180,6 +209,8 @@ def main() -> int:
         raise RuntimeError("result does not embed recomputed analysis")
     if result["integrity"] != integrity:
         raise RuntimeError("result does not embed recomputed integrity")
+    if result["setup_block_holdout"] != retained_holdout:
+        raise RuntimeError("result does not embed setup-block holdout evidence")
     if result["practical_lift_claim"] != statistics["practical_lift_claim"]:
         raise RuntimeError("result practical-lift claim differs from recomputation")
     tactics = audit["guaranteed_win_and_safety"]
@@ -192,6 +223,7 @@ def main() -> int:
         bool(plan["execution"]["uses_frozen_default_design"])
         and plan["seed_validation"]["status"] == "passed"
         and integrity["family_blocks_disjoint"],
+        retained_holdout["status"] == "passed" and retained_holdout["overlap_count"] == 0,
         integrity["status"] == "passed",
         agreement["disagreement_decisions"] == 0,
         treatment_counts["guaranteed_win_misses"] == 0
@@ -201,8 +233,8 @@ def main() -> int:
         ties["control"]["counts"]["selected_outside_exact_maxima"] == 0
         and ties["treatment"]["counts"]["selected_outside_exact_maxima"] == 0,
         prefixes["metadata_mismatches"] == 0
-        and prefixes["pre_intervention_prefix_mismatches"] == 0
-        and prefixes["treatment_intervention_conversion_failures"] == 0,
+        and prefixes["pre_endpoint_prefix_mismatches"] == 0
+        and prefixes["treatment_endpoint_failures"] == 0,
     ]
     retained_structural = result["structural_adoption"]
     retained_passes = [bool(row["passed"]) for row in retained_structural["criteria"]]
@@ -233,6 +265,8 @@ def main() -> int:
         "record_count": integrity["record_count"],
         "decision_count": integrity["decision_count"],
         "integrity_status": integrity["status"],
+        "setup_holdout_fingerprint": retained_holdout["artifact_fingerprint"],
+        "prior_setup_overlap_count": retained_holdout["overlap_count"],
         "oracle_disagreement_decisions": audit["independent_production_oracle_agreement"]["counts"][
             "disagreement_decisions"
         ],

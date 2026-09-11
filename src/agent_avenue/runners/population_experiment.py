@@ -11,8 +11,10 @@ import hashlib
 import json
 import math
 import os
+import subprocess
 import tempfile
 import time
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +30,14 @@ from agent_avenue.agents import (
     TerminalOffenseAgent,
     TerminalSafetyAgent,
     derive_seed,
+)
+from agent_avenue.engine import (
+    Phase,
+    PlayerId,
+    PlayOfferAction,
+    RecruitAction,
+    apply_action,
+    new_game,
 )
 from agent_avenue.engine.setup import normalize_config
 from agent_avenue.storage import (
@@ -47,6 +57,7 @@ from .population import (
     POPULATION_POLICY_IDS,
     POPULATION_REPLAY_CYCLE_ID,
     POPULATION_REPLAY_REPLICATE_IDS,
+    POPULATION_REPLAY_ROOT_SEED,
     PopulationArm,
     PopulationCorpusConfig,
     PopulationCorpusPlan,
@@ -76,6 +87,8 @@ CLAIM_RUN_CUTOFF_SECONDS: Final = 7 * 60 * 60 + 45 * 60
 WHOLE_STEP_COMPUTE_BUDGET_SECONDS: Final = 8 * 60 * 60
 ALLOWED_RESUME_RETRIES: Final = 1
 FIXED_CREATED_AT: Final = "2026-09-11T00:00:00+00:00"
+GLOBAL_BOOTSTRAP_DOMAIN: Final = f"{POPULATION_REPLAY_CYCLE_ID}:global-nested-bootstrap:v1"
+RUNNER_SOURCE_CHECK_VERSION: Final = "population-replay-runner-clean-source-v1"
 
 Q0_PARENT: Final = "q0"
 HISTORICAL_Q0: Final = "historical-q0"
@@ -252,6 +265,39 @@ def _portable(path: Path) -> str:
         return resolved.relative_to(repository_root()).as_posix()
     except ValueError:
         return str(resolved)
+
+
+def _runner_source_check() -> dict[str, object]:
+    """Freeze runner-local tracked and non-ignored untracked cleanliness for claim dispatch."""
+    root = repository_root()
+    try:
+        status = subprocess.run(
+            ("git", "status", "--porcelain=v1", "--untracked-files=all", "--ignored=no"),
+            cwd=root,
+            check=True,
+            capture_output=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PopulationExperimentError("unable to inspect runner-local Git cleanliness") from exc
+    return {
+        "version": RUNNER_SOURCE_CHECK_VERSION,
+        "tracked_and_nonignored_untracked_clean": not bool(status.strip()),
+        "status_sha256": hashlib.sha256(status).hexdigest(),
+        "checks": {
+            "tracked_changes": "git-status-porcelain-v1",
+            "untracked": "all-nonignored-files",
+            "ignored_artifacts": "excluded-by-git-status-ignored-no",
+        },
+    }
+
+
+def _global_bootstrap_material() -> dict[str, object]:
+    return {
+        "domain": GLOBAL_BOOTSTRAP_DOMAIN,
+        "seed": derive_seed(POPULATION_REPLAY_ROOT_SEED, GLOBAL_BOOTSTRAP_DOMAIN),
+        "root_seed": POPULATION_REPLAY_ROOT_SEED,
+        "rng_algorithm": "hmac-sha256-counter-v1",
+    }
 
 
 def _agent_config(agent: Agent) -> dict[str, object]:
@@ -575,6 +621,28 @@ def _holdout_scan(
     return data
 
 
+def _treatment_matchup_summary(
+    corpus_plan: PopulationCorpusPlan,
+) -> dict[str, list[dict[str, object]]]:
+    ordering = {policy_id: index for index, policy_id in enumerate(POPULATION_POLICY_IDS)}
+    summary: dict[str, list[dict[str, object]]] = {}
+    for replicate in corpus_plan.replicates:
+        counts: Counter[tuple[str, str]] = Counter()
+        for matchup in replicate.treatment_assignment.matchups:
+            first, second = sorted(
+                (matchup.lane_a_policy_id, matchup.lane_b_policy_id),
+                key=lambda policy_id: ordering[policy_id],
+            )
+            counts[(first, second)] += 1
+        summary[replicate.replicate_id] = [
+            {"policy_a": first, "policy_b": second, "paired_blocks": count}
+            for (first, second), count in sorted(
+                counts.items(), key=lambda row: (ordering[row[0][0]], ordering[row[0][1]])
+            )
+        ]
+    return summary
+
+
 def _validate_corrected_default_arena_counts(plan: Mapping[str, object]) -> None:
     arenas = plan.get("arenas")
     frozen = plan.get("frozen_default_design")
@@ -604,6 +672,7 @@ def build_population_experiment_plan(
 ) -> dict[str, object]:
     """Freeze source, checkpoint, assignment, corpus, and arena declarations before dispatch."""
     source = inspect_source_identity()
+    runner_source = _runner_source_check()
     corpus_config = PopulationCorpusConfig(members=bundle.members)
     corpus_plan = build_population_corpus_plan(corpus_config)
     cells = population_arena_cells(corpus_plan, pair_count=config.pairs_per_cell)
@@ -615,6 +684,14 @@ def build_population_experiment_plan(
         claim_reasons.append("toy_policy_bundle")
     if not source.tracked_tree_clean:
         claim_reasons.append("tracked_source_tree_is_dirty")
+    if runner_source["tracked_and_nonignored_untracked_clean"] is not True:
+        claim_reasons.append("runner_source_has_tracked_or_nonignored_untracked_files")
+    if config.claim_default:
+        declared_runs = [path for path in config.holdout_roots if path.name == "runs"]
+        if not declared_runs:
+            claim_reasons.append("claim_runs_holdout_root_not_declared")
+        elif not any(path.exists() and path.is_dir() for path in declared_runs):
+            claim_reasons.append("claim_runs_holdout_root_missing")
     if config.claim_default and (
         count_data["candidate_comparison_games"] != 22_200
         or count_data["reference_games"] != 1_800
@@ -623,6 +700,7 @@ def build_population_experiment_plan(
         raise PopulationExperimentError("population arena count contract is malformed")
     source_data = {
         **source.to_data(),
+        "runner_clean_check": runner_source,
         "rules_fingerprint": rules_fingerprint(),
         "code_fingerprint": code_fingerprint(),
     }
@@ -634,6 +712,8 @@ def build_population_experiment_plan(
         "checkpoint_identities": _json_copy(bundle.checkpoint_identities),
         "corpus_plan": corpus_plan.to_data(),
         "corpus_plan_fingerprint": corpus_plan.fingerprint,
+        "treatment_matchup_counts": _treatment_matchup_summary(corpus_plan),
+        "global_bootstrap": _global_bootstrap_material(),
         "execution": {
             "mode": bundle.mode,
             "evidence_class": "claim-eligible-default"
@@ -717,6 +797,60 @@ def _validate_sliced_schedule(records: Iterable[GameRecord], specs: tuple[GameSp
         validate_record_matches_spec(record, spec)
 
 
+def _corpus_coverage_summary(
+    records: tuple[GameRecord, ...], corpus_plan: PopulationCorpusPlan
+) -> dict[str, object]:
+    """Diagnostic behavior coverage; policy provenance never becomes a model feature."""
+    policy_games: Counter[str] = Counter()
+    policy_decisions: Counter[str] = Counter()
+    phase_counts: Counter[str] = Counter()
+    action_counts: Counter[str] = Counter()
+    card_counts: Counter[str] = Counter()
+    members = corpus_plan.config.member_by_agent_id
+    for record in records:
+        for seat in record.seats:
+            member = members.get(seat.agent_id)
+            if member is not None:
+                policy_games[member.policy_id] += 1
+        state = new_game(record.replay.config, record.replay.seed)
+        for action in record.replay.actions:
+            actor = (
+                state.active_player if state.phase is Phase.PLAY else state.active_player.other()
+            )
+            seat = record.seats[0 if actor is PlayerId.PLAYER_ONE else 1]
+            member = members.get(seat.agent_id)
+            if member is not None:
+                policy_decisions[member.policy_id] += 1
+            phase_counts[state.phase.value] += 1
+            if isinstance(action, PlayOfferAction):
+                action_counts["play_offer"] += 1
+                card_counts[f"face_up:{action.face_up.value}"] += 1
+                card_counts[f"face_down:{action.face_down.value}"] += 1
+            elif isinstance(action, RecruitAction):
+                action_counts["recruit"] += 1
+                card_counts[f"recruit_slot:{action.slot.value}"] += 1
+            else:  # pragma: no cover - engine action union is exhaustive
+                raise PopulationExperimentError("unknown replay action during coverage audit")
+            state = apply_action(state, action)
+    return {
+        "policy_game_counts": {
+            policy_id: policy_games[policy_id]
+            for policy_id in POPULATION_POLICY_IDS
+            if policy_games[policy_id]
+        },
+        "policy_decision_counts": {
+            policy_id: policy_decisions[policy_id]
+            for policy_id in POPULATION_POLICY_IDS
+            if policy_decisions[policy_id]
+        },
+        "phase_counts": dict(sorted(phase_counts.items())),
+        "action_counts": dict(sorted(action_counts.items())),
+        "card_counts": dict(sorted(card_counts.items())),
+        "record_count": len(records),
+        "decision_count": sum(record.decision_count for record in records),
+    }
+
+
 def _corpus_artifact(
     output: Path,
     plan: Mapping[str, object],
@@ -761,6 +895,7 @@ def _corpus_artifact(
             "corpus_fingerprint": manifest.corpus_fingerprint,
         },
         "schedule_audit": audit,
+        "coverage": _corpus_coverage_summary(records, corpus_plan),
         "artifact_fingerprint": "",
     }
     artifact["artifact_fingerprint"] = _fingerprint(
@@ -772,6 +907,11 @@ def _corpus_artifact(
         label="corpus artifact",
     )
     return directory, records, artifact
+
+
+def _population_policy_order(policy_ids: Iterable[str]) -> list[str]:
+    observed = set(policy_ids)
+    return [policy_id for policy_id in POPULATION_POLICY_IDS if policy_id in observed]
 
 
 def _coverage_for_records(
@@ -806,8 +946,23 @@ def _coverage_for_records(
                 member = members.get(seat.agent_id)
                 if member is not None:
                     policy_ids.add(member.policy_id)
-        output[name] = {"pair_count": len(pair_ids), "policy_ids": sorted(policy_ids)}
+        output[name] = {
+            "pair_count": len(pair_ids),
+            "pair_ids": sorted(pair_ids),
+            "policy_ids": _population_policy_order(policy_ids),
+        }
     return output
+
+
+def _require_treatment_split_coverage(coverage: Mapping[str, object]) -> None:
+    required = set(POPULATION_POLICY_IDS)
+    for split_name in ("train", "validation"):
+        split = coverage.get(split_name)
+        observed = split.get("policy_ids") if isinstance(split, Mapping) else None
+        if not isinstance(observed, list) or set(observed) != required:
+            raise PopulationExperimentError(
+                f"treatment {split_name} split does not cover every frozen population member"
+            )
 
 
 def _dataset_artifact(
@@ -842,13 +997,7 @@ def _dataset_artifact(
         dataset = load_dataset(path)
     coverage = _coverage_for_records(records, dataset.manifest, corpus_plan)
     if arm == "treatment" and require_coverage:
-        required = list(POPULATION_POLICY_IDS)
-        for split_name in ("train", "validation"):
-            observed = cast(dict[str, object], coverage[split_name])["policy_ids"]
-            if observed != required:
-                raise PopulationExperimentError(
-                    f"treatment {split_name} split does not cover every frozen population member"
-                )
+        _require_treatment_split_coverage(coverage)
     artifact: dict[str, object] = {
         "version": DATASET_AUDIT_VERSION,
         "plan_fingerprint": plan["plan_fingerprint"],
@@ -873,6 +1022,44 @@ def _dataset_artifact(
         output / "dataset-audits" / replicate_id / f"{arm}.json", artifact, label="dataset audit"
     )
     return path, artifact
+
+
+def _matched_split_alignment(
+    control_audit: Mapping[str, object], treatment_audit: Mapping[str, object], *, replicate_id: str
+) -> dict[str, object]:
+    control_coverage = control_audit.get("provenance_coverage")
+    treatment_coverage = treatment_audit.get("provenance_coverage")
+    if not isinstance(control_coverage, Mapping) or not isinstance(treatment_coverage, Mapping):
+        raise PopulationExperimentError("dataset provenance coverage is malformed")
+    output: dict[str, object] = {"replicate_id": replicate_id}
+    for split_name in ("train", "validation"):
+        control = control_coverage.get(split_name)
+        treatment = treatment_coverage.get(split_name)
+        if not isinstance(control, Mapping) or not isinstance(treatment, Mapping):
+            raise PopulationExperimentError("dataset split coverage is malformed")
+        control_ids = control.get("pair_ids")
+        treatment_ids = treatment.get("pair_ids")
+        if (
+            not isinstance(control_ids, list)
+            or not isinstance(treatment_ids, list)
+            or not all(isinstance(value, str) for value in (*control_ids, *treatment_ids))
+            or set(control_ids) != set(treatment_ids)
+        ):
+            raise PopulationExperimentError(
+                "control/treatment split pair-id sets are not identical"
+            )
+        output[split_name] = {
+            "pair_count": len(control_ids),
+            "pair_ids_fingerprint": _fingerprint(sorted(control_ids)),
+        }
+    train = cast(Mapping[str, object], output["train"])
+    validation = cast(Mapping[str, object], output["validation"])
+    output["natural_hash_split_counts"] = {
+        "train": train["pair_count"],
+        "validation": validation["pair_count"],
+    }
+    output["status"] = "passed"
+    return output
 
 
 def _training_config(replicate: Any, *, max_epochs: int) -> Any:
@@ -1291,7 +1478,10 @@ def _paired_difference(left: tuple[float, ...], right: tuple[float, ...]) -> tup
 
 
 def population_statistics(
-    artifacts: Iterable[Mapping[str, object]], corpus_plan: PopulationCorpusPlan
+    artifacts: Iterable[Mapping[str, object]],
+    corpus_plan: PopulationCorpusPlan,
+    *,
+    global_bootstrap_seed: int | None = None,
 ) -> dict[str, object]:
     """Aggregate only replicate/block-aware development statistics and decision inputs."""
     by_key = _artifact_by_key(artifacts)
@@ -1304,6 +1494,8 @@ def population_statistics(
         name: [] for name in (HEURISTIC, RANDOM, HISTORICAL_Q0, "q1", "q2", "q3", "q4")
     }
     per_replicate: list[dict[str, object]] = []
+    equal_opponent_treatment_macros: list[float] = []
+    equal_opponent_control_macros: list[float] = []
     minimum_seat = 1.0
     all_tactical_passed = True
     for replicate_id in POPULATION_REPLAY_REPLICATE_IDS:
@@ -1396,6 +1588,26 @@ def population_statistics(
         seat_values.extend(1.0 - value for value in direct_seats.values())
         replicate_minimum = min(seat_values)
         minimum_seat = min(minimum_seat, replicate_minimum)
+        equal_opponents = (
+            "parent",
+            "heuristic",
+            "random",
+            "historical-q0",
+            "q1",
+            "q2",
+            "q3",
+            "q4",
+        )
+        treatment_macro = sum(
+            sum(scores(f"treatment-vs-{opponent}")) / len(scores(f"treatment-vs-{opponent}"))
+            for opponent in equal_opponents
+        ) / len(equal_opponents)
+        control_macro = sum(
+            sum(scores(f"control-vs-{opponent}")) / len(scores(f"control-vs-{opponent}"))
+            for opponent in equal_opponents
+        ) / len(equal_opponents)
+        equal_opponent_treatment_macros.append(treatment_macro)
+        equal_opponent_control_macros.append(control_macro)
         per_replicate.append(
             {
                 "replicate_id": replicate_id,
@@ -1407,10 +1619,15 @@ def population_statistics(
                 / len(differences[HEURISTIC][-1]),
                 "treatment_minus_parent_heuristic": sum(treatment_parent_heuristic[-1])
                 / len(treatment_parent_heuristic[-1]),
+                "equal_opponent_treatment_macro": treatment_macro,
+                "equal_opponent_control_macro": control_macro,
                 "minimum_candidate_seat_rate": replicate_minimum,
             }
         )
-    seed = corpus_plan.replicate(POPULATION_REPLAY_REPLICATE_IDS[0]).seed_plan.bootstrap_seed
+    bootstrap_material = _global_bootstrap_material()
+    seed = bootstrap_material["seed"] if global_bootstrap_seed is None else global_bootstrap_seed
+    if type(seed) is not int:
+        raise PopulationExperimentError("global bootstrap seed is malformed")
     intervals: dict[str, object] = {
         "treatment_vs_control": nested_population_bootstrap(
             tuple(direct), seed=seed, domain="treatment-vs-control"
@@ -1440,6 +1657,15 @@ def population_statistics(
         "version": "m7-population-replay-statistics-v1",
         "replicates": per_replicate,
         "nested": intervals,
+        "global_bootstrap": {
+            **bootstrap_material,
+            "seed": seed,
+        },
+        "descriptive_equal_opponent_macros": {
+            "treatment_mean": sum(equal_opponent_treatment_macros)
+            / len(equal_opponent_treatment_macros),
+            "control_mean": sum(equal_opponent_control_macros) / len(equal_opponent_control_macros),
+        },
         "between_replicate": {"direct_treatment_vs_control_sample_standard_deviation": variation},
         "minimum_candidate_seat_rate": minimum_seat,
         "tactical_invariants_passed": all_tactical_passed,
@@ -1643,6 +1869,7 @@ def _shared_arena_alignment(
                 != f"{POPULATION_REPLAY_CYCLE_ID}:{replicate_id}:candidate-lane"
                 or parent_lane.rng_identity != f"{replicate_id}:q0"
                 or parent_lane.rng_identity == treatment_lane.rng_identity
+                or parent_lane.seed == treatment_lane.seed
             ):
                 raise PopulationExperimentError("candidate/parent heuristic-lane alignment failed")
             if parent_lane.seed == heuristic_seeds[0]:
@@ -1655,41 +1882,136 @@ def _shared_arena_alignment(
     }
 
 
+def _write_execution_state(path: Path, data: Mapping[str, object]) -> None:
+    temporary = path.with_suffix(".tmp")
+    temporary.write_bytes(_canonical_json(data) + b"\n")
+    os.replace(temporary, path)
+
+
+def _execution_elapsed(data: Mapping[str, object], now: float) -> float:
+    elapsed = data.get("elapsed_seconds")
+    started = data.get("attempt_started_monotonic")
+    if not isinstance(elapsed, int | float) or not isinstance(started, int | float):
+        raise PopulationExperimentError("execution state has malformed monotonic timing")
+    return float(elapsed) + max(0.0, now - float(started))
+
+
+def _enforce_execution_deadline(
+    path: Path, *, claim_mode: bool, stage: str, now: float | None = None
+) -> float:
+    data = _read_json(path)
+    current = time.monotonic() if now is None else now
+    elapsed = _execution_elapsed(data, current)
+    data["elapsed_seconds_at_last_checkpoint"] = elapsed
+    data["last_completed_or_entered_stage"] = stage
+    _write_execution_state(path, data)
+    if claim_mode and elapsed >= CLAIM_RUN_CUTOFF_SECONDS:
+        raise PopulationExperimentError(
+            f"claim cutoff reached during {stage}; no further claim work may be dispatched"
+        )
+    return elapsed
+
+
 def _begin_execution(output: Path, plan_fingerprint: str) -> Path:
     path = output / "execution-state.json"
+    now = time.monotonic()
     if path.exists():
-        data = _read_json(path)
-        if data.get("plan_fingerprint") != plan_fingerprint:
+        existing = _read_json(path)
+        if existing.get("plan_fingerprint") != plan_fingerprint:
             raise PopulationExperimentError("execution state belongs to a different plan")
-        attempts = data.get("attempt_count")
+        attempts = existing.get("attempt_count")
         if type(attempts) is not int or attempts > ALLOWED_RESUME_RETRIES:
             raise PopulationExperimentError("the one allowed resume/retry is exhausted")
+        elapsed = _execution_elapsed(existing, now)
         count = attempts + 1
     else:
+        elapsed = 0.0
         count = 1
-    temporary = path.with_suffix(".tmp")
-    temporary.write_bytes(
-        _canonical_json(
-            {
-                "version": "m7-population-replay-execution-state-v1",
-                "plan_fingerprint": plan_fingerprint,
-                "attempt_count": count,
-                "status": "running",
-                "allowed_resume_retries": ALLOWED_RESUME_RETRIES,
-            }
-        )
-        + b"\n"
+    _write_execution_state(
+        path,
+        {
+            "version": "m7-population-replay-execution-state-v2",
+            "plan_fingerprint": plan_fingerprint,
+            "attempt_count": count,
+            "status": "running",
+            "allowed_resume_retries": ALLOWED_RESUME_RETRIES,
+            "elapsed_seconds": elapsed,
+            "attempt_started_monotonic": now,
+            "elapsed_seconds_at_last_checkpoint": elapsed,
+            "last_completed_or_entered_stage": "execution-started",
+            "claim_cutoff_seconds": CLAIM_RUN_CUTOFF_SECONDS,
+            "whole_step_budget_seconds": WHOLE_STEP_COMPUTE_BUDGET_SECONDS,
+        },
     )
-    os.replace(temporary, path)
     return path
 
 
 def _complete_execution(path: Path) -> None:
     data = _read_json(path)
+    now = time.monotonic()
+    elapsed = _execution_elapsed(data, now)
     data["status"] = "completed"
-    temporary = path.with_suffix(".tmp")
-    temporary.write_bytes(_canonical_json(data) + b"\n")
-    os.replace(temporary, path)
+    data["elapsed_seconds_at_last_checkpoint"] = elapsed
+    data["completed_monotonic"] = now
+    data["last_completed_or_entered_stage"] = "result-completed"
+    _write_execution_state(path, data)
+
+
+def _validate_completed_result(
+    output: Path, plan: Mapping[str, object], cells: tuple[PopulationArenaCell, ...]
+) -> dict[str, object]:
+    result = _read_json(output / "result.json")
+    plan_fingerprint = plan.get("plan_fingerprint")
+    if result.get("plan_fingerprint") != plan_fingerprint or result.get(
+        "result_fingerprint"
+    ) != _fingerprint({key: value for key, value in result.items() if key != "result_fingerprint"}):
+        raise PopulationExperimentError("existing result does not match its immutable plan")
+    state = _read_json(output / "execution-state.json")
+    if state.get("plan_fingerprint") != plan_fingerprint or state.get("status") != "completed":
+        raise PopulationExperimentError("existing result has no completed matching execution state")
+    expected_corpus = {
+        f"{replicate}:{arm}"
+        for replicate in POPULATION_REPLAY_REPLICATE_IDS
+        for arm in CANDIDATE_ARMS
+    }
+    expected_arena = {f"{cell.replicate_id}:{cell.key}" for cell in cells}
+    corpora = result.get("corpora")
+    datasets = result.get("datasets")
+    arena_artifacts = result.get("arena_artifacts")
+    if (
+        not isinstance(corpora, Mapping)
+        or set(corpora) != expected_corpus
+        or not isinstance(datasets, Mapping)
+        or set(datasets) != expected_corpus
+        or not isinstance(arena_artifacts, Mapping)
+        or set(arena_artifacts) != expected_arena
+        or not isinstance(result.get("dataset_split_alignment_fingerprint"), str)
+        or len(expected_arena) != len(cells)
+    ):
+        raise PopulationExperimentError("existing result artifact references are incomplete")
+    required_paths = [
+        output / "input-audit.json",
+        output / "dataset-split-alignment.json",
+        output / "training-summary.json",
+        output / "arena-alignment.json",
+        output / "statistics.json",
+    ]
+    required_paths.extend(
+        output / "corpus-artifacts" / replicate / f"{arm}.json"
+        for replicate in POPULATION_REPLAY_REPLICATE_IDS
+        for arm in CANDIDATE_ARMS
+    )
+    required_paths.extend(
+        output / "dataset-audits" / replicate / f"{arm}.json"
+        for replicate in POPULATION_REPLAY_REPLICATE_IDS
+        for arm in CANDIDATE_ARMS
+    )
+    required_paths.extend(
+        output / "arenas" / cell.replicate_id / f"{cell.key}.json" for cell in cells
+    )
+    if any(not path.is_file() for path in required_paths):
+        raise PopulationExperimentError("existing result required artifacts are incomplete")
+    return result
 
 
 def run_population_experiment(
@@ -1711,6 +2033,10 @@ def run_population_experiment(
     corpus_plan = _corpus_plan_from_bundle(bundle)
     if corpus_plan.fingerprint != plan["corpus_plan_fingerprint"]:
         raise PopulationExperimentError("recomputed corpus plan differs from frozen plan")
+    if plan.get("treatment_matchup_counts") != _treatment_matchup_summary(corpus_plan):
+        raise PopulationExperimentError("frozen treatment matchup summaries differ")
+    if plan.get("global_bootstrap") != _global_bootstrap_material():
+        raise PopulationExperimentError("frozen global bootstrap material differs")
     cells = population_arena_cells(corpus_plan, pair_count=config.pairs_per_cell)
     holdout = _holdout_scan(
         corpus_plan,
@@ -1741,27 +2067,25 @@ def run_population_experiment(
         )
     existing_result = output / "result.json"
     if existing_result.exists():
-        persisted_result = _read_json(existing_result)
-        if persisted_result.get("plan_fingerprint") != plan["plan_fingerprint"]:
-            raise PopulationExperimentError("existing result belongs to a different plan")
-        if persisted_result.get("result_fingerprint") != _fingerprint(
-            {key: value for key, value in persisted_result.items() if key != "result_fingerprint"}
-        ):
-            raise PopulationExperimentError("existing result fingerprint mismatch")
-        return persisted_result
+        return _validate_completed_result(output, plan, cells)
     execution = _begin_execution(output, cast(str, plan["plan_fingerprint"]))
-    deadline = time.monotonic() + CLAIM_RUN_CUTOFF_SECONDS
+    claim_mode = config.claim_default
+    _enforce_execution_deadline(execution, claim_mode=claim_mode, stage="corpus-dispatch")
     corpus_records: dict[tuple[str, PopulationArm], tuple[GameRecord, ...]] = {}
     corpus_artifacts: dict[tuple[str, PopulationArm], dict[str, object]] = {}
     for replicate_id in POPULATION_REPLAY_REPLICATE_IDS:
         for arm in CANDIDATE_ARMS:
-            if time.monotonic() >= deadline:
-                raise PopulationExperimentError("claim cutoff reached before corpus completion")
+            _enforce_execution_deadline(
+                execution, claim_mode=claim_mode, stage=f"corpus:{replicate_id}:{arm}:before"
+            )
             _, records, artifact = _corpus_artifact(
                 output, plan, corpus_plan, replicate_id, arm, pairs=config.pairs_per_cell
             )
             corpus_records[(replicate_id, arm)] = records
             corpus_artifacts[(replicate_id, arm)] = artifact
+            _enforce_execution_deadline(
+                execution, claim_mode=claim_mode, stage=f"corpus:{replicate_id}:{arm}:after"
+            )
         if config.pairs_per_cell == POPULATION_PAIR_COUNT:
             audit_population_alignment(
                 corpus_records[(replicate_id, "control")],
@@ -1784,6 +2108,9 @@ def run_population_experiment(
     dataset_audits: dict[tuple[str, PopulationArm], dict[str, object]] = {}
     for replicate_id in POPULATION_REPLAY_REPLICATE_IDS:
         for arm in CANDIDATE_ARMS:
+            _enforce_execution_deadline(
+                execution, claim_mode=claim_mode, stage=f"dataset:{replicate_id}:{arm}:before"
+            )
             artifact = corpus_artifacts[(replicate_id, arm)]
             records_data = cast(Mapping[str, object], artifact["records"])
             corpus_fingerprint = cast(str, records_data["corpus_fingerprint"])
@@ -1799,6 +2126,32 @@ def run_population_experiment(
                     require_coverage=config.claim_default,
                 )
             )
+            _enforce_execution_deadline(
+                execution, claim_mode=claim_mode, stage=f"dataset:{replicate_id}:{arm}:after"
+            )
+    _enforce_execution_deadline(execution, claim_mode=claim_mode, stage="split-audit:before")
+    split_alignment_rows: list[dict[str, object]] = []
+    for replicate_id in POPULATION_REPLAY_REPLICATE_IDS:
+        split_alignment_rows.append(
+            _matched_split_alignment(
+                dataset_audits[(replicate_id, "control")],
+                dataset_audits[(replicate_id, "treatment")],
+                replicate_id=replicate_id,
+            )
+        )
+    split_alignment: dict[str, object] = {
+        "version": "m7-population-replay-split-alignment-v1",
+        "plan_fingerprint": plan["plan_fingerprint"],
+        "replicates": split_alignment_rows,
+        "artifact_fingerprint": "",
+    }
+    split_alignment["artifact_fingerprint"] = _fingerprint(
+        {key: value for key, value in split_alignment.items() if key != "artifact_fingerprint"}
+    )
+    _write_immutable(
+        output / "dataset-split-alignment.json", split_alignment, label="dataset split alignment"
+    )
+    _enforce_execution_deadline(execution, claim_mode=claim_mode, stage="split-audit:after")
     training_rows: list[dict[str, object]] = []
     input_paths = plan.get("input_paths")
     if not isinstance(input_paths, Mapping) or not isinstance(input_paths.get(Q0_PARENT), str):
@@ -1807,6 +2160,9 @@ def run_population_experiment(
     for replicate_id in POPULATION_REPLAY_REPLICATE_IDS:
         row: dict[str, object] = {"replicate_id": replicate_id, "arms": {}}
         for arm in CANDIDATE_ARMS:
+            _enforce_execution_deadline(
+                execution, claim_mode=claim_mode, stage=f"training:{replicate_id}:{arm}:before"
+            )
             source = cast(Mapping[str, object], corpus_artifacts[(replicate_id, arm)]["records"])
             dataset_data = dataset_audits[(replicate_id, arm)].get("dataset")
             if not isinstance(dataset_data, Mapping) or not isinstance(
@@ -1826,6 +2182,9 @@ def run_population_experiment(
                 max_epochs=config.max_epochs,
             )
             cast(dict[str, object], row["arms"])[arm] = trained
+            _enforce_execution_deadline(
+                execution, claim_mode=claim_mode, stage=f"training:{replicate_id}:{arm}:after"
+            )
         control_config = cast(
             Mapping[str, object], cast(dict[str, object], row["arms"])["control"]
         )["training_config"]
@@ -1848,7 +2207,21 @@ def run_population_experiment(
         {key: value for key, value in training_summary.items() if key != "artifact_fingerprint"}
     )
     _write_immutable(output / "training-summary.json", training_summary, label="training summary")
-    arena_artifacts = [_arena_artifact(output, plan, cell, bundle) for cell in cells]
+    _enforce_execution_deadline(execution, claim_mode=claim_mode, stage="training-summary:after")
+    arena_artifacts: list[dict[str, object]] = []
+    for cell in cells:
+        _enforce_execution_deadline(
+            execution,
+            claim_mode=claim_mode,
+            stage=f"arena:{cell.replicate_id}:{cell.key}:before",
+        )
+        arena_artifacts.append(_arena_artifact(output, plan, cell, bundle))
+        _enforce_execution_deadline(
+            execution,
+            claim_mode=claim_mode,
+            stage=f"arena:{cell.replicate_id}:{cell.key}:after",
+        )
+    _enforce_execution_deadline(execution, claim_mode=claim_mode, stage="arena-audit:before")
     alignment = _shared_arena_alignment(arena_artifacts, output)
     _write_immutable(
         output / "arena-alignment.json",
@@ -1861,7 +2234,15 @@ def run_population_experiment(
         },
         label="arena alignment",
     )
-    statistics = population_statistics(arena_artifacts, corpus_plan)
+    _enforce_execution_deadline(execution, claim_mode=claim_mode, stage="arena-audit:after")
+    bootstrap_data = plan.get("global_bootstrap")
+    if not isinstance(bootstrap_data, Mapping) or type(bootstrap_data.get("seed")) is not int:
+        raise PopulationExperimentError("plan global bootstrap material is malformed")
+    statistics = population_statistics(
+        arena_artifacts,
+        corpus_plan,
+        global_bootstrap_seed=cast(int, bootstrap_data["seed"]),
+    )
     _write_immutable(
         output / "statistics.json",
         {
@@ -1873,6 +2254,7 @@ def run_population_experiment(
         },
         label="statistics",
     )
+    _enforce_execution_deadline(execution, claim_mode=claim_mode, stage="statistics:after")
     integrity_passed = holdout["status"] == "passed" and alignment["status"] == "passed"
     decision = population_decision(statistics, integrity_passed=integrity_passed)
     arena_fingerprints: dict[str, object] = {}
@@ -1880,6 +2262,7 @@ def run_population_experiment(
         cell_data = cast(Mapping[str, object], artifact["cell"])
         arena_key = f"{cell_data['replicate_id']}:{cell_data['key']}"
         arena_fingerprints[arena_key] = artifact["artifact_fingerprint"]
+    _enforce_execution_deadline(execution, claim_mode=claim_mode, stage="result:before")
     result: dict[str, object] = {
         "version": RESULT_VERSION,
         "cycle_id": POPULATION_REPLAY_CYCLE_ID,
@@ -1897,6 +2280,7 @@ def run_population_experiment(
             for replicate in POPULATION_REPLAY_REPLICATE_IDS
             for arm in CANDIDATE_ARMS
         },
+        "dataset_split_alignment_fingerprint": split_alignment["artifact_fingerprint"],
         "training_summary_fingerprint": training_summary["artifact_fingerprint"],
         "arena_artifacts": arena_fingerprints,
         "statistics": statistics,
@@ -1911,6 +2295,7 @@ def run_population_experiment(
         {key: value for key, value in result.items() if key != "result_fingerprint"}
     )
     _write_immutable(existing_result, result, label="result")
+    _enforce_execution_deadline(execution, claim_mode=claim_mode, stage="result:after")
     _complete_execution(execution)
     return result
 

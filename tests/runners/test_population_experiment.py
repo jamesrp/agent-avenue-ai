@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +20,15 @@ from agent_avenue.runners import (
     population_arena_cells,
     population_decision,
     schedule_arena,
+)
+from agent_avenue.runners.population_experiment import (
+    _begin_execution,
+    _corpus_plan_from_bundle,
+    _enforce_execution_deadline,
+    _holdout_scan,
+    _population_policy_order,
+    _read_json,
+    _require_treatment_split_coverage,
 )
 
 
@@ -75,6 +86,10 @@ def test_population_experiment_plan_freezes_six_corpora_and_arena_schedule(
     assert arenas["parent_heuristic_reference_games_per_replicate"] == 600
     assert arenas["physical_games_per_replicate"] == 8_000
     assert arenas["total_physical_games"] == 24_000
+    bootstrap = first["global_bootstrap"]
+    assert isinstance(bootstrap, dict)
+    assert bootstrap["domain"] == "m7-population-replay-v1:global-nested-bootstrap:v1"
+    assert isinstance(bootstrap["seed"], int)
 
 
 def test_population_arena_shared_cells_have_identical_named_seed(tmp_path: Path) -> None:
@@ -226,8 +241,20 @@ def test_default_learned_clean_plan_is_claim_eligible(
         "inspect_source_identity",
         lambda: SourceIdentity("a" * 40, "b" * 64, True, "c" * 64),
     )
+    monkeypatch.setattr(
+        population_experiment,
+        "_runner_source_check",
+        lambda: {
+            "version": "population-replay-runner-clean-source-v1",
+            "tracked_and_nonignored_untracked_clean": True,
+            "status_sha256": "d" * 64,
+            "checks": {},
+        },
+    )
+    runs = tmp_path / "runs"
+    runs.mkdir()
     config = PopulationExperimentConfig(
-        tmp_path / "claim-output", checkpoint_paths=paths, holdout_roots=(tmp_path / "holdout",)
+        tmp_path / "claim-output", checkpoint_paths=paths, holdout_roots=(runs,)
     )
     plan = build_population_experiment_plan(config, build_population_policy_bundle(paths))
 
@@ -235,6 +262,104 @@ def test_default_learned_clean_plan_is_claim_eligible(
     assert isinstance(execution, dict)
     assert execution["claim_eligible"] is True
     assert execution["claim_ineligibility_reasons"] == []
+
+
+def test_execution_deadline_is_persisted_across_stage_boundaries(tmp_path: Path) -> None:
+    state = _begin_execution(tmp_path, "a" * 64)
+    initial = _read_json(state)
+    start = initial["attempt_started_monotonic"]
+    assert isinstance(start, float)
+    _enforce_execution_deadline(state, claim_mode=False, stage="dataset", now=start + 3.0)
+    checkpointed = _read_json(state)
+    assert checkpointed["last_completed_or_entered_stage"] == "dataset"
+    assert checkpointed["elapsed_seconds_at_last_checkpoint"] == 3.0
+    with pytest.raises(ValueError, match="claim cutoff"):
+        _enforce_execution_deadline(
+            state,
+            claim_mode=True,
+            stage="arena",
+            now=start + 7 * 60 * 60 + 45 * 60,
+        )
+
+
+def test_treatment_split_coverage_uses_frozen_policy_order_and_sets() -> None:
+    all_policies = ["random", "q4", "q2", "greedy-public-v1", "q0", "q3", "q1"]
+    assert _population_policy_order(all_policies) == [
+        "q0",
+        "q1",
+        "q2",
+        "q3",
+        "q4",
+        "greedy-public-v1",
+        "random",
+    ]
+    _require_treatment_split_coverage(
+        {
+            "train": {"policy_ids": all_policies},
+            "validation": {"policy_ids": list(reversed(all_policies))},
+        }
+    )
+    with pytest.raises(ValueError, match="validation"):
+        _require_treatment_split_coverage(
+            {"train": {"policy_ids": all_policies}, "validation": {"policy_ids": all_policies[:-1]}}
+        )
+
+
+def test_smoke_default_output_is_unique_and_outside_claim_runs() -> None:
+    script_path = Path("scripts/run_population_replay_v1.py")
+    spec = importlib.util.spec_from_file_location("population_smoke_script", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    first = module._default_toy_smoke_output()
+    second = module._default_toy_smoke_output()
+    try:
+        assert first != second
+        assert first.is_relative_to(Path("/tmp"))
+        assert second.is_relative_to(Path("/tmp"))
+        assert not first.is_relative_to(Path("runs").resolve())
+        assert not second.is_relative_to(Path("runs").resolve())
+    finally:
+        shutil.rmtree(first)
+        shutil.rmtree(second)
+
+
+def test_toy_smoke_path_cannot_poison_claim_runs_holdout(tmp_path: Path) -> None:
+    script_path = Path("scripts/run_population_replay_v1.py")
+    spec = importlib.util.spec_from_file_location("population_smoke_holdout_script", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    smoke_output = module._default_toy_smoke_output()
+    claim_runs = tmp_path / "runs"
+    claim_runs.mkdir()
+    try:
+        assert not smoke_output.is_relative_to(claim_runs)
+        config = _toy_config(tmp_path)
+        bundle = build_population_policy_bundle(config.checkpoint_paths, toy=True)
+        corpus_plan = _corpus_plan_from_bundle(bundle)
+        holdout = _holdout_scan(
+            corpus_plan,
+            population_arena_cells(corpus_plan, pair_count=2),
+            roots=(claim_runs,),
+            current_output=tmp_path / "claim-output",
+            smoke_pair_count=2,
+        )
+        assert holdout["status"] == "passed"
+        assert holdout["scanned_corpora"] == []
+    finally:
+        shutil.rmtree(smoke_output)
+
+
+def test_independent_validator_script_has_no_runner_wrapper_calls() -> None:
+    source = Path("scripts/validate_population_replay_v1.py").read_text()
+    forbidden = (
+        "validate_population" + "_experiment",
+        "run_population" + "_experiment",
+        "population_" + "statistics",
+        "population_" + "decision",
+    )
+    assert all(name not in source for name in forbidden)
 
 
 def test_population_experiment_import_path_stays_torch_free() -> None:

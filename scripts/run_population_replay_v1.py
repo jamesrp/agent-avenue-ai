@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 from agent_avenue.runners.population_experiment import (
@@ -41,9 +42,14 @@ def _toy_checkpoint_paths(root: Path) -> dict[str, Path]:
     return paths
 
 
+def _default_toy_smoke_output() -> Path:
+    """Allocate a unique ignored-location smoke root; never default to a claim subtree."""
+    return Path(tempfile.mkdtemp(prefix="agent-avenue-population-replay-smoke-"))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, default=Path("runs/m7-population-replay-v1"))
+    parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--toy-smoke",
         action="store_true",
@@ -59,10 +65,11 @@ def main() -> int:
     )
     args = parser.parse_args()
     if args.toy_smoke:
-        paths = _toy_checkpoint_paths(args.output / "smoke-inputs")
-        roots = tuple(args.holdout_root) if args.holdout_root else (args.output / "smoke-holdout",)
+        output = args.output or _default_toy_smoke_output()
+        paths = _toy_checkpoint_paths(output / "smoke-inputs")
+        roots = tuple(args.holdout_root) if args.holdout_root else (output / "smoke-holdout",)
         config = PopulationExperimentConfig(
-            output=args.output,
+            output=output,
             checkpoint_paths=paths,
             holdout_roots=roots,
             smoke_pair_count=args.smoke_pairs,
@@ -74,8 +81,9 @@ def main() -> int:
             parser.error("--holdout-root is permitted only with --toy-smoke")
         if args.smoke_pairs != 2 or args.smoke_max_epochs != 2:
             parser.error("smoke options require --toy-smoke")
+        output = args.output or Path("runs/m7-population-replay-v1")
         config = PopulationExperimentConfig(
-            output=args.output, checkpoint_paths=DEFAULT_CHECKPOINT_PATHS
+            output=output, checkpoint_paths=DEFAULT_CHECKPOINT_PATHS
         )
         bundle = None
     result = run_population_experiment(config, bundle)

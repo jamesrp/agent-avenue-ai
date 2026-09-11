@@ -3,8 +3,9 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 1 of 5
 **Cycle ID:** `m7-terminal-offense-confirm-v1`
-**Status:** Approved and implementation-frozen; claim run pending
-**Approved:** September 11, 2026
+**Status:** Complete; structurally adopted for steps 2–4
+**Approved and completed:** September 11, 2026
+**Result:** [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md)
 **Parent evidence:** [`docs/Q0_STRENGTH_AUDIT_RESULTS.md`](../../docs/Q0_STRENGTH_AUDIT_RESULTS.md)
 
 ## Question

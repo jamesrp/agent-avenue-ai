@@ -18,7 +18,7 @@ The long-term measure of success is an AI that becomes meaningfully stronger thr
 self-play while remaining fair, testable, auditable, and practical to run on a CPU-only development
 machine.
 
-## Current status — September 9, 2026
+## Current status — September 11, 2026
 
 | Milestone | Status | Result |
 | --- | --- | --- |
@@ -32,7 +32,8 @@ machine.
 | [M7 diagnostic readiness](docs/M7_DIAGNOSTIC_READINESS_RESULTS.md) | Complete | Retention/recompute audit, learned web QA, and next-experiment recommendation |
 | [M7 ranking warm start](docs/M7_HEURISTIC_RANKING_RESULTS.md) | Complete; did not advance | Three paired recipe replicates and 15,600 fresh development games |
 | [q0 strength audit](docs/Q0_STRENGTH_AUDIT_RESULTS.md) | Complete | 72,000 fresh games; exact missed-lethal and exploit-surface diagnostics |
-| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress | First recipe screen and q0 strength audit complete |
+| [Terminal-offense confirmation](docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; hard immediate-win envelope adopted for research steps 2–4 |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress | Stronger-policy program step 1 complete; step 2 population replay next |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
 **q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
@@ -70,6 +71,15 @@ wrapper converted every such opportunity on its own trajectories and improved q0
 percentage points across all shared opponents. This establishes that q0 is competent but not
 optimal, and that “selected champion” is protocol-relative rather than “strongest observed policy.”
 See [`docs/Q0_STRENGTH_AUDIT_RESULTS.md`](docs/Q0_STRENGTH_AUDIT_RESULTS.md).
+
+The September 11 aligned-RNG confirmation then evaluated the exact immediate-win wrapper over
+60,000 additional fresh games. It converted 3,385/3,385 encountered guaranteed wins, had zero false
+wins or safety violations, and found zero exact q0 maximum-logit ties in 455,629 decisions. The
+anchor-macro treatment effect was +0.75 percentage points with a 95% interval of +0.60 to +0.908,
+clearing the predeclared practical criterion. The envelope is fixed for stronger-policy research
+steps 2–4, but the selected checkpoint and web default remain unchanged until the program's final
+league decision. See
+[`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md).
 
 Historical Milestone 6 results remain in
 [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md), and the original q0 evaluation remains in

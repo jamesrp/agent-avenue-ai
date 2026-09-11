@@ -1,11 +1,11 @@
 # Project status
 
-**As of:** September 9, 2026
+**As of:** September 11, 2026
 **Current selected hybrid champion:** q0-terminal-safety-v1
 **Permanent pure-neural baseline:** historical q0
 **Latest completed learned experiment:** [M7 heuristic ranking warm-start screen](M7_HEURISTIC_RANKING_RESULTS.md)
 
-**Latest completed research cycle:** [q0 strength and tactical-leak audit](Q0_STRENGTH_AUDIT_RESULTS.md)
+**Latest completed research cycle:** [terminal-offense confirmation](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md)
 
 This document is the concise, living index of completed work and current next steps. Historical
 milestone documents describe the intended scope at the time; `README.md` and this file describe the
@@ -23,7 +23,8 @@ actual present state.
 | [6: frozen iterative self-play](MILESTONE6.md) | Complete | [q1–q4 decisions, final evaluation, and archive](MILESTONE6_RESULTS.md) |
 | [Terminal-safety hybrid](TERMINAL_SAFETY_EXPERIMENT.md) | Complete | [Shielded q0–q4 result, all-pairs diagnostics, and archive](TERMINAL_SAFETY_RESULTS.md) |
 | [q0 strength audit](Q0_STRENGTH_AUDIT_RESULTS.md) | Complete | 72,000 fresh games; exact missed-lethal and exploit-surface diagnostics |
-| [7: controlled RL experiments](MILESTONE7.md) | In progress; recipe screen and strength audit complete | [Ranking warm start did not advance](M7_HEURISTIC_RANKING_RESULTS.md) |
+| [Terminal-offense confirmation](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; tactical envelope adopted for steps 2–4 |
+| [7: controlled RL experiments](MILESTONE7.md) | In progress; stronger-policy step 1 complete | [Population replay is next](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md) |
 
 ## Current measured policies
 
@@ -128,6 +129,21 @@ Codebreaker-up/Saboteur-down trap persisted descriptively, but true hidden-offer
 opponent-known offline diagnostics rather than clean causal estimates. See
 [`Q0_STRENGTH_AUDIT_RESULTS.md`](Q0_STRENGTH_AUDIT_RESULTS.md).
 
+## Terminal-offense confirmation
+
+The September 11 confirmation removed the remaining policy-ID RNG caveat from the immediate-win
+wrapper comparison. Across 60,000 fresh games, the treatment converted all 3,385 encountered
+publicly guaranteed current-turn wins, produced zero false wins or avoidable safety violations, and
+had zero exact maximum-logit ties across 455,629 q0-family decisions. The aligned shared-opponent
+anchor macro improved by +0.75 percentage points with a 95% interval of +0.60 to +0.908, exceeding
+the frozen +0.25-point practical threshold.
+
+All structural checks passed, including independent-production oracle agreement on 851,804
+replayed decisions, zero setup overlap across 241 prior corpora, and zero pre-endpoint divergences in
+28,000 matched control/treatment games. The terminal-offense envelope is now fixed for stronger-
+policy steps 2–4. The selected checkpoint and web default remain q0-terminal-safety-v1 until step 5.
+See [`M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md).
+
 ## Web status
 
 The QA web UI currently supports:
@@ -181,6 +197,7 @@ and [experiment protocol](EXPERIMENT_PROTOCOL.md).
 | Terminal-safety q0–q4, all-pairs diagnostics, and final | `19c2871080503c62a53522415e0645913d7674b0` | `9c8b39bb4e81bb29e0902c56198557f63b7e9992bdaff845967c562fc064f429` |
 | M7 heuristic ranking warm-start repaired run | `240d33495c29e227c57afe2b58d73ad792fbdbd8` | `9f9e78d1c4a5a124a12d8f01056788520a65bc86bec652ffa113da24e5975b49` |
 | q0 strength and tactical-leak fresh run | `2cefd151383e9cf3a614e2b58ee3ac2450727a61` | `ae8cd87f4b60c4b32a2b0ac728b1c3c0ec51f74944b9afb4d5089a1547d2e4e5` |
+| Terminal-offense aligned-RNG confirmation | `5bbda9e18d23920f5ad7686e055615aad703c097` | `5dd1d77e67804cf959ccd9a90dd9569a54924623439a30194111da3304c3b4f6` |
 
 ## Research workflow status
 
@@ -214,15 +231,21 @@ fresh games and exact tactical audits reproduced independently. The repair corre
 validator's result-fingerprint normalization and did not change claim-generating evidence. See
 [`Q0_STRENGTH_AUDIT_RESULTS.md`](Q0_STRENGTH_AUDIT_RESULTS.md).
 
+The approved terminal-offense confirmation completed without a repair. Its 60,000 fresh games and
+independent validation passed every structural criterion and the separate practical-lift threshold.
+The hard envelope is fixed for steps 2–4 of the approved stronger-policy program. See
+[`M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) and the living
+[`stronger-policy progress log`](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md).
+
 No research cycle is currently running. VM-reboot execution resume and off-VM artifact durability
 remain unconfigured.
 
 ## Planned next work
 
-1. decide whether to confirm and deploy the narrow immediate-win wrapper after auditing exact neural
-   ties and policy-ID permutation sensitivity;
-2. evaluate q0 and the q1–q4 lineage against independently designed stronger opponents and disjoint
-   setup blocks, with multiple training replicates before making a broader champion claim;
-3. consider a shallow search or stronger heuristic challenger to create an external tactical
-   reference rather than relying mainly on one self-play lineage; and
+1. freeze and implement the stronger-policy program's population-replay step with three paired
+   corpus/training replicates while holding encoder/model v1 and the tactical envelope fixed;
+2. compare q0-only and mixed-population collection with nested replicate/block uncertainty and carry
+   the predeclared corpus into structured-model step 3;
+3. follow with structured model v2, counterfactual rollout supervision, and the final independent
+   league in the already approved order; and
 4. choose an off-VM retention mechanism if stronger disaster recovery is desired.

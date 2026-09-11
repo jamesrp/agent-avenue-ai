@@ -156,12 +156,7 @@ class PopulationPolicyBundle:
 
 @dataclass(frozen=True, slots=True)
 class PopulationArenaCell:
-    """One retained fresh-development comparison.
-
-    The parent-vs-heuristic reference is retained because it is required for the declared shared
-    heuristic difference.  It adds 600 physical games per replicate beyond the agreement's stated
-    7,400 arithmetic; the plan records this discrepancy rather than hiding it.
-    """
+    """One retained fresh-development comparison."""
 
     replicate_id: str
     key: str
@@ -405,7 +400,7 @@ def population_arena_cells(
             cell(f"{arm}-vs-parent", arm, Q0_PARENT, 500, "parent")
         for arm in CANDIDATE_ARMS:
             cell(f"{arm}-vs-heuristic", arm, HEURISTIC, 300, "heuristic")
-        cell("parent-vs-heuristic-reference", None, HEURISTIC, 300, "heuristic-reference")
+        cell("parent-vs-heuristic-reference", None, HEURISTIC, 300, "heuristic")
         for arm in CANDIDATE_ARMS:
             cell(f"{arm}-vs-random", arm, RANDOM, 200, "random")
             cell(f"{arm}-vs-historical-q0", arm, HISTORICAL_Q0, 200, "historical-q0")
@@ -580,6 +575,30 @@ def _holdout_scan(
     return data
 
 
+def _validate_corrected_default_arena_counts(plan: Mapping[str, object]) -> None:
+    arenas = plan.get("arenas")
+    frozen = plan.get("frozen_default_design")
+    if not isinstance(arenas, Mapping) or not isinstance(frozen, Mapping):
+        raise PopulationExperimentError("plan arena count contract is malformed")
+    expected_arena_counts = {
+        "candidate_comparison_games_per_replicate": 7_400,
+        "parent_heuristic_reference_games_per_replicate": 600,
+        "physical_games_per_replicate": 8_000,
+        "total_candidate_comparison_games": 22_200,
+        "total_parent_heuristic_reference_games": 1_800,
+        "total_physical_games": 24_000,
+    }
+    if any(arenas.get(key) != value for key, value in expected_arena_counts.items()):
+        raise PopulationExperimentError("corrected 8,000-game arena count contract failed")
+    if (
+        frozen.get("development_candidate_comparison_games_per_replicate") != 7_400
+        or frozen.get("development_parent_heuristic_reference_games_per_replicate") != 600
+        or frozen.get("development_physical_games_per_replicate") != 8_000
+        or frozen.get("total_development_games") != 24_000
+    ):
+        raise PopulationExperimentError("frozen default development counts are malformed")
+
+
 def build_population_experiment_plan(
     config: PopulationExperimentConfig, bundle: PopulationPolicyBundle
 ) -> dict[str, object]:
@@ -596,13 +615,12 @@ def build_population_experiment_plan(
         claim_reasons.append("toy_policy_bundle")
     if not source.tracked_tree_clean:
         claim_reasons.append("tracked_source_tree_is_dirty")
-    claim_reasons.append("frozen_arena_total_conflict_7400_comparisons_plus_600_reference_games")
-    # The agreement simultaneously requires a 300-pair parent reference and says 7,400 games.
-    # Retain both facts faithfully rather than silently dropping evidence or games.
     if config.claim_default and (
-        count_data["physical_games"] != 8_000 * len(POPULATION_REPLAY_REPLICATE_IDS)
+        count_data["candidate_comparison_games"] != 22_200
+        or count_data["reference_games"] != 1_800
+        or count_data["physical_games"] != 24_000
     ):
-        raise PopulationExperimentError("population arena physical-game schedule is malformed")
+        raise PopulationExperimentError("population arena count contract is malformed")
     source_data = {
         **source.to_data(),
         "rules_fingerprint": rules_fingerprint(),
@@ -649,6 +667,10 @@ def build_population_experiment_plan(
                 "cpu_threads": 1,
                 "deterministic_algorithms": True,
             },
+            "development_candidate_comparison_games_per_replicate": 7_400,
+            "development_parent_heuristic_reference_games_per_replicate": 600,
+            "development_physical_games_per_replicate": 8_000,
+            "total_development_games": 24_000,
             "claim_cutoff_seconds": CLAIM_RUN_CUTOFF_SECONDS,
             "whole_step_budget_seconds": WHOLE_STEP_COMPUTE_BUDGET_SECONDS,
             "allowed_resume_retries": ALLOWED_RESUME_RETRIES,
@@ -660,15 +682,15 @@ def build_population_experiment_plan(
         },
         "arenas": {
             "cells": [cell.to_data() for cell in cells],
-            "agreement_stated_games_per_replicate": 7_400,
-            "comparison_games_per_replicate": count_data["candidate_comparison_games"] // 3,
-            "required_parent_heuristic_reference_games_per_replicate": count_data["reference_games"]
+            "candidate_comparison_games_per_replicate": count_data["candidate_comparison_games"]
             // 3,
+            "parent_heuristic_reference_games_per_replicate": count_data["reference_games"] // 3,
             "physical_games_per_replicate": count_data["physical_games"] // 3,
-            "agreement_arithmetic_note": (
-                "The listed candidate comparisons total 7,400 games; adding the separately "
-                "required 300-pair fresh parent-vs-heuristic reference totals 8,000 physical "
-                "games."
+            "total_candidate_comparison_games": count_data["candidate_comparison_games"],
+            "total_parent_heuristic_reference_games": count_data["reference_games"],
+            "total_physical_games": count_data["physical_games"],
+            "count_contract": (
+                "7400-candidate-comparison-plus-600-parent-reference-equals-8000-per-replicate-v1"
             ),
         },
         "plan_fingerprint": "",
@@ -1289,9 +1311,37 @@ def population_statistics(
         def scores(key: str, current_replicate_id: str = replicate_id) -> tuple[float, ...]:
             return _pair_scores(by_key[(current_replicate_id, key)])
 
+        _require_shared_arena_block(
+            by_key,
+            replicate_id,
+            (
+                "treatment-vs-heuristic",
+                "control-vs-heuristic",
+                "parent-vs-heuristic-reference",
+            ),
+            shared_group="heuristic",
+        )
         direct_scores = scores("treatment-vs-control")
         treatment_parent_scores = scores("treatment-vs-parent")
         control_parent_scores = scores("control-vs-parent")
+        _require_shared_arena_block(
+            by_key,
+            replicate_id,
+            ("treatment-vs-parent", "control-vs-parent"),
+            shared_group="parent",
+        )
+        _require_shared_arena_block(
+            by_key,
+            replicate_id,
+            ("treatment-vs-random", "control-vs-random"),
+            shared_group="random",
+        )
+        _require_shared_arena_block(
+            by_key,
+            replicate_id,
+            ("treatment-vs-historical-q0", "control-vs-historical-q0"),
+            shared_group="historical-q0",
+        )
         direct.append(direct_scores)
         treatment_parent.append(treatment_parent_scores)
         control_parent.append(control_parent_scores)
@@ -1307,6 +1357,12 @@ def population_statistics(
             )
         )
         for opponent in ("q1", "q2", "q3", "q4"):
+            _require_shared_arena_block(
+                by_key,
+                replicate_id,
+                (f"treatment-vs-{opponent}", f"control-vs-{opponent}"),
+                shared_group=opponent,
+            )
             differences[opponent].append(
                 _paired_difference(
                     scores(f"treatment-vs-{opponent}"), scores(f"control-vs-{opponent}")
@@ -1468,12 +1524,36 @@ def population_decision(
     }
 
 
+def _artifact_cell(artifact: Mapping[str, object]) -> Mapping[str, object]:
+    cell = artifact.get("cell")
+    if not isinstance(cell, Mapping):
+        raise PopulationExperimentError("arena artifact cell is malformed")
+    return cell
+
+
+def _require_shared_arena_block(
+    by_key: Mapping[tuple[str, str], Mapping[str, object]],
+    replicate_id: str,
+    keys: tuple[str, ...],
+    *,
+    shared_group: str,
+) -> None:
+    cells = tuple(_artifact_cell(by_key[(replicate_id, key)]) for key in keys)
+    if (
+        any(cell.get("shared_group") != shared_group for cell in cells)
+        or len({cell.get("master_seed") for cell in cells}) != 1
+        or len({cell.get("paired_blocks") for cell in cells}) != 1
+    ):
+        raise PopulationExperimentError("shared arena cells do not declare one matched setup block")
+
+
 def _shared_arena_alignment(
     artifacts: Iterable[Mapping[str, object]], output: Path
 ) -> dict[str, object]:
     """Audit shared-opponent candidate setup, seats, opponent RNG, and candidate-lane RNG."""
     by_key = _artifact_by_key(artifacts)
-    checked = 0
+    pairwise_checked = 0
+    three_way_checked = 0
     for replicate_id in POPULATION_REPLAY_REPLICATE_IDS:
         for opponent in (Q0_PARENT, HEURISTIC, RANDOM, HISTORICAL_Q0, "q1", "q2", "q3", "q4"):
             treatment_key = (
@@ -1485,6 +1565,12 @@ def _shared_arena_alignment(
                 control_key,
             ) not in by_key:
                 continue
+            _require_shared_arena_block(
+                by_key,
+                replicate_id,
+                (treatment_key, control_key),
+                shared_group="parent" if opponent == Q0_PARENT else opponent,
+            )
             treatment_dir = output / "arena-records" / replicate_id / treatment_key
             control_dir = output / "arena-records" / replicate_id / control_key
             _, treatment = load_corpus(treatment_dir)
@@ -1504,8 +1590,69 @@ def _shared_arena_alignment(
                     raise PopulationExperimentError(
                         "shared-opponent setup/seat/RNG alignment failed"
                     )
-            checked += 1
-    return {"status": "passed", "shared_comparison_count": checked}
+            pairwise_checked += 1
+
+        heuristic_keys = (
+            "treatment-vs-heuristic",
+            "control-vs-heuristic",
+            "parent-vs-heuristic-reference",
+        )
+        _require_shared_arena_block(by_key, replicate_id, heuristic_keys, shared_group="heuristic")
+        heuristic_records = tuple(
+            load_corpus(output / "arena-records" / replicate_id / key)[1] for key in heuristic_keys
+        )
+        if len({len(records) for records in heuristic_records}) != 1:
+            raise PopulationExperimentError("three-way heuristic arena game counts differ")
+        for treatment, control, parent in zip(*heuristic_records, strict=True):
+            trio = (treatment, control, parent)
+            if (
+                len({record.game_id for record in trio}) != 1
+                or len({record.pair_id for record in trio}) != 1
+                or len({record.replay.seed for record in trio}) != 1
+            ):
+                raise PopulationExperimentError("three-way heuristic setup alignment failed")
+            heuristic_positions: list[int] = []
+            heuristic_identities: list[str] = []
+            heuristic_seeds: list[int] = []
+            non_heuristic = []
+            for record in trio:
+                positions = [
+                    index for index, seat in enumerate(record.seats) if seat.agent_id == HEURISTIC
+                ]
+                if len(positions) != 1:
+                    raise PopulationExperimentError(
+                        "heuristic arena record has no unique heuristic seat"
+                    )
+                position = positions[0]
+                seat = record.seats[position]
+                heuristic_positions.append(position)
+                heuristic_identities.append(seat.rng_identity)
+                heuristic_seeds.append(seat.seed)
+                non_heuristic.append(record.seats[1 - position])
+            if (
+                len(set(heuristic_positions)) != 1
+                or len(set(heuristic_identities)) != 1
+                or len(set(heuristic_seeds)) != 1
+            ):
+                raise PopulationExperimentError("three-way heuristic seat/RNG alignment failed")
+            treatment_lane, control_lane, parent_lane = non_heuristic
+            if (
+                treatment_lane.rng_identity != control_lane.rng_identity
+                or treatment_lane.seed != control_lane.seed
+                or treatment_lane.rng_identity
+                != f"{POPULATION_REPLAY_CYCLE_ID}:{replicate_id}:candidate-lane"
+                or parent_lane.rng_identity != f"{replicate_id}:q0"
+                or parent_lane.rng_identity == treatment_lane.rng_identity
+            ):
+                raise PopulationExperimentError("candidate/parent heuristic-lane alignment failed")
+            if parent_lane.seed == heuristic_seeds[0]:
+                raise PopulationExperimentError("parent and heuristic lanes share an RNG seed")
+        three_way_checked += 1
+    return {
+        "status": "passed",
+        "shared_comparison_count": pairwise_checked,
+        "three_way_heuristic_reference_count": three_way_checked,
+    }
 
 
 def _begin_execution(output: Path, plan_fingerprint: str) -> Path:
@@ -1825,6 +1972,8 @@ def validate_population_experiment(
     recomputed_plan = build_population_experiment_plan(config, bundle)
     if recomputed_plan != plan:
         raise PopulationExperimentError("recomputed immutable plan differs")
+    if config.claim_default:
+        _validate_corrected_default_arena_counts(plan)
     corpus_plan = _corpus_plan_from_bundle(bundle)
     pairs = config.pairs_per_cell
     corpus_artifacts: dict[tuple[str, PopulationArm], dict[str, object]] = {}
@@ -1995,6 +2144,7 @@ def validate_population_experiment(
             "schedule_assignment_split": True,
             "checkpoint_lineage": True,
             "arena_aggregates_and_alignment": True,
+            "corrected_8000_per_replicate_count_contract": config.claim_default,
             "safety_and_offense": True,
             "nested_statistics_and_decision": True,
         },

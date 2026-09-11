@@ -127,9 +127,10 @@ Per replicate:
 | Each candidate versus historical q0 | 200 each |
 | Each candidate versus fixed-envelope q1, q2, q3, q4 | 100 each |
 
-This is 7,400 games per replicate and **22,200 development games** total. q1–q4 stress cells are
-descriptive because those policies are treatment-pool members and correlated descendants. No
-locked-final block opens in step 2.
+The candidate-comparison cells total 7,400 games per replicate. The required 300-pair q0-parent
+heuristic reference adds 600 games, for **8,000 physical development games per replicate and 24,000
+total**. q1–q4 stress cells are descriptive because those policies are treatment-pool members and
+correlated descendants. No locked-final block opens in step 2.
 
 Control/treatment arenas against a shared opponent use the same setup blocks, seats, opponent RNG
 identity, and candidate lane RNG identity. Arena records, safety/offense diagnostics, terminal

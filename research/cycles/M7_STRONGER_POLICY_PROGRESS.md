@@ -59,7 +59,8 @@ control games with 4,000 size-matched mixed-population games using exact 40% q0 
 q1–q4/heuristic/random logical-slot marginals. The model-v1 encoder, architecture, selected-action MC
 loss, optimizer, q0 initialization, epsilon 1/5, and adopted tactical envelope remain fixed.
 
-The run will produce 24,000 training games and 22,200 fresh development games. Nested uncertainty
+The run will produce 24,000 training games, 22,200 candidate-comparison development games, and 1,800
+matched q0-parent heuristic-reference games, for 24,000 total development games. Nested uncertainty
 resamples both training replicates and paired setup blocks. Both control and population datasets feed
 step 3 regardless of the step-2 advancement decision, enabling a predeclared data×architecture
 comparison rather than post-result corpus selection.
@@ -76,6 +77,10 @@ comparison rather than post-result corpus selection.
 
 ## Decision log
 
+- **September 11 — step-2 pre-claim correction:** the listed candidate comparisons total 7,400
+  games per replicate; the separately required 300-pair parent heuristic reference adds 600, so the
+  frozen physical total is 8,000 per replicate / 24,000 overall. The reference now shares the exact
+  candidate heuristic setup block.
 - **September 11 — step-2 freeze:** three paired 4,000-game corpus replicates per arm, exact mixed
   population weights, matched q0 initialization/training, 22,200 fresh development games, nested
   replicate/block uncertainty, and no post-result corpus selection for step 3.

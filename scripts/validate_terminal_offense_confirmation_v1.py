@@ -1038,13 +1038,21 @@ def main() -> int:
         raise RuntimeError("plan default pair count differs from frozen design")
     if plan["frozen_default_design"]["total_games"] != 60_000:
         raise RuntimeError("plan default game count differs from frozen design")
-    if plan["setup_holdout_scope"] != {
-        "version": SETUP_HOLDOUT_SCOPE_VERSION,
-        "declared_roots": [str(path) for path in DEFAULT_EXCLUDED_SETUP_ROOTS],
-        "recursive": True,
-        "excludes_current_output_subtree": True,
-    }:
-        raise RuntimeError("plan setup holdout scope differs from frozen design")
+    holdout_scope = plan["setup_holdout_scope"]
+    if (
+        not isinstance(holdout_scope, dict)
+        or holdout_scope.get("version") != SETUP_HOLDOUT_SCOPE_VERSION
+        or holdout_scope.get("recursive") is not True
+        or holdout_scope.get("excludes_current_output_subtree") is not True
+        or not isinstance(holdout_scope.get("declared_roots"), list)
+        or not holdout_scope["declared_roots"]
+    ):
+        raise RuntimeError("plan setup holdout scope is malformed")
+    default_design = bool(plan["execution"]["uses_frozen_default_design"])
+    if default_design and holdout_scope["declared_roots"] != [
+        str(path) for path in DEFAULT_EXCLUDED_SETUP_ROOTS
+    ]:
+        raise RuntimeError("claim plan setup holdout scope differs from frozen design")
     if plan["execution_budget"] != {
         "claim_run_cutoff_seconds": 27_900,
         "claim_run_cutoff": "7h45m",
@@ -1056,7 +1064,8 @@ def main() -> int:
         raise RuntimeError("plan execution budget differs from frozen design")
     if plan["direct_treatment_vs_control"]["causal_matched_evidence"] is not False:
         raise RuntimeError("plan direct comparison interpretation is malformed")
-    _require_frozen_source(plan)
+    if default_design:
+        _require_frozen_source(plan)
 
     retained_holdout = _read(root / "analysis" / "setup-block-holdout.json")
     holdout_payload = {

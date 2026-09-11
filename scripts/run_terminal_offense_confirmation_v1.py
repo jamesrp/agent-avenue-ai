@@ -313,6 +313,7 @@ def build_plan(
     *,
     pairs_per_family: int,
     setup_holdout: dict[str, object],
+    excluded_setup_roots: tuple[Path, ...] = DEFAULT_EXCLUDED_SETUP_ROOTS,
 ) -> dict[str, object]:
     source = inspect_source_identity()
     default_execution = (
@@ -388,7 +389,7 @@ def build_plan(
         "seed_validation": seed_validation,
         "setup_holdout_scope": {
             "version": SETUP_HOLDOUT_SCOPE_VERSION,
-            "declared_roots": [str(path) for path in DEFAULT_EXCLUDED_SETUP_ROOTS],
+            "declared_roots": [str(path) for path in excluded_setup_roots],
             "recursive": True,
             "excludes_current_output_subtree": True,
         },
@@ -654,6 +655,12 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--setup-holdout-root",
+        action="append",
+        type=Path,
+        help="override setup holdout roots for toy smoke isolation only",
+    )
+    parser.add_argument(
         "--toy-agents",
         action="store_true",
         help="run a non-claim smoke without loading PyTorch checkpoints",
@@ -662,10 +669,15 @@ def main() -> int:
     if args.pairs_per_family < 1:
         parser.error("--pairs-per-family must be positive")
 
+    if args.setup_holdout_root and not args.toy_agents:
+        parser.error("--setup-holdout-root is allowed only with --toy-agents")
     bundle = _toy_bundle() if args.toy_agents else _learned_bundle()
+    excluded_setup_roots = (
+        tuple(args.setup_holdout_root) if args.setup_holdout_root else DEFAULT_EXCLUDED_SETUP_ROOTS
+    )
     setup_holdout = scan_prior_setup_blocks(
         pair_count=args.pairs_per_family,
-        excluded_roots=DEFAULT_EXCLUDED_SETUP_ROOTS,
+        excluded_roots=excluded_setup_roots,
         current_output=args.output,
     )
     plan = build_plan(
@@ -673,6 +685,7 @@ def main() -> int:
         bundle,
         pairs_per_family=args.pairs_per_family,
         setup_holdout=setup_holdout,
+        excluded_setup_roots=excluded_setup_roots,
     )
     plan_path = args.output / "plan.json"
     _write_immutable(plan_path, plan)

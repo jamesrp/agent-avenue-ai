@@ -291,6 +291,8 @@ def test_tiny_confirmation_smoke_is_resumable_immutable_and_validatable(
     output = tmp_path / "confirmation-smoke"
     runner = Path("scripts/run_terminal_offense_confirmation_v1.py")
     validator = Path("scripts/validate_terminal_offense_confirmation_v1.py")
+    empty_holdout = tmp_path / "empty-holdout"
+    empty_holdout.mkdir()
     command = (
         sys.executable,
         str(runner),
@@ -298,6 +300,8 @@ def test_tiny_confirmation_smoke_is_resumable_immutable_and_validatable(
         str(output),
         "--pairs-per-family",
         "1",
+        "--setup-holdout-root",
+        str(empty_holdout),
         "--toy-agents",
     )
 
@@ -314,7 +318,7 @@ def test_tiny_confirmation_smoke_is_resumable_immutable_and_validatable(
     assert plan["frozen_default_design"]["total_games"] == 60_000
     assert plan["setup_holdout_scope"] == {
         "version": "all-completed-corpora-under-runs-v1",
-        "declared_roots": ["runs"],
+        "declared_roots": [str(empty_holdout)],
         "recursive": True,
         "excludes_current_output_subtree": True,
     }

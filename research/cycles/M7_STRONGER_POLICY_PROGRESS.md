@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 11, 2026
-**Overall state:** Step 1 complete; Step 2 exact agreement and implementation next
+**Overall state:** Step 1 complete; Step 2 agreement frozen and implementation pending
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -38,7 +38,7 @@ public-history signaling, and specializes to narrow self-play distributions.
 | Step | State | Exact agreement | Implementation | Claim run | Result |
 | --- | --- | --- | --- | --- | --- |
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
-| 2. Population replay v1 | Designing | Pending | Pending | Pending | Pending |
+| 2. Population replay v1 | Agreement frozen | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | Pending | Pending | Pending |
 | 3. Structured model v2 | Authorized, waiting | Pending | Pending | Pending | Pending |
 | 4. Counterfactual rollouts | Authorized, waiting | Pending | Pending | Pending | Pending |
 | 5. Independent league | Authorized, waiting | Pending | Pending | Pending | Pending |
@@ -54,16 +54,15 @@ now fixed for steps 2–4; no checkpoint or web default changed.
 
 ## Current step: population replay design
 
-Step 2 keeps `candidate-public-v1`, `candidate-mlp-v1`, selected-action terminal Monte Carlo BCE,
-optimizer defaults, q0 initialization, and the adopted terminal-offense/safety envelope fixed. It
-will compare fresh size-matched q0-only control collection with a deterministic mixed population of
-q0, q1–q4, heuristic, and random across three paired corpus/training replicates. Fresh development
-arenas and nested replicate/block uncertainty will determine which fixed corpus feeds step 3. Step 3
-proceeds regardless of whether population replay improves; an integrity failure blocks progression.
+Step 2 is frozen as three paired corpus/training replicates. Each replicate compares 4,000 q0-only
+control games with 4,000 size-matched mixed-population games using exact 40% q0 and 10% each
+q1–q4/heuristic/random logical-slot marginals. The model-v1 encoder, architecture, selected-action MC
+loss, optimizer, q0 initialization, epsilon 1/5, and adopted tactical envelope remain fixed.
 
-The retained all-pairs evaluation records will not be repurposed for fitting because they lack the
-matched exploration/control design. Exact games, pool weights, seeds, arenas, and advancement rules
-must be committed before collection.
+The run will produce 24,000 training games and 22,200 fresh development games. Nested uncertainty
+resamples both training replicates and paired setup blocks. Both control and population datasets feed
+step 3 regardless of the step-2 advancement decision, enabling a predeclared data×architecture
+comparison rather than post-result corpus selection.
 
 ## Completed implementation work
 
@@ -77,6 +76,9 @@ must be committed before collection.
 
 ## Decision log
 
+- **September 11 — step-2 freeze:** three paired 4,000-game corpus replicates per arm, exact mixed
+  population weights, matched q0 initialization/training, 22,200 fresh development games, nested
+  replicate/block uncertainty, and no post-result corpus selection for step 3.
 - **September 11 — step-1 result:** all structural criteria and the practical-lift criterion passed.
   Retain the terminal-offense envelope as a fixed component for steps 2–4. The direct common-RNG
   result remains descriptive, and no selected champion or web default changes before step 5.

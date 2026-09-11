@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Final, cast
 
 from agent_avenue.agents import (
+    RNG_ALGORITHM,
     Agent,
     DeterministicRandom,
     GreedyHeuristicAgent,
@@ -26,7 +27,8 @@ from agent_avenue.agents import (
     TerminalSafetyAgent,
     derive_seed,
 )
-from agent_avenue.runners.arena import ArenaConfig, arena_report_from_records
+from agent_avenue.engine.setup import normalize_config
+from agent_avenue.runners.arena import ArenaConfig, arena_report_from_records, schedule_arena
 from agent_avenue.runners.corpus import validate_record_matches_spec
 from agent_avenue.runners.game import AgentSpec
 from agent_avenue.runners.population import (
@@ -40,6 +42,8 @@ from agent_avenue.runners.population import (
     audit_population_alignment,
     audit_population_arm,
     build_population_corpus_plan,
+    enumerate_population_training_setup_blocks,
+    population_setup_identity,
 )
 from agent_avenue.runners.population_experiment import (
     CANDIDATE_ARMS,
@@ -96,6 +100,15 @@ def _read(path: Path) -> dict[str, object]:
     if not isinstance(value, dict):
         raise LocalValidationError(f"artifact must be an object: {path}")
     return cast(dict[str, object], value)
+
+
+def _verify_artifact(data: Mapping[str, object], *, label: str) -> str:
+    fingerprint = data.get("artifact_fingerprint")
+    if not isinstance(fingerprint, str) or fingerprint != _fingerprint(
+        {key: value for key, value in data.items() if key != "artifact_fingerprint"}
+    ):
+        raise LocalValidationError(f"{label} artifact fingerprint mismatch")
+    return fingerprint
 
 
 def _write_immutable(path: Path, value: Mapping[str, object]) -> None:
@@ -277,6 +290,145 @@ def _cells(corpus_plan: object, pairs: int) -> list[dict[str, object]]:
             for arm in ("control", "treatment"):
                 add(f"{arm}-vs-{opponent}", arm, opponent, 100, opponent)
     return values
+
+
+def _local_holdout(
+    corpus_plan: object,
+    cells: Iterable[Mapping[str, object]],
+    *,
+    roots: tuple[Path, ...],
+    current_output: Path,
+    pairs: int,
+) -> dict[str, object]:
+    current: dict[str, dict[str, object]] = {}
+    for candidate in enumerate_population_training_setup_blocks(corpus_plan):
+        if candidate.pair_index >= pairs:
+            continue
+        current[candidate.setup_identity] = {
+            "domain": "training",
+            "replicate_id": candidate.replicate_id,
+            "pair_id": candidate.pair_id,
+            "setup_seed": candidate.setup_seed,
+            "game_config": dict(candidate.game_config),
+            "intentional_duplicate_arms": ["control", "treatment"],
+        }
+    for cell in cells:
+        specs = schedule_arena(
+            ArenaConfig(
+                cast(str, cell["run_id"]),
+                AgentSpec("schedule-a", {"type": "schedule"}, RandomAgent),
+                AgentSpec("schedule-b", {"type": "schedule-b"}, RandomAgent),
+                cast(int, cell["paired_blocks"]),
+                cast(int, cell["master_seed"]),
+            )
+        )
+        for spec in specs:
+            identity = population_setup_identity(normalize_config(spec.config), spec.setup_seed)
+            existing = current.get(identity)
+            material: dict[str, object] = {
+                "domain": "development",
+                "replicate_id": cell["replicate_id"],
+                "arena": cell["key"],
+                "pair_id": spec.pair_id,
+                "setup_seed": spec.setup_seed,
+                "shared_group": cell["shared_group"],
+            }
+            if existing is not None:
+                same_cell = (
+                    existing.get("domain") == "development"
+                    and existing.get("replicate_id") == cell["replicate_id"]
+                    and existing.get("arena") == cell["key"]
+                )
+                same_group = (
+                    existing.get("domain") == "development"
+                    and cell["shared_group"] is not None
+                    and existing.get("replicate_id") == cell["replicate_id"]
+                    and existing.get("shared_group") == cell["shared_group"]
+                )
+                if not (same_cell or same_group):
+                    raise LocalValidationError("proposed setup identities overlap unexpectedly")
+            else:
+                current[identity] = material
+    output = current_output.resolve()
+    seen: set[Path] = set()
+    prior: dict[str, list[str]] = {}
+    rows: list[dict[str, object]] = []
+    root_rows: list[dict[str, object]] = []
+    for declared_root in roots:
+        root = declared_root.resolve()
+        if not root.exists():
+            root_rows.append({"declared_root": str(declared_root), "status": "missing"})
+            continue
+        if not root.is_dir():
+            raise LocalValidationError("holdout root is not a directory")
+        corpus_count = 0
+        record_count = 0
+        for manifest_path in sorted(root.rglob("manifest.json")):
+            resolved = manifest_path.resolve()
+            if resolved.is_relative_to(output) or resolved in seen:
+                continue
+            seen.add(resolved)
+            if not (manifest_path.parent / "games.jsonl.gz").is_file():
+                continue
+            manifest, records = load_corpus(
+                manifest_path.parent, verify_code=False, verify_replays=False
+            )
+            corpus_count += 1
+            record_count += len(records)
+            rows.append(
+                {
+                    "path": str(manifest_path.parent.resolve()),
+                    "corpus_fingerprint": manifest.corpus_fingerprint,
+                    "record_count": len(records),
+                }
+            )
+            for record in records:
+                identity = population_setup_identity(
+                    normalize_config(record.replay.config), record.replay.seed
+                )
+                prior.setdefault(identity, []).append(str(manifest_path.parent.resolve()))
+        root_rows.append(
+            {
+                "declared_root": str(declared_root),
+                "resolved_root": str(root),
+                "status": "present",
+                "corpus_count": corpus_count,
+                "record_count": record_count,
+                "current_output_excluded": output.is_relative_to(root),
+            }
+        )
+    overlap = sorted(set(current) & set(prior))
+    data: dict[str, object] = {
+        "version": "m7-population-replay-setup-holdout-v1",
+        "scope": {
+            "recursive": True,
+            "completed_corpus_detection": "manifest-and-games-jsonl-gzip-v1",
+            "excludes_current_output_subtree": True,
+            "intentional_duplicate": "control-treatment-within-one-training-replicate",
+        },
+        "status": "passed" if not overlap else "failed",
+        "current_setup_count": len(current),
+        "current_setup_fingerprint": _fingerprint(sorted(current)),
+        "prior_setup_count": len(prior),
+        "prior_setup_fingerprint": _fingerprint(sorted(prior)),
+        "overlap_count": len(overlap),
+        "overlap_fingerprint": _fingerprint(overlap),
+        "overlap_examples": [
+            {
+                "setup_identity": identity,
+                "current": current[identity],
+                "prior_corpora": sorted(set(prior[identity])),
+            }
+            for identity in overlap[:24]
+        ],
+        "roots": root_rows,
+        "scanned_corpora": rows,
+        "artifact_fingerprint": "",
+    }
+    data["artifact_fingerprint"] = _fingerprint(
+        {key: value for key, value in data.items() if key != "artifact_fingerprint"}
+    )
+    return data
 
 
 def _config_data(agent: Agent) -> dict[str, object]:
@@ -484,14 +636,20 @@ def _local_metrics(
         )
         treatment_parent_heuristic.append(tr_parent_h)
         opponents = ("parent", "heuristic", "random", "historical-q0", "q1", "q2", "q3", "q4")
-        treatment_macro = sum(
-            sum(scores(f"treatment-vs-{name}")) / len(scores(f"treatment-vs-{name}"))
+        absolute_rates = {
+            name: {
+                "treatment": sum(scores(f"treatment-vs-{name}"))
+                / len(scores(f"treatment-vs-{name}")),
+                "control": sum(scores(f"control-vs-{name}")) / len(scores(f"control-vs-{name}")),
+            }
             for name in opponents
-        ) / len(opponents)
-        control_macro = sum(
-            sum(scores(f"control-vs-{name}")) / len(scores(f"control-vs-{name}"))
-            for name in opponents
-        ) / len(opponents)
+        }
+        treatment_macro = sum(rate["treatment"] for rate in absolute_rates.values()) / len(
+            absolute_rates
+        )
+        control_macro = sum(rate["control"] for rate in absolute_rates.values()) / len(
+            absolute_rates
+        )
         treatment_macros.append(treatment_macro)
         control_macros.append(control_macro)
         seats: list[float] = []
@@ -532,6 +690,7 @@ def _local_metrics(
                 "treatment_minus_control_heuristic": sum(diffs[HEURISTIC][-1])
                 / len(diffs[HEURISTIC][-1]),
                 "treatment_minus_parent_heuristic": sum(tr_parent_h) / len(tr_parent_h),
+                "absolute_opponent_rates": absolute_rates,
                 "equal_opponent_treatment_macro": treatment_macro,
                 "equal_opponent_control_macro": control_macro,
                 "minimum_candidate_seat_rate": replicate_min,
@@ -560,7 +719,7 @@ def _local_metrics(
             "domain": GLOBAL_BOOTSTRAP_DOMAIN,
             "seed": global_seed,
             "root_seed": POPULATION_REPLAY_ROOT_SEED,
-            "rng_algorithm": "hmac-sha256-counter-v1",
+            "rng_algorithm": RNG_ALGORITHM,
         },
         "descriptive_equal_opponent_macros": {
             "treatment_mean": sum(treatment_macros) / 3,
@@ -731,6 +890,30 @@ def main() -> int:
         }
         if any(arenas.get(key) != value for key, value in expected_counts.items()):
             raise LocalValidationError("corrected 8,000/24,000 arena count contract failed")
+    holdout_scope = plan.get("holdout_scope")
+    declared_roots = holdout_scope.get("roots") if isinstance(holdout_scope, Mapping) else None
+    if not isinstance(declared_roots, list) or not all(
+        isinstance(value, str) for value in declared_roots
+    ):
+        raise LocalValidationError("plan holdout scope is malformed")
+    roots = tuple(Path(value) for value in declared_roots)
+    if pairs == POPULATION_PAIR_COUNT:
+        expected_runs = (repository_root() / "runs").resolve()
+        if roots != (expected_runs,):
+            raise LocalValidationError("claim holdout root is not exactly repository runs")
+    local_holdout = _local_holdout(
+        corpus_plan, cells, roots=roots, current_output=output, pairs=pairs
+    )
+    input_audit = _read(output / "input-audit.json")
+    expected_input = {
+        "version": "m7-population-replay-input-audit-v1",
+        "plan_fingerprint": plan["plan_fingerprint"],
+        "setup_holdout": local_holdout,
+    }
+    expected_input["artifact_fingerprint"] = _fingerprint(expected_input)
+    if input_audit != expected_input or local_holdout["overlap_count"] != 0:
+        raise LocalValidationError("input holdout inventory differs or contains overlap")
+    _verify_artifact(input_audit, label="input audit")
     retained_corpora: dict[tuple[str, PopulationArm], tuple[GameRecord, ...]] = {}
     corpus_artifacts: dict[tuple[str, PopulationArm], Mapping[str, object]] = {}
     for replicate in POPULATION_REPLAY_REPLICATE_IDS:
@@ -745,10 +928,12 @@ def main() -> int:
             if pairs == POPULATION_PAIR_COUNT:
                 audit_population_arm(corpus_plan, replicate, arm, records)
             artifact = _read(output / "corpus-artifacts" / replicate / f"{arm}.json")
+            corpus_artifact_fingerprint = _verify_artifact(artifact, label="corpus")
             if (
                 artifact.get("plan_fingerprint") != plan["plan_fingerprint"]
                 or cast(Mapping[str, object], artifact["records"]).get("corpus_fingerprint")
                 != manifest.corpus_fingerprint
+                or corpus_artifact_fingerprint == ""
             ):
                 raise LocalValidationError("corpus artifact differs")
             retained_corpora[(replicate, arm)] = records
@@ -780,6 +965,7 @@ def main() -> int:
             path = output / "datasets" / replicate / f"{arm}.npz"
             dataset = load_dataset(path)
             artifact = _read(output / "dataset-audits" / replicate / f"{arm}.json")
+            _verify_artifact(artifact, label="dataset")
             data = cast(Mapping[str, object], artifact["dataset"])
             coverage = _coverage(retained_corpora[(replicate, arm)], dataset.manifest, corpus_plan)
             if (
@@ -819,13 +1005,16 @@ def main() -> int:
         row["status"] = "passed"
         split_rows.append(row)
     split_artifact = _read(output / "dataset-split-alignment.json")
+    _verify_artifact(split_artifact, label="split alignment")
     if split_artifact.get("replicates") != split_rows:
         raise LocalValidationError("split alignment artifact differs")
     parent = load_checkpoint(paths["q0"])
     parent_tensor = tensor_digest(parent.model.state_dict())
     summary = _read(output / "training-summary.json")
+    summary_fingerprint = _verify_artifact(summary, label="training summary")
     if not isinstance(summary.get("replicates"), list) or len(summary["replicates"]) != 3:
         raise LocalValidationError("training summary cardinality differs")
+    paired_training_seeds: dict[str, Mapping[str, object]] = {}
     for row in cast(list[object], summary["replicates"]):
         if (
             not isinstance(row, Mapping)
@@ -861,6 +1050,20 @@ def main() -> int:
             lineage = cast(Mapping[str, object], checkpoint.manifest["lineage"])
             training = cast(Mapping[str, object], checkpoint.manifest["training"])
             sources = cast(Mapping[str, object], checkpoint.manifest["sources"])
+            seed_plan = corpus_plan.replicate(replicate).seed_plan
+            expected_seed_record = {
+                "initialization": seed_plan.initialization_seed,
+                "shuffle": seed_plan.shuffle_seed,
+                "fresh_optimizer": True,
+            }
+            training_seeds = training.get("seeds")
+            if not isinstance(training_seeds, Mapping):
+                raise LocalValidationError("checkpoint training seed provenance is malformed")
+            prior = paired_training_seeds.get(replicate)
+            if prior is None:
+                paired_training_seeds[replicate] = training_seeds
+            elif prior != training_seeds:
+                raise LocalValidationError("paired control/treatment training seeds differ")
             corpus_fp = cast(Mapping[str, object], corpus_artifacts[(replicate, arm)]["records"])[
                 "corpus_fingerprint"
             ]
@@ -874,6 +1077,8 @@ def main() -> int:
                 or metadata.get("initial_parent_tensor_digest") != parent_tensor
                 or lineage.get("parent_checkpoint") != parent.checkpoint_fingerprint
                 or training.get("config") != expected_config
+                or training_seeds != expected_seed_record
+                or metadata.get("paired_shuffle_seed") != seed_plan.shuffle_seed
                 or sources.get("dataset_fingerprint") != dataset_fp
                 or tuple(cast(tuple[object, ...], sources.get("corpus_fingerprints", ())))
                 != (corpus_fp,)
@@ -894,6 +1099,7 @@ def main() -> int:
         )
         manifest, records = load_corpus(output / "arena-records" / replicate / key)
         artifact = _read(output / "arenas" / replicate / f"{key}.json")
+        _verify_artifact(artifact, label="arena")
         report = cast(Mapping[str, object], artifact["report"])
         elapsed = report.get("elapsed_seconds")
         tactical = {"passed": None}
@@ -949,6 +1155,7 @@ def main() -> int:
     _check_alignment(arena_records)
     metrics, _ = _local_metrics(artifacts, expected_seed)
     stored_metrics = _read(output / "statistics.json")
+    _verify_artifact(stored_metrics, label="statistics")
     expected_metrics = {"plan_fingerprint": plan["plan_fingerprint"], **metrics}
     expected_metrics["artifact_fingerprint"] = _fingerprint(expected_metrics)
     if stored_metrics != expected_metrics:
@@ -964,6 +1171,23 @@ def main() -> int:
     result_corpora = result.get("corpora")
     result_datasets = result.get("datasets")
     result_arenas = result.get("arena_artifacts")
+    expected_arena_fingerprints = {
+        f"{cast(Mapping[str, object], artifact['cell'])['replicate_id']}:"
+        f"{cast(Mapping[str, object], artifact['cell'])['key']}": _verify_artifact(
+            artifact, label="arena"
+        )
+        for artifact in artifacts
+    }
+    expected_corpus_fingerprints = {
+        f"{replicate}:{arm}": _verify_artifact(corpus_artifacts[(replicate, arm)], label="corpus")
+        for replicate in POPULATION_REPLAY_REPLICATE_IDS
+        for arm in CANDIDATE_ARMS
+    }
+    expected_dataset_fingerprints = {
+        f"{replicate}:{arm}": _verify_artifact(dataset_artifacts[(replicate, arm)], label="dataset")
+        for replicate in POPULATION_REPLAY_REPLICATE_IDS
+        for arm in CANDIDATE_ARMS
+    }
     if (
         result.get("version") != RESULT_VERSION
         or result.get("decision") != decision
@@ -973,9 +1197,12 @@ def main() -> int:
         or set(result_datasets) != expected_corpus_keys
         or not isinstance(result_arenas, Mapping)
         or set(result_arenas) != expected_arena_keys
+        or dict(result_corpora) != expected_corpus_fingerprints
+        or dict(result_datasets) != expected_dataset_fingerprints
+        or dict(result_arenas) != expected_arena_fingerprints
         or result.get("dataset_split_alignment_fingerprint")
         != split_artifact.get("artifact_fingerprint")
-        or result.get("training_summary_fingerprint") != summary.get("artifact_fingerprint")
+        or result.get("training_summary_fingerprint") != summary_fingerprint
         or result.get("result_fingerprint")
         != _fingerprint(
             {key: value for key, value in result.items() if key != "result_fingerprint"}

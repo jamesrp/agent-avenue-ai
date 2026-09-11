@@ -18,6 +18,7 @@ from agent_avenue.runners.population_experiment import (
     build_population_policy_bundle,
     run_population_experiment,
 )
+from agent_avenue.storage import repository_root
 
 
 def _toy_checkpoint_paths(root: Path) -> dict[str, Path]:
@@ -66,6 +67,9 @@ def main() -> int:
     args = parser.parse_args()
     if args.toy_smoke:
         output = args.output or _default_toy_smoke_output()
+        claim_runs = (repository_root() / "runs").resolve()
+        if output.resolve().is_relative_to(claim_runs):
+            parser.error("--toy-smoke output must not be nested under the repository runs holdout")
         paths = _toy_checkpoint_paths(output / "smoke-inputs")
         roots = tuple(args.holdout_root) if args.holdout_root else (output / "smoke-holdout",)
         config = PopulationExperimentConfig(

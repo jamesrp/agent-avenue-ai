@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_avenue.agents import RandomAgent
+from agent_avenue.agents import RNG_ALGORITHM, RandomAgent
 from agent_avenue.runners import (
     POPULATION_PAIR_COUNT,
     AgentSpec,
@@ -89,7 +89,7 @@ def test_population_experiment_plan_freezes_six_corpora_and_arena_schedule(
     bootstrap = first["global_bootstrap"]
     assert isinstance(bootstrap, dict)
     assert bootstrap["domain"] == "m7-population-replay-v1:global-nested-bootstrap:v1"
-    assert isinstance(bootstrap["seed"], int)
+    assert bootstrap["rng_algorithm"] == RNG_ALGORITHM
 
 
 def test_population_arena_shared_cells_have_identical_named_seed(tmp_path: Path) -> None:
@@ -251,6 +251,7 @@ def test_default_learned_clean_plan_is_claim_eligible(
             "checks": {},
         },
     )
+    monkeypatch.setattr(population_experiment, "repository_root", lambda: tmp_path)
     runs = tmp_path / "runs"
     runs.mkdir()
     config = PopulationExperimentConfig(
@@ -322,6 +323,26 @@ def test_smoke_default_output_is_unique_and_outside_claim_runs() -> None:
     finally:
         shutil.rmtree(first)
         shutil.rmtree(second)
+
+
+def test_toy_smoke_explicit_claim_root_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script_path = Path("scripts/run_population_replay_v1.py")
+    spec = importlib.util.spec_from_file_location("population_smoke_reject_script", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    claim_runs = tmp_path / "runs"
+    claim_runs.mkdir()
+    monkeypatch.setattr(module, "repository_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_population_replay_v1.py", "--toy-smoke", "--output", str(claim_runs / "smoke")],
+    )
+    with pytest.raises(SystemExit, match="2"):
+        module.main()
 
 
 def test_toy_smoke_path_cannot_poison_claim_runs_holdout(tmp_path: Path) -> None:

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 from agent_avenue.agents import (
+    RNG_ALGORITHM,
     Agent,
     DeterministicRandom,
     GreedyHeuristicAgent,
@@ -120,7 +121,7 @@ class PopulationExperimentConfig:
 
     output: Path
     checkpoint_paths: Mapping[str, Path] = field(default_factory=lambda: DEFAULT_CHECKPOINT_PATHS)
-    holdout_roots: tuple[Path, ...] = (Path("runs"),)
+    holdout_roots: tuple[Path, ...] = field(default_factory=lambda: (repository_root() / "runs",))
     smoke_pair_count: int | None = None
     smoke_max_epochs: int | None = None
 
@@ -296,7 +297,7 @@ def _global_bootstrap_material() -> dict[str, object]:
         "domain": GLOBAL_BOOTSTRAP_DOMAIN,
         "seed": derive_seed(POPULATION_REPLAY_ROOT_SEED, GLOBAL_BOOTSTRAP_DOMAIN),
         "root_seed": POPULATION_REPLAY_ROOT_SEED,
-        "rng_algorithm": "hmac-sha256-counter-v1",
+        "rng_algorithm": RNG_ALGORITHM,
     }
 
 
@@ -687,11 +688,14 @@ def build_population_experiment_plan(
     if runner_source["tracked_and_nonignored_untracked_clean"] is not True:
         claim_reasons.append("runner_source_has_tracked_or_nonignored_untracked_files")
     if config.claim_default:
-        declared_runs = [path for path in config.holdout_roots if path.name == "runs"]
+        required_runs_root = (repository_root() / "runs").resolve()
+        declared_runs = [
+            path for path in config.holdout_roots if path.resolve() == required_runs_root
+        ]
         if not declared_runs:
-            claim_reasons.append("claim_runs_holdout_root_not_declared")
-        elif not any(path.exists() and path.is_dir() for path in declared_runs):
-            claim_reasons.append("claim_runs_holdout_root_missing")
+            claim_reasons.append("claim_repository_runs_holdout_root_not_declared")
+        elif not required_runs_root.is_dir():
+            claim_reasons.append("claim_repository_runs_holdout_root_missing")
     if config.claim_default and (
         count_data["candidate_comparison_games"] != 22_200
         or count_data["reference_games"] != 1_800
@@ -1598,14 +1602,21 @@ def population_statistics(
             "q3",
             "q4",
         )
-        treatment_macro = sum(
-            sum(scores(f"treatment-vs-{opponent}")) / len(scores(f"treatment-vs-{opponent}"))
+        absolute_rates = {
+            opponent: {
+                "treatment": sum(scores(f"treatment-vs-{opponent}"))
+                / len(scores(f"treatment-vs-{opponent}")),
+                "control": sum(scores(f"control-vs-{opponent}"))
+                / len(scores(f"control-vs-{opponent}")),
+            }
             for opponent in equal_opponents
-        ) / len(equal_opponents)
-        control_macro = sum(
-            sum(scores(f"control-vs-{opponent}")) / len(scores(f"control-vs-{opponent}"))
-            for opponent in equal_opponents
-        ) / len(equal_opponents)
+        }
+        treatment_macro = sum(rate["treatment"] for rate in absolute_rates.values()) / len(
+            absolute_rates
+        )
+        control_macro = sum(rate["control"] for rate in absolute_rates.values()) / len(
+            absolute_rates
+        )
         equal_opponent_treatment_macros.append(treatment_macro)
         equal_opponent_control_macros.append(control_macro)
         per_replicate.append(
@@ -1619,6 +1630,7 @@ def population_statistics(
                 / len(differences[HEURISTIC][-1]),
                 "treatment_minus_parent_heuristic": sum(treatment_parent_heuristic[-1])
                 / len(treatment_parent_heuristic[-1]),
+                "absolute_opponent_rates": absolute_rates,
                 "equal_opponent_treatment_macro": treatment_macro,
                 "equal_opponent_control_macro": control_macro,
                 "minimum_candidate_seat_rate": replicate_minimum,

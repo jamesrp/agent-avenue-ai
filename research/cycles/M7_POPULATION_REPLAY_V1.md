@@ -3,7 +3,7 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 2 of 5
 **Cycle ID:** `m7-population-replay-v1`
-**Status:** Approved; implementation pending
+**Status:** Approved and implementation-frozen; claim run pending
 **Approved:** September 11, 2026
 **Prerequisite:** [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) completed with structural adoption
 
@@ -192,6 +192,16 @@ No step-2 result changes the selected champion or web default.
   training, arenas, statistics, or decision criteria.
 - Generated evidence belongs under `runs/m7-population-replay-v1/`; compact source, agreement,
   progress, and result notes are committed.
+
+## Frozen implementation
+
+- `027b434`: deterministic population assignment, paired schedule, envelope composition, and audits.
+- `fb696f8`: resumable corpus/dataset/training/arena experiment and validator foundation.
+- `adc55a2`: corrected 8,000-game development count and three-way heuristic alignment.
+- `bf7cb09`: independent validator, deadline/source checks, matched splits, global bootstrap, coverage,
+  and macro diagnostics.
+- `c9b78c3`: exhaustive independent holdout validation, exact training-seed provenance, artifact
+  reference checks, and final claim preflight hardening.
 
 ## Out of scope
 

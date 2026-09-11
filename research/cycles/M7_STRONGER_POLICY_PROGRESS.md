@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 11, 2026
-**Overall state:** Step 1 complete; Step 2 agreement frozen and implementation pending
+**Overall state:** Step 1 complete; Step 2 claim run ready to dispatch
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -38,7 +38,7 @@ public-history signaling, and specializes to narrow self-play distributions.
 | Step | State | Exact agreement | Implementation | Claim run | Result |
 | --- | --- | --- | --- | --- | --- |
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
-| 2. Population replay v1 | Agreement frozen | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | Pending | Pending | Pending |
+| 2. Population replay v1 | Claim-ready | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | Pending | Pending |
 | 3. Structured model v2 | Authorized, waiting | Pending | Pending | Pending | Pending |
 | 4. Counterfactual rollouts | Authorized, waiting | Pending | Pending | Pending | Pending |
 | 5. Independent league | Authorized, waiting | Pending | Pending | Pending | Pending |
@@ -73,17 +73,24 @@ comparison rather than post-result corpus selection.
 - `b18a13e`: exhaustive setup holdout and corrected guaranteed-win prefix endpoints.
 - `23fe496`: independent validator path, frozen provenance checks, whole-step budget metadata, and
   descriptive-only direct comparison.
-- Current validation: Ruff and strict mypy pass; 223 tests pass.
+- Current validation: Ruff and strict mypy pass; 247 tests pass.
+- Step-2 implementation: deterministic assignment/schedules, resumable six-corpus/six-training
+  pipeline, 54 development arenas, exhaustive holdout/source/deadline checks, nested bootstrap,
+  decision logic, and a separate independent validator are committed and smoke-tested.
 
 ## Decision log
 
+- **September 11 — step-2 implementation freeze:** schedule and experiment workers completed the
+  population assignment, six-model training/evaluation pipeline, independent validator, and three
+  bounded preflight hardening passes. The final clean source has no unresolved reviewer blocker.
 - **September 11 — step-2 pre-claim correction:** the listed candidate comparisons total 7,400
   games per replicate; the separately required 300-pair parent heuristic reference adds 600, so the
   frozen physical total is 8,000 per replicate / 24,000 overall. The reference now shares the exact
   candidate heuristic setup block.
 - **September 11 — step-2 freeze:** three paired 4,000-game corpus replicates per arm, exact mixed
-  population weights, matched q0 initialization/training, 22,200 fresh development games, nested
-  replicate/block uncertainty, and no post-result corpus selection for step 3.
+  population weights, matched q0 initialization/training, 22,200 candidate-comparison games plus
+  1,800 matched parent-reference games, nested replicate/block uncertainty, and no post-result corpus
+  selection for step 3.
 - **September 11 — step-1 result:** all structural criteria and the practical-lift criterion passed.
   Retain the terminal-offense envelope as a fixed component for steps 2–4. The direct common-RNG
   result remains descriptive, and no selected champion or web default changes before step 5.

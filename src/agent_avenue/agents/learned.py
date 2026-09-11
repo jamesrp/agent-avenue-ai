@@ -6,7 +6,6 @@ This optional module imports PyTorch and is deliberately not re-exported from
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING, Final, cast
 
@@ -24,6 +23,7 @@ from agent_avenue.observation.model import ObservationDecision, PlayerObservatio
 
 from .ordering import semantic_action_key
 from .random_source import RandomSource
+from .scoring import LearnedCandidateScores
 
 if TYPE_CHECKING:
     from agent_avenue.learning.checkpoint import LoadedCheckpoint
@@ -142,13 +142,13 @@ class LearnedValueAgent:
         if any(parameter.requires_grad for parameter in model.parameters()):
             raise ValueError("learned agent requires inference-only model parameters")
 
-    def choose_action(
+    def score_candidates(
         self,
         observation: PlayerObservation,
         decision: ObservationDecision,
         legal_actions: tuple[Action, ...],
-        rng: RandomSource,
-    ) -> Action:
+    ) -> LearnedCandidateScores:
+        """Score one public candidate set without consuming policy randomness."""
         if decision != observation.decision or legal_actions != observation.legal_actions:
             raise ValueError("agent inputs must describe one consistent public turn")
         if not legal_actions:
@@ -162,9 +162,16 @@ class LearnedValueAgent:
         if logits.shape != (len(candidates),):
             raise ValueError("learned model returned an incompatible candidate batch")
         values = tuple(float(value) for value in logits.tolist())
-        if any(not math.isfinite(value) for value in values):
-            raise ValueError("learned model returned a non-finite candidate logit")
-        best = max(values)
-        maxima = tuple(index for index, value in enumerate(values) if value == best)
+        return LearnedCandidateScores.from_logits(candidates, values)
+
+    def choose_action(
+        self,
+        observation: PlayerObservation,
+        decision: ObservationDecision,
+        legal_actions: tuple[Action, ...],
+        rng: RandomSource,
+    ) -> Action:
+        scores = self.score_candidates(observation, decision, legal_actions)
+        maxima = scores.maximum_indices
         selected = maxima[0] if len(maxima) == 1 else maxima[rng.randbelow(len(maxima))]
-        return candidates[selected]
+        return scores.actions[selected]

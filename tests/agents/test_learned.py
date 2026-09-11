@@ -6,6 +6,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from agent_avenue.agents.learned import LearnedValueAgent, LearnedValueConfig  # noqa: E402
+from agent_avenue.agents.ordering import semantic_action_key  # noqa: E402
 from agent_avenue.engine import PlayerId, new_game  # noqa: E402
 from agent_avenue.learning import create_model, load_checkpoint, save_checkpoint  # noqa: E402
 from agent_avenue.observation import observe  # noqa: E402
@@ -64,6 +65,42 @@ def test_learned_agent_batches_candidates_and_ties_by_semantic_order(tmp_path: P
     )
     assert first == second
     assert first_rng.calls == reversed_rng.calls == 1
+
+
+def test_learned_scoring_diagnostic_exposes_exact_ties_in_semantic_order(
+    tmp_path: Path,
+) -> None:
+    agent = LearnedValueAgent.from_checkpoint(_checkpoint(tmp_path / "checkpoint"))
+    observation = observe(new_game(seed=17), PlayerId.PLAYER_ONE)
+    reversed_actions = tuple(reversed(observation.legal_actions))
+    reversed_observation = replace(observation, legal_actions=reversed_actions)
+
+    scores = agent.score_candidates(
+        reversed_observation,
+        reversed_observation.decision,
+        reversed_observation.legal_actions,
+    )
+
+    assert set(scores.actions) == set(observation.legal_actions)
+    assert scores.actions == tuple(sorted(reversed_actions, key=semantic_action_key))
+    assert scores.logits == tuple(0.0 for _ in scores.actions)
+    assert scores.maximum_indices == tuple(range(len(scores.actions)))
+    assert scores.tie_count == len(scores.actions)
+    assert scores.maximum_actions == scores.actions
+
+
+def test_learned_choose_action_uses_the_scoring_diagnostic_without_behavior_change(
+    tmp_path: Path,
+) -> None:
+    agent = LearnedValueAgent.from_checkpoint(_checkpoint(tmp_path / "checkpoint"))
+    observation = observe(new_game(seed=17), PlayerId.PLAYER_ONE)
+    scores = agent.score_candidates(observation, observation.decision, observation.legal_actions)
+    rng = FixedRandom(2)
+
+    chosen = agent.choose_action(observation, observation.decision, observation.legal_actions, rng)
+
+    assert chosen == scores.actions[scores.maximum_indices[2]]
+    assert rng.calls == 1
 
 
 def test_learned_agent_rejects_inconsistent_turn(tmp_path: Path) -> None:

@@ -444,9 +444,14 @@ def _manifest_from_data(data: object) -> CorpusManifest:
 
 
 def load_corpus(
-    directory: Path, *, verify_code: bool = True
+    directory: Path, *, verify_code: bool = True, verify_replays: bool = True
 ) -> tuple[CorpusManifest, tuple[GameRecord, ...]]:
-    """Load and fully verify a corpus and its ordered record identities."""
+    """Load a corpus, verifying replay semantics by default.
+
+    ``verify_replays=False`` is for repeated derived passes only after the same caller has already
+    completed a full verified load. Record and corpus fingerprints, ordering, counts, and code/rules
+    compatibility are still checked.
+    """
     try:
         data = json.loads((directory / "manifest.json").read_text())
         manifest = _manifest_from_data(data)
@@ -460,7 +465,8 @@ def load_corpus(
             for line in source:
                 if line.strip():
                     record = game_record_from_data(json.loads(line))
-                    verify_game_record(record, verify_code=verify_code)
+                    if verify_replays:
+                        verify_game_record(record, verify_code=verify_code)
                     records.append(record)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, GameRecordError) as exc:
         if isinstance(exc, CorpusError):

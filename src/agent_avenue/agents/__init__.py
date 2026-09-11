@@ -17,6 +17,7 @@ from .random_source import (
     RandomSource,
     derive_seed,
 )
+from .scoring import LearnedCandidateScores
 from .scripted import ScriptCallback, ScriptedAgent
 from .terminal_offense import (
     SELECTION_VERSION,
@@ -56,6 +57,7 @@ __all__ = [
     "EpsilonGreedyAgent",
     "GreedyHeuristicAgent",
     "GreedyHeuristicConfig",
+    "LearnedCandidateScores",
     "PublicDecision",
     "RandomAgent",
     "RandomAgentConfig",

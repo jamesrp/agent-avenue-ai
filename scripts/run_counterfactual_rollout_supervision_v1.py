@@ -24,6 +24,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--step3-root", type=Path)
     parser.add_argument("--validator-preflight", type=Path)
+    parser.add_argument("--holdout-root", action="append", type=Path)
     parser.add_argument(
         "--smoke-treatment-epochs",
         type=int,

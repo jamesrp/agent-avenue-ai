@@ -1,0 +1,178 @@
+{
+  "artifact_fingerprint": "534ea9aaad0fe9033d568ae6ef945828649ad4030899e004175a3057ad4aa186",
+  "created_date": "2026-09-12",
+  "cycle_id": "m7-structured-model-v2",
+  "inputs": [
+    {
+      "corpus": {
+        "fingerprint": "39f3cd202b78989fa4ef88ba068d57eb95e4b12863040286d7413c68afaf4652",
+        "manifest_sha256": "0b216a46bd4e1fad1ec56c90e5dfac04e188e1a927a9153a130fed11e91555fd",
+        "path": "runs/m7-population-replay-v1/corpora/replicate-1/control",
+        "records_sha256": "c1dd918c5a8e49f08bc9f88da380fe8b276aaaae436d8b80831cebdb0666e4b3"
+      },
+      "data_arm": "control",
+      "replicate_id": "replicate-1",
+      "v1_checkpoint": {
+        "fingerprint": "1156e31537a5389accea105483d7cd0f3148fbad2eb1ded66a95d613818c954e",
+        "manifest_sha256": "3c0d615a698043bbbaa02f9da67b80210c86f29cfc72c41d8589b3c9efd5f44d",
+        "metrics_sha256": "627e6e96caee5fb588da84c26eebf3a588186e99f7a189f7e725c0da697daaf5",
+        "path": "runs/m7-population-replay-v1/checkpoints/replicate-1/control",
+        "tensor_digest": "1418cb639329fd94b7508d063b5a458ff24b94a535db2ea5121b23beca8f15c2",
+        "weights_sha256": "44fde9191c4720b0c00fdf0f3257764d7f25263bb7660db241b89e56346f7e4d"
+      },
+      "v1_dataset": {
+        "fingerprint": "7e04f4062004a4292431b5715610b0cda2324e6bfb6423bb467d5645d2e81018",
+        "manifest_sha256": "287cac2bd972c6f785a20be4389ce8e39066f12bd84676293197086f56684de8",
+        "npz_sha256": "7ccbaf51251609681ad4097183442bd6fab269278432bfd63c55b29ba9377f51",
+        "path": "runs/m7-population-replay-v1/datasets/replicate-1/control.npz",
+        "train_pair_ids_fingerprint": "4342af38ae49cd356c5c6cc212bf0f62c74149a5a401e0280e6e4d466afb42ab",
+        "validation_pair_ids_fingerprint": "22c445ea0c561163d7d6d5892f845888d6ea16b134be9756af8226f063261597"
+      }
+    },
+    {
+      "corpus": {
+        "fingerprint": "d34735fc7c1d8b092a4fe75b1d396a12815079941ab463969f7f11101368b970",
+        "manifest_sha256": "176c1c0966e68d0f434ebd8a0a6b03356e398f2f478cfb0ccbf0d360ab5a89c3",
+        "path": "runs/m7-population-replay-v1/corpora/replicate-1/treatment",
+        "records_sha256": "c01537408b5e0e2d57a55ab4cbd8f362166b6cbf5d77c43ba9e23034745ee7c0"
+      },
+      "data_arm": "treatment",
+      "replicate_id": "replicate-1",
+      "v1_checkpoint": {
+        "fingerprint": "47721bb0cabab4c9edf5d4d0853928789cdc15091dd076776eda5205d91755df",
+        "manifest_sha256": "bc9a13348051e0e1e324d19ef50a655fba5fced830358058a3aea5c02409e16f",
+        "metrics_sha256": "d8f4594c2ea46293618c6121cceef571c0348395d8a2786f73cea73b1879051f",
+        "path": "runs/m7-population-replay-v1/checkpoints/replicate-1/treatment",
+        "tensor_digest": "25261fdf297f197ebe214d841bac516965f20839b0fd398de48b77514985f962",
+        "weights_sha256": "0e401b5285405649b838b9df96cae4baef172d37508fd3fdd39def234560645e"
+      },
+      "v1_dataset": {
+        "fingerprint": "2501a7f9090be650761e81046452de05f27ba8181df4e9ce490f224dd398817b",
+        "manifest_sha256": "811e591053b040fe9fe2d47985372aed10cd56dafdef8370d6bc0f28d5df5402",
+        "npz_sha256": "8fbc2d848b95035bf788305a3d4887af223b53907c0c8e230b6211f24cf2031e",
+        "path": "runs/m7-population-replay-v1/datasets/replicate-1/treatment.npz",
+        "train_pair_ids_fingerprint": "4342af38ae49cd356c5c6cc212bf0f62c74149a5a401e0280e6e4d466afb42ab",
+        "validation_pair_ids_fingerprint": "22c445ea0c561163d7d6d5892f845888d6ea16b134be9756af8226f063261597"
+      }
+    },
+    {
+      "corpus": {
+        "fingerprint": "98810c9125997a1f2587aedadaf5de06f610724ac6333ee3b14cc119293e4af0",
+        "manifest_sha256": "4641e415e1e49f383cdbbf6fea4c18d9e27bae2d64b30cc5500d585a0b1eac75",
+        "path": "runs/m7-population-replay-v1/corpora/replicate-2/control",
+        "records_sha256": "11de53a4851b62bef4fdd5f840d023987e21ca9ee753c632f201f84846e96a4d"
+      },
+      "data_arm": "control",
+      "replicate_id": "replicate-2",
+      "v1_checkpoint": {
+        "fingerprint": "48bd9bef501837fb4764d5c2cc01ce0e36147598b09b57c003ef6af5ca03fd61",
+        "manifest_sha256": "95429cefe6331e24cb6796785ab9548cb13ff42a0fd773f3ce1409e45d338207",
+        "metrics_sha256": "e8620bc50880337fb7d9470d88b2323d81d820cee47708f3e486abaec1919f8d",
+        "path": "runs/m7-population-replay-v1/checkpoints/replicate-2/control",
+        "tensor_digest": "14f1cf8f443f830a4c7199bf555eaf0034367bc95265318c25b3bf1644c4871c",
+        "weights_sha256": "0db8a5e6d554225a410a3468f5b996a84c4299353b6cacd90d077754a9681451"
+      },
+      "v1_dataset": {
+        "fingerprint": "1e9cd120e0ad23298a14b708adfe4f7a23e2406f4ae94c3cfd45032b6ad717ad",
+        "manifest_sha256": "80b1b6892431e5241b9b8ef2053bd6c6d24d52332eb2ea06ae004808ec14712b",
+        "npz_sha256": "d67d4f5623d822fe9dc2fddb02df2287f567047edfcdfeeea4241492e166b4a0",
+        "path": "runs/m7-population-replay-v1/datasets/replicate-2/control.npz",
+        "train_pair_ids_fingerprint": "31782d05a9a9c8b5a4ea5db9a733b1cef59035d2bcaec568b6bbdf27fd8306cd",
+        "validation_pair_ids_fingerprint": "079621db8fca17208fb6cb1af96c804f4fb8cf4de016a0b161e3710df7024c2c"
+      }
+    },
+    {
+      "corpus": {
+        "fingerprint": "8dbeec847f5c94e73173fb8827545583a20006598fab57be99a20b1e28701102",
+        "manifest_sha256": "cc9b90c1216e3cc3864efb210e915d4d22c240492274ef2f4f3cb1fa3d1d8c94",
+        "path": "runs/m7-population-replay-v1/corpora/replicate-2/treatment",
+        "records_sha256": "92e2b391cede16a31e48d4031599739c49af5e2b1a266af4de4e5b5c694a7051"
+      },
+      "data_arm": "treatment",
+      "replicate_id": "replicate-2",
+      "v1_checkpoint": {
+        "fingerprint": "00014dd8ad9aa011a7aff567e1ab4f7df34d66660e564d2709efebcca04393e7",
+        "manifest_sha256": "c8bc9518cd2267ee68d7677043c1e4a1c843fe5822d9cc37443a038834cb83eb",
+        "metrics_sha256": "93cc229b1c6b1d06fb4a323721734864d6a55b3dc4a4f026d503e845dc240808",
+        "path": "runs/m7-population-replay-v1/checkpoints/replicate-2/treatment",
+        "tensor_digest": "1e824ea543baec2410ca442c8c17d51434986631135fa7d43a6882daf070f48c",
+        "weights_sha256": "11bb790846452021021ff34e4a94e0566869e58899044d52e32d472c686c49e2"
+      },
+      "v1_dataset": {
+        "fingerprint": "95ab4df9b71c7e50951a311d588684d2e0f7cbde605bc5414b953018b06728ba",
+        "manifest_sha256": "33ccd7fad3210b9a2e8c7c4a4de7099a05bd386dbfcdbc4028753fd9b64b4a67",
+        "npz_sha256": "d9503d58a8b390db854e65817454815045fc6a2ed2af1928c2dde3d59bf2a604",
+        "path": "runs/m7-population-replay-v1/datasets/replicate-2/treatment.npz",
+        "train_pair_ids_fingerprint": "31782d05a9a9c8b5a4ea5db9a733b1cef59035d2bcaec568b6bbdf27fd8306cd",
+        "validation_pair_ids_fingerprint": "079621db8fca17208fb6cb1af96c804f4fb8cf4de016a0b161e3710df7024c2c"
+      }
+    },
+    {
+      "corpus": {
+        "fingerprint": "3388f4330c8d89a3607975c1afab93f9baf8b98fee446b50bb8b83c4ce3ea2ad",
+        "manifest_sha256": "c74af7f5b5939c89f1f60e6caeaa66236229688a813357ebfc0d0f89becd45d1",
+        "path": "runs/m7-population-replay-v1/corpora/replicate-3/control",
+        "records_sha256": "07194766f9cdd6961985b4e71be5f426c3b6bb3f682af234d56471c76979a2e2"
+      },
+      "data_arm": "control",
+      "replicate_id": "replicate-3",
+      "v1_checkpoint": {
+        "fingerprint": "da9599346b1e744af18c31f04934064a103272288ff09c1ee78c658d3aea28c8",
+        "manifest_sha256": "d875ad62ae201d871b3ea2a12f18f5b516870da3f186ea1df4d825062ab6b850",
+        "metrics_sha256": "74928d6d0ee8bfa327dee7aac918b56644adc7ac0e6d4083d061308051808cef",
+        "path": "runs/m7-population-replay-v1/checkpoints/replicate-3/control",
+        "tensor_digest": "d837cdb060f8813a0237336655b042e098b7701ee86ffb52bd4c41ff8d49c7f6",
+        "weights_sha256": "b4835fe95badbbeb8404be0b977a117f8e78f023cffe5db6a36d7af33d5242cf"
+      },
+      "v1_dataset": {
+        "fingerprint": "7dfaa39d90764442c4ec38d17ff4b786a7a235f9c7b6f1e7d9b5f8bb0925d608",
+        "manifest_sha256": "4f5a4c9a31e31191763a38317b15adca82e9e96b488c627784b116f0fa6bb8ca",
+        "npz_sha256": "a7d3af5efb56f67c7a5310e74244dda63c9177c803701043d7d58aba76726c40",
+        "path": "runs/m7-population-replay-v1/datasets/replicate-3/control.npz",
+        "train_pair_ids_fingerprint": "ce1509b2975ec6648d39c09f488abec187eca003169d018830e78039ba0765dc",
+        "validation_pair_ids_fingerprint": "fb01b2c62d15b5aeb3f1136baae9b7b5a38ce40737a8e919087c0f556adcdcf6"
+      }
+    },
+    {
+      "corpus": {
+        "fingerprint": "1a928a07d0c8e3e30f283ee0da113ba88d3416c4d3f5f6f9bc1a31f5530d0a78",
+        "manifest_sha256": "289e6c47a649609d239ebcb5f70f09049043a8358b296974c63e745e1a299e55",
+        "path": "runs/m7-population-replay-v1/corpora/replicate-3/treatment",
+        "records_sha256": "39a5ded786d7d1495d39e0e87d2578c4dd98adbb11324b1f20d688f1a62d5142"
+      },
+      "data_arm": "treatment",
+      "replicate_id": "replicate-3",
+      "v1_checkpoint": {
+        "fingerprint": "cc882287fa77f94cca080c08ee384841bf4ffc80d70cb1b71df4660d37f37f52",
+        "manifest_sha256": "2bcf95f40d738d39c634bc11863437f562577ce4f5be76d807e602cb66ad4ca6",
+        "metrics_sha256": "efcc02f0455042737afffdabacab5896a463ac73d1c0270aa3e87b947e07ecf1",
+        "path": "runs/m7-population-replay-v1/checkpoints/replicate-3/treatment",
+        "tensor_digest": "f10b74bd5a8948199121785dbeb63e80b2cf46920dbd1d12ea4d353547c478b1",
+        "weights_sha256": "a9d0f83e4100a7ecb585be50b9d9007f4e0a2cd988fafb555969d014bd766d63"
+      },
+      "v1_dataset": {
+        "fingerprint": "6eef42c12c6d750efb3ff0a1f679fc144af65fe0b5200f5f68a0b122abc5d8a9",
+        "manifest_sha256": "dcb16b54eea8d188cfcbf4ad3fd4b60047384f128ca662b43e4e19e6bbeb2654",
+        "npz_sha256": "6963fd0fae7502ab0a76658b05adcc1dce7857d68c62f410af276ba8e4eaaf2b",
+        "path": "runs/m7-population-replay-v1/datasets/replicate-3/treatment.npz",
+        "train_pair_ids_fingerprint": "ce1509b2975ec6648d39c09f488abec187eca003169d018830e78039ba0765dc",
+        "validation_pair_ids_fingerprint": "fb01b2c62d15b5aeb3f1136baae9b7b5a38ce40737a8e919087c0f556adcdcf6"
+      }
+    }
+  ],
+  "program": "m7-stronger-policy-program-v1",
+  "q0": {
+    "checkpoint_fingerprint": "b511ae162b794da6450fd3151762d98b4e5c8475c1af23e5b9289d0140a0a06d",
+    "tensor_digest": "b1562237220e3a59b1e514327f3a5acc3d60767676befc69970f88ef98253767"
+  },
+  "rules_fingerprint": "877731565922c8e65245f78a8bb71995cfd26edd81dab13fac2520f970695d09",
+  "step2": {
+    "archive_sha256": "993436e375e02816fb0a83e3009636c1538b0c0000e874dc0913cb20cc1632eb",
+    "claim_source": "fde19b5d3c327e539c29913a973b5e4d76ffff5b",
+    "plan_fingerprint": "a85c4d352386be2512a71dd08326abe45a3f80cca5a762556c749e3f02408a31",
+    "result_fingerprint": "aaf30bf3b6939f964a8c69a29a60e911859c253ca5e20517091f4b7460c954f2",
+    "split_alignment_fingerprint": "9653dfdf1e7cb7f401af753ccfe8e90ce270a7fc12d97c98f097860c4c774552",
+    "validation_fingerprint": "1930ffc5df1378bbc0daad484d1140707553b3f4b69fe7d4c869abf2589905e2"
+  },
+  "version": "m7-structured-model-v2-inputs-v1"
+}

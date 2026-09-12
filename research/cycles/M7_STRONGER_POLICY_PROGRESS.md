@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 12, 2026
-**Overall state:** Step 2 complete; Step 3 exact agreement being finalized
+**Overall state:** Step 2 complete; Step 3 agreement and inputs frozen, implementation pending
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -39,7 +39,7 @@ public-history signaling, and specializes to narrow self-play distributions.
 | --- | --- | --- | --- | --- | --- |
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
 | 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
-| 3. Structured model v2 | Designing | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | Pending | Pending | Pending |
+| 3. Structured model v2 | Agreement frozen | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | Pending | Pending | Pending |
 | 4. Counterfactual rollouts | Authorized, waiting | Pending | Pending | Pending | Pending |
 | 5. Independent league | Authorized, waiting | Pending | Pending | Pending | Pending |
 
@@ -67,16 +67,17 @@ decision. Both data arms, six datasets, and six v1 checkpoints remain fixed inpu
 
 ## Current step: structured model v2 design
 
-Step 3 is a predeclared 2x2 data-by-architecture study. The retained Step-2 v1 checkpoints are
-controls; six new structured v2 models train on the same q0-only and mixed datasets. The proposed v2
-keeps the 87-feature prefix and adds completed public history plus safe play/recruit consequence
-blocks, with separate zero-initialized residual heads over the q0-initialized trainable base. It keeps
-the selected-action terminal MC objective and fixed tactical envelope; belief heads and
-counterfactual rollout labels remain Step 4.
+Step 3 is frozen as a 2x2 data-by-architecture study. The retained Step-2 v1 checkpoints are
+controls; six new structured v2 models train on the same q0-only and mixed datasets. Encoder v2 has a
+519-feature safe vector: unchanged v1 prefix, eight completed public turns, 64 play-consequence
+features, and 54 recruit support/consequence features. The 35,779-parameter model embeds q0 exactly
+through its trainable v1 base and zero-initialized phase-specific residual heads.
 
-Fresh Step-3 arenas will rerun both v1 and v2 controls on new disjoint blocks, estimate architecture
-effects within both data arms and their interaction, then select one structured recipe for Step 4 by
-a frozen robustness-floor rule even if v2 does not advance.
+Play consequence terminal bits use exact public-material adjudication; recruit terminal fields are
+guaranteed/support bits over every public-consistent hidden identity. No GameState, transition,
+belief target, or counterfactual label enters the encoder. Fresh evaluation uses 30,000 games and
+aligned architecture blocks for within-arm effects and the data-by-architecture interaction. The
+complete Step-2 input freeze is `m7-structured-model-v2-inputs.json`, fingerprint `534ea9aa…a186`.
 
 ## Completed implementation work
 
@@ -93,6 +94,10 @@ a frozen robustness-floor rule even if v2 does not advance.
 
 ## Decision log
 
+- **September 12 — step-3 agreement freeze:** 519-feature safe encoder, 35,779-parameter q0-embedded
+  residual model, six fits across both Step-2 data arms, 30,000 fresh games, exact aligned interaction
+  bootstrap, independent feature/statistics validation, and a frozen Step-4 robustness-floor
+  selection rule. Full Step-2 input/file/checkpoint identities are committed separately.
 - **September 12 — step-2 result:** mixed replay strongly beat matched q0-only controls and improved
   descendant/heuristic stress results but does not advance under the frozen parent-heuristic and
   all-candidate seat gates. Preserve both data arms for the 2x2 Step-3 study.

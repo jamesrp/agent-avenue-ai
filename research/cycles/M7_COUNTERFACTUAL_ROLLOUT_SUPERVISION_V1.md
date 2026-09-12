@@ -3,8 +3,9 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 4 of 5
 **Cycle:** `m7-counterfactual-rollout-supervision-v1`
-**Status:** Approved and implementation-frozen; claim run pending
-**Approved:** September 12, 2026
+**Status:** `implementation_blocked_repair_exhausted`; no scientific result
+**Approved and stopped:** September 12, 2026
+**Failure report:** [`docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](../../docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md)
 **Budget:** one CPU process; claim cutoff 7 h 45 min; hard stop 8 h
 **Parent:** Step-3 mixed-data structured-v2 development recipe M
 

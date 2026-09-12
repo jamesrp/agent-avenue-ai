@@ -1,7 +1,9 @@
 # Approved research program: stronger policy v1
 
 **Program ID:** `m7-stronger-policy-program-v1`
-**Status:** Approved; step 1 in progress
+**Status:** Blocked at Step 4; Step 5 not executed
+**Stopped:** September 12, 2026
+**Briefing:** [`docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md`](../../docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md)
 **Approved:** September 11, 2026
 **Parent result:** [`docs/Q0_STRENGTH_AUDIT_RESULTS.md`](../../docs/Q0_STRENGTH_AUDIT_RESULTS.md)
 **Selected policy entering program:** `q0-terminal-safety-v1`

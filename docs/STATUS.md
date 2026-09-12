@@ -5,7 +5,7 @@
 **Permanent pure-neural baseline:** historical q0
 **Latest completed learned experiment:** [M7 structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md)
 
-**Latest completed research cycle:** [M7 structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md)
+**Latest completed research cycle:** [Step-4 counterfactual rollout infrastructure failure](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md)
 
 This document is the concise, living index of completed work and current next steps. Historical
 milestone documents describe the intended scope at the time; `README.md` and this file describe the
@@ -26,7 +26,8 @@ actual present state.
 | [Terminal-offense confirmation](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; tactical envelope adopted for steps 2–4 |
 | [Population replay v1](M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Mixed replay beat matched controls but frozen robustness gates failed |
 | [Structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | V2 beat v1 in both data arms; mixed selected for Step-4 development |
-| [7: controlled RL experiments](MILESTONE7.md) | In progress; stronger-policy steps 1–3 complete | [Counterfactual rollout supervision is next](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md) |
+| [Counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) | Infrastructure blocked | Repair exhausted before canonical targets/training/evaluation; no scientific result |
+| [7: controlled RL experiments](MILESTONE7.md) | Blocked at stronger-policy Step 4 | Step 5 not executed |
 
 ## Current measured policies
 
@@ -174,6 +175,20 @@ frozen robustness-floor rule selects mixed-v2 only as the development input for 
 operational checksum-log repair left all scientific evidence unchanged; exact-source independent
 validation passed. See [`M7_STRUCTURED_MODEL_V2_RESULTS.md`](M7_STRUCTURED_MODEL_V2_RESULTS.md).
 
+## Counterfactual rollout Step-4 failure
+
+Step 4 implemented a provenance-safe latent state, 14-stratum public panel, 10-world depth-nine q0-
+leaf teacher, paired rollout auxiliary trainer, and independent numeric target validator. Its smoke
+passed at roughly 160 transition/leaf units per second and projected inside the compute budget.
+
+The claim did not reach training. Attempt 1 failed because claim shards contained 20 positions per
+stratum while the assembler required one position per shard. The sole repair regenerated all 280
+replicate-1 positions and verified all 1,400 rows exactly, but refused publication when direct
+terminal-count division and `1 - leaf_fraction` differed by one floating-point ULP. No canonical
+three-replicate targets, checkpoints, arenas, statistics, selection, or scientific result exists.
+Step 5 was not executed. See
+[`M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md).
+
 ## Web status
 
 The QA web UI currently supports:
@@ -279,16 +294,20 @@ v2 fits, 30,000 fresh games, local 519-feature reconstruction, complete local ar
 selection reproduced. Mixed-v2 is the fixed development input for Step 4, not a promoted policy. See
 [`M7_STRUCTURED_MODEL_V2_RESULTS.md`](M7_STRUCTURED_MODEL_V2_RESULTS.md).
 
+The stronger-policy program is blocked at Step 4 after exhausting its one operational repair. Step 5
+was not executed because no Step-4 scientific result or selection artifact exists. See
+[`M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md), the
+[`program briefing`](M7_STRONGER_POLICY_PROGRAM_BRIEFING.md), and the living
+[`stronger-policy progress log`](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md).
+
 No research cycle is currently running. VM-reboot execution resume and off-VM artifact durability
 remain unconfigured.
 
 ## Planned next work
 
-1. finish feasibility review and freeze the information-safe counterfactual rollout-supervision
-   design for the selected mixed-v2 development recipe;
-2. implement a separate provenance-safe latent rollout state, fixed-root common-random-number
-   teacher, matched MC control reproduction, and independent target validator;
-3. run Step 4 only if timed production plus validation fits the eight-hour budget without reducing
-   the frozen scientific sample; and
-4. run the final independent league, then choose off-VM retention if stronger disaster recovery is
-   desired.
+1. decide whether to authorize a new narrow repair cycle that accepts integer-equivalent terminal
+   accounting and completes the already-frozen Step-4 plan;
+2. if reauthorized, revalidate unchanged panels/seeds/target rows before any training and preserve the
+   existing Step-4 scientific design;
+3. only after a completed Step-4 selection may the final independent league proceed; and
+4. choose an off-VM retention mechanism if stronger disaster recovery is desired.

@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 12, 2026
-**Overall state:** Step 3 complete; Step 4 claim run ready to dispatch
+**Overall state:** Blocked at Step 4 after the sole repair; Step 5 not executed
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -40,8 +40,8 @@ public-history signaling, and specializes to narrow self-play distributions.
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
 | 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
 | 3. Structured model v2 | Complete; does not advance | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | `b1f2b6f` through `7321aa1` | Six fits + 30,000 games; exact-source validation passed after one operational repair | [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](../../docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) |
-| 4. Counterfactual rollouts | Claim-ready | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | `b20699b`, `1b381b9`, `bcc0c04`, `6337f8f`, `6c46d3b`, `a739db3`, `c9a69d1`, `e2029e9`, `cb0e045` | Pending | Pending |
-| 5. Independent league | Authorized, waiting | Pending | Pending | Pending | Pending |
+| 4. Counterfactual rollouts | `implementation_blocked_repair_exhausted` | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | `b20699b` through `cb0e045` | Panels + partial replicate-1 targets only; no training/evaluation | [`docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](../../docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) |
+| 5. Independent league | Blocked; not executed | Not frozen | None | None | Step 4 produced no selection/result |
 
 ## Completed step 1
 
@@ -81,23 +81,22 @@ One operational repair restored wrapper-managed `driver.stdout` to the empty has
 by checksums; no scientific artifact/source changed. Exact-source independent validation then
 passed. Future checksum scopes exclude wrapper logs. Combined claim plus validation took about 3h36.
 
-## Current step: counterfactual rollout design
+## Blocked step 4
 
-Step 4 is frozen as three paired exact M-v2 control reproductions and rollout-supervised treatments.
-Each replicate selects 280 train-only safe positions across 14 realizable public-structure strata.
-Every legal root action is evaluated in 10 copy-weighted exchangeable latent worlds for depth nine,
-with the root fixed across indistinguishable worlds, candidate-independent policy permutations,
-per-decision common random numbers, and selected q0 as a safe leaf.
+Step 4 passed its implementation smoke and source/input/panel feasibility checks, but claim execution
+failed before a canonical rollout target was published. Attempt 1 generated all panels and 14
+replicate-1 stratum shards, then discovered that the assembler required one position per shard rather
+than 20.
 
-The maximum target workload is 42,000 candidate rollouts / 378,000 transition-or-leaf work units per
-production or independent pass. Treatment adds only position-balanced `0.20 × rollout BCE` to the
-unchanged selected-action MC objective; a lambda-zero integration test must reproduce control
-optimizer states. The 24,000-game evaluation and original robustness gates remain fixed. Claim
-execution is blocked unless all strata fill, mechanical cap errors are zero, leaf fraction is at most
-50%, and timed production+independent throughput projects below 7h45.
+The sole authorized repair regenerated 280 one-position replicate-1 shards and verified all 1,400
+rows byte-for-byte against the originals. Its staged 14,000-sample target had 41.81% depth leaves and
+zero cap errors, but publication was refused by an exact comparison between mathematically
+complementary terminal fractions that differed by one floating-point ULP. No replicate-2/3 targets,
+training, checkpoints, arenas, statistics, selection, result, or validation were produced.
 
-The complete Step-3/continuation input freeze is `m7-counterfactual-rollout-inputs.json`, fingerprint
-`53ba97ae…186`. A final design review found no remaining blocker.
+The correct status is infrastructure blocked, not recipe failure or inconclusive science. Step 5 is
+blocked because the sequential agreement required a completed Step-4 result/selection. A second
+repair requires new user approval.
 
 ## Completed implementation work
 
@@ -126,6 +125,9 @@ The complete Step-3/continuation input freeze is `m7-counterfactual-rollout-inpu
 
 ## Decision log
 
+- **September 12 — Step-4 stop:** attempt 1 failed at shard assembly. The only repair reproduced all
+  replicate-1 rows exactly but refused a staged target over a one-ULP terminal-fraction comparison.
+  No scientific result exists, the repair allowance is exhausted, and Step 5 is blocked.
 - **September 12 — step-4 implementation freeze:** rollout core and experiment workers completed
   the provenance-safe latent state, 10-world depth-nine target teacher, exact control reproduction,
   paired rollout-loss trainer, claim evaluation, and fully independent numeric target/arena/checksum

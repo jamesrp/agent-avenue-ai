@@ -35,7 +35,8 @@ machine.
 | [Terminal-offense confirmation](docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; hard immediate-win envelope adopted for research steps 2–4 |
 | [Population replay v1](docs/M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Three paired corpus/training replicates; direct gain but frozen robustness gates failed |
 | [Structured model v2](docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | Combined recipe beat v1 in both data arms; mixed selected for rollout development |
-| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress | Stronger-policy steps 1–3 complete; rollout supervision next |
+| [Counterfactual rollout supervision](docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) | Infrastructure blocked | Sole repair exhausted before targets/training/evaluation; no scientific result |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | Blocked at stronger-policy Step 4 | Step 5 was not executed |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
 **q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
@@ -97,6 +98,15 @@ on q0-only data at 53.93% and mixed data at 55.80%; mixed-v2 beat q0-only-v2 at 
 still failed only the frozen q0-parent heuristic non-regression gate, so neither advances. The
 predeclared robustness-floor rule selects mixed-v2 solely as the development input for rollout
 supervision. See [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](docs/M7_STRUCTURED_MODEL_V2_RESULTS.md).
+
+Step 4 then implemented an information-safe latent rollout teacher and passed its bounded preflight,
+but the claim run stopped at target-shard assembly. Its sole operational repair reproduced all 1,400
+replicate-1 target rows byte-for-byte and assembled a non-published staging target, then correctly
+refused publication over an exact one-ULP terminal-fraction metadata mismatch. No rollout treatment
+was trained or evaluated, so no scientific Step-4 result exists. The sequential program is blocked
+and Step 5 was not executed. See
+[`docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) and the
+[`program briefing`](docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md).
 
 Historical Milestone 6 results remain in
 [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md), and the original q0 evaluation remains in

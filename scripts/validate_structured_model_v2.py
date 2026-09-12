@@ -911,17 +911,25 @@ def main() -> int:
         {key: value for key, value in plan.items() if key != "plan_fingerprint"}
     ):
         raise ValidationError("plan fingerprint mismatch")
-    if plan.get("source") != current_source():
-        raise ValidationError("validator requires exact clean source, lock, code, and rules")
+    execution = cast(Mapping[str, object], plan["execution"])
+    source = current_source()
+    if execution.get("claim_eligible") is True and plan.get("source") != source:
+        raise ValidationError("claim validator requires exact clean source, lock, code, and rules")
+    clean = source.get("runner_clean_check")
+    if (
+        not isinstance(clean, Mapping)
+        or clean.get("tracked_and_nonignored_untracked_clean") is not True
+    ):
+        raise ValidationError("validator requires a clean current source tree")
     if result.get("result_fingerprint") != digest(
         {key: value for key, value in result.items() if key != "result_fingerprint"}
     ):
         raise ValidationError("result fingerprint mismatch")
     check_completed_cardinality(output, plan, result)
-    execution = cast(Mapping[str, object], plan["execution"])
     if execution.get("claim_eligible") is not True and not args.allow_smoke:
         raise ValidationError("bounded evidence requires --allow-smoke")
     started = time.perf_counter()
+    dataset_started = time.perf_counter()
     inputs = cast(list[object], plan["inputs"])
     q0 = load_checkpoint(Path(cast(str, plan["q0_path"])))
     arena_artifacts: dict[str, Mapping[str, object]] = {}
@@ -947,6 +955,7 @@ def main() -> int:
             q0.model.state_dict()
         ):
             raise ValidationError("structured checkpoint q0 lineage differs")
+    arena_started = time.perf_counter()
     for report_path in sorted((output / "arenas").glob("*/report.json")):
         artifact = read(report_path)
         check_artifact(artifact, "arena")
@@ -959,6 +968,7 @@ def main() -> int:
         ) or records_manifest.record_count != report.get("total_games"):
             raise ValidationError("local arena aggregate cardinality differs")
         arena_artifacts[key] = artifact
+    statistics_started = time.perf_counter()
     stored = read(output / "statistics.json")
     check_artifact(stored, "statistics")
     independent = local_statistics(arena_artifacts)
@@ -988,13 +998,52 @@ def main() -> int:
     ):
         raise ValidationError("independent selection differs")
     elapsed = time.perf_counter() - started
+    cells = cast(list[object], cast(Mapping[str, object], plan["arenas"])["cells"])
+    smoke_pairs = min(
+        cast(int, cast(Mapping[str, object], cell)["paired_blocks"])
+        for cell in cells
+        if isinstance(cell, Mapping)
+    )
+    arena_seconds = statistics_started - arena_started
+    statistics_seconds = time.perf_counter() - statistics_started
+    dataset_seconds = arena_started - dataset_started
+    arena_multiplier = 30_000 / max(2 * 60 * smoke_pairs, 1)
+    full_bootstrap_blocks = 2 * 500 + 500 + 2 * 500 + 2 * 200 + 2 * 300 + 2 * 1600 + 2 * 500
+    smoke_bootstrap_blocks = (
+        2 * smoke_pairs
+        + smoke_pairs
+        + 2 * smoke_pairs
+        + 2 * smoke_pairs
+        + 2 * smoke_pairs
+        + 16 * smoke_pairs
+        + 2 * smoke_pairs
+    )
+    statistics_multiplier = full_bootstrap_blocks / smoke_bootstrap_blocks
     validation_runtime = {
-        "version": "m7-structured-model-v2-validation-runtime-v1",
+        "version": "m7-structured-model-v2-validation-runtime-v2",
         "validation_seconds": elapsed,
-        "full_validation_linear_arena_multiplier": 30_000 / 120,
+        "observed_phase_seconds": {
+            "dataset_feature_reconstruction": dataset_seconds,
+            "arena_aggregate_and_tactical_replay": arena_seconds,
+            "nested_statistics_and_selection": statistics_seconds,
+        },
+        "projected_full_phase_seconds": {
+            "dataset_feature_reconstruction": dataset_seconds,
+            "arena_aggregate_and_tactical_replay": arena_seconds * arena_multiplier,
+            "nested_statistics_and_selection": statistics_seconds * statistics_multiplier,
+        },
+        "projected_full_seconds": dataset_seconds
+        + arena_seconds * arena_multiplier
+        + statistics_seconds * statistics_multiplier,
+        "arena_multiplier": arena_multiplier,
+        "statistics_multiplier": statistics_multiplier,
+        "dataset_reconstruction_is_full_corpus_in_smoke": True,
     }
     validation_runtime["artifact_fingerprint"] = digest(validation_runtime)
-    (output / "validation-runtime.json").write_bytes(canonical(validation_runtime) + b"\n")
+    runtime_path = output / "validation-runtime.json"
+    if runtime_path.exists() and read(runtime_path) != validation_runtime:
+        raise ValidationError("existing validation runtime differs")
+    runtime_path.write_bytes(canonical(validation_runtime) + b"\n")
     validation = {
         "version": "m7-structured-model-v2-independent-validation-v1",
         "status": "passed",

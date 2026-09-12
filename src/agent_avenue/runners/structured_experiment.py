@@ -1782,7 +1782,14 @@ def _safety_report(
 def _checksums(output: Path) -> dict[str, object]:
     """Checksum immutable payloads, excluding mutable/cyclic result state."""
     entries: dict[str, str] = {}
-    excluded = {"checksums.json", "execution-state.json", "result.json"}
+    excluded = {
+        "checksums.json",
+        "execution-state.json",
+        "result.json",
+        "driver.stdout",
+        "driver.stderr",
+        "wrapper-exit.json",
+    }
     for path in sorted(output.rglob("*")):
         if (
             path.is_file()

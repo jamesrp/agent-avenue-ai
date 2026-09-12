@@ -7,6 +7,7 @@ from agent_avenue.runners.structured_experiment import (
     ROOT_SEED,
     StructuredExperimentConfig,
     _cells,
+    _checksums,
     _joint_architecture_bootstrap,
     nested_bootstrap,
     structured_selection,
@@ -21,6 +22,22 @@ def _artifact_digest(value: object) -> str:
 
 def _interval(point: float, lower: float, upper: float) -> dict[str, object]:
     return {"point_estimate": point, "interval": [lower, upper]}
+
+
+def test_checksum_scope_excludes_wrapper_owned_logs(tmp_path: Path) -> None:
+    (tmp_path / "payload.json").write_text("payload")
+    for name in (
+        "driver.stdout",
+        "driver.stderr",
+        "wrapper-exit.json",
+        "validation.json",
+        "validation-runtime.json",
+    ):
+        (tmp_path / name).write_text(name)
+
+    checksums = _checksums(tmp_path)
+
+    assert checksums["files"] == {"payload.json": hashlib.sha256(b"payload").hexdigest()}
 
 
 def test_default_schedule_has_frozen_60_cells_and_30000_games() -> None:

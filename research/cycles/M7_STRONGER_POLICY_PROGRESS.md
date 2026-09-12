@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 12, 2026
-**Overall state:** Step 2 complete; Step 3 agreement and inputs frozen, implementation pending
+**Overall state:** Step 2 complete; Step 3 claim run ready to dispatch
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -39,7 +39,7 @@ public-history signaling, and specializes to narrow self-play distributions.
 | --- | --- | --- | --- | --- | --- |
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
 | 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
-| 3. Structured model v2 | Agreement frozen | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | Pending | Pending | Pending |
+| 3. Structured model v2 | Claim-ready | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | `b1f2b6f`, `2bfe619`, `2e18f15`, `a74d21c`, `68ed5fe`, `388a001`, `e6d2327`, `7dcae27`, `7321aa1` | Pending | Pending |
 | 4. Counterfactual rollouts | Authorized, waiting | Pending | Pending | Pending | Pending |
 | 5. Independent league | Authorized, waiting | Pending | Pending | Pending | Pending |
 
@@ -87,13 +87,22 @@ complete Step-2 input freeze is `m7-structured-model-v2-inputs.json`, fingerprin
 - `b18a13e`: exhaustive setup holdout and corrected guaranteed-win prefix endpoints.
 - `23fe496`: independent validator path, frozen provenance checks, whole-step budget metadata, and
   descriptive-only direct comparison.
-- Current validation: Ruff and strict mypy pass; 250 tests pass.
+- Current validation: Ruff and strict mypy pass; 290 tests pass.
+- Step-3 implementation: structured encoder/model/data/checkpoint/agent, six-fit runner, 60-cell
+  evaluation, nested interaction statistics, robustness-floor selection, historical compatibility,
+  deadline/resume/checksum boundaries, and independent local feature/arena/statistics validation are
+  committed.
+- Step-3 smoke: six one-epoch fits plus 120 games and independent validation passed; full runner plus
+  validator projection is 322.02 minutes, below the 7h45 claim cutoff.
 - Step-2 implementation: deterministic assignment/schedules, resumable six-corpus/six-training
   pipeline, 54 development arenas, exhaustive holdout/source/deadline checks, nested bootstrap,
   decision logic, and a separate independent validator are committed and smoke-tested.
 
 ## Decision log
 
+- **September 12 — step-3 implementation freeze:** the structured core, six-fit/60-cell experiment,
+  independent validator, full historical input compatibility, and 22 adversarial validator mutation
+  tests are committed. A retained-input smoke passed and projects 5h22 combined execution.
 - **September 12 — step-3 agreement freeze:** 519-feature safe encoder, 35,779-parameter q0-embedded
   residual model, six fits across both Step-2 data arms, 30,000 fresh games, exact aligned interaction
   bootstrap, independent feature/statistics validation, and a frozen Step-4 robustness-floor

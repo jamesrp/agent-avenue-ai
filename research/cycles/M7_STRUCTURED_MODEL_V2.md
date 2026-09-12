@@ -3,7 +3,7 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 3 of 5
 **Cycle:** `m7-structured-model-v2`
-**Status:** Approved; implementation pending
+**Status:** Approved and implementation-frozen; claim run pending
 **Approved:** September 12, 2026
 **Budget:** one CPU process, claim cutoff 7 hours 45 minutes, hard wall-clock limit 8 hours
 
@@ -521,3 +521,25 @@ recipe under the fixed selected-action MC target and evaluation envelope. It wou
 history from consequence features or residual phase routing, prove counterfactual action quality,
 correct beliefs, optimal play, or a general architecture advantage outside these two retained data
 arms.
+
+## Frozen implementation and smoke
+
+- `b1f2b6f`: 519-feature encoder, 35,779-parameter residual model, aligned dataset/trainer/checkpoint,
+  and structured inference agent.
+- `2bfe619`, `2e18f15`, `a74d21c`: resumable experiment, explicit claim CLI, deadline/checksum/result
+  boundaries, independent 519-feature validator, and phase timing.
+- `68ed5fe`, `388a001`, `e6d2327`, `7dcae27`: full Step-2/archive compatibility enforcement,
+  historical allowlist, local complete arena reconstruction, record-level alignment, and expected
+  policy config reconstruction.
+- `7321aa1`: 22 adversarial validator tests covering report, schedule, seat, policy, and RNG
+  tampering.
+
+A bounded retained-input smoke at `/tmp/agent-avenue-step3-smoke-v3` completed six one-epoch fits, 60
+one-pair arenas, production statistics/selection, and independent validation. Plan fingerprint:
+`191fbd969f9adabc1506e517e16941775c651b049097fc8ab471175d0cfd0d6a`; result fingerprint:
+`fb49c1692320088a6abd83ebd47e59c300610b7c2db076f2c9b6018bbe107302`; validation fingerprint:
+`f5efbdbf4f978b48a5a4fa5f58e0a0dc455b9ef856a6e3b169e6290bd851fcde`.
+
+Observed phase timings project the full runner at 210.15 minutes and independent validator at 111.86
+minutes, 322.02 minutes combined. This is below the 7-hour-45-minute claim cutoff without reducing
+any frozen sample. Ruff, strict mypy, and 290 tests pass. The final fresh preflight review is GO.

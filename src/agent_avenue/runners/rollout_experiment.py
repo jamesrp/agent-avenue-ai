@@ -580,7 +580,7 @@ def _cells(config: RolloutExperimentConfig) -> tuple[RolloutArenaCell, ...]:
                 "T",
                 "C",
                 1,
-                derive_seed(ROOT_SEED, f"step4:arena:{key}:{replicate}") & ((1 << 63) - 1),
+                derive_seed(ROOT_SEED, f"step4:arena:direct:{replicate}") & ((1 << 63) - 1),
                 "direct",
             ),
         )

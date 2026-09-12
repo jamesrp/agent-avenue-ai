@@ -70,6 +70,15 @@ PLAN_VERSION: Final = "m7-population-replay-plan-v1"
 RESULT_VERSION: Final = "m7-population-replay-result-v1"
 VALIDATION_VERSION: Final = "m7-population-replay-independent-validation-v2"
 GLOBAL_BOOTSTRAP_DOMAIN: Final = f"{POPULATION_REPLAY_CYCLE_ID}:global-nested-bootstrap:v1"
+ORIGINAL_CLAIM_REVISION: Final = "fde19b5d3c327e539c29913a973b5e4d76ffff5b"
+REPAIR_ALLOWED_PATHS: Final[frozenset[str]] = frozenset(
+    {
+        "scripts/validate_population_replay_v1.py",
+        "tests/runners/test_population_experiment.py",
+        "research/cycles/M7_POPULATION_REPLAY_V1_REPAIR1.md",
+    }
+)
+REPAIR_MODE: Final = "validator-repair-1"
 
 
 class LocalValidationError(RuntimeError):
@@ -174,6 +183,44 @@ def _source_identity() -> dict[str, object]:
         },
         "rules_fingerprint": rules_fingerprint(),
         "code_fingerprint": code_fingerprint(),
+    }
+
+
+def _repair_provenance(
+    frozen_source: Mapping[str, object], current_source: Mapping[str, object]
+) -> dict[str, object]:
+    """Permit only the one documented validator-only source repair after the claim revision."""
+    if frozen_source.get("git_revision") != ORIGINAL_CLAIM_REVISION:
+        raise LocalValidationError("repair mode requires the fde19b5 original claim revision")
+    for field in ("uv_lock_sha256", "rules_fingerprint", "code_fingerprint"):
+        if current_source.get(field) != frozen_source.get(field):
+            raise LocalValidationError(f"repair mode changed frozen package {field}")
+    clean = current_source.get("runner_clean_check")
+    if (
+        current_source.get("tracked_tree_clean") is not True
+        or not isinstance(clean, Mapping)
+        or clean.get("tracked_and_nonignored_untracked_clean") is not True
+    ):
+        raise LocalValidationError("repair mode requires a clean current source tree")
+    try:
+        changed_output = subprocess.run(
+            ("git", "diff", "--name-only", f"{ORIGINAL_CLAIM_REVISION}..HEAD"),
+            cwd=repository_root(),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise LocalValidationError("unable to inspect validator repair provenance") from exc
+    changed_paths = tuple(path for path in changed_output.splitlines() if path)
+    if not set(changed_paths) <= REPAIR_ALLOWED_PATHS:
+        raise LocalValidationError("repair mode includes a non-validator-only changed path")
+    return {
+        "mode": REPAIR_MODE,
+        "original_claim_revision": ORIGINAL_CLAIM_REVISION,
+        "current_repair_revision": current_source["git_revision"],
+        "changed_paths": list(changed_paths),
+        "allowed_paths": sorted(REPAIR_ALLOWED_PATHS),
     }
 
 
@@ -552,8 +599,9 @@ def _nested(rows: tuple[tuple[float, ...], ...], seed: int, domain: str) -> dict
     rng = DeterministicRandom(stream_seed, stream_domain)
     values: list[float] = []
     for _ in range(NESTED_BOOTSTRAP_RESAMPLES):
+        selected_replicates = [rng.randbelow(3) for _ in range(3)]
         means = []
-        for replicate in (rng.randbelow(3) for _ in range(3)):
+        for replicate in selected_replicates:
             row = rows[replicate]
             means.append(sum(row[rng.randbelow(count)] for _ in range(count)) / count)
         values.append(sum(means) / 3)
@@ -834,6 +882,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=Path("runs/m7-population-replay-v1"))
     parser.add_argument("--allow-smoke", action="store_true")
+    parser.add_argument(
+        "--allow-validator-repair",
+        action="store_true",
+        help=(
+            "allow only the documented validator-only repair from fde19b5 after strict "
+            "package and changed-path provenance checks"
+        ),
+    )
     args = parser.parse_args()
     output = args.output
     plan = _read(output / "plan.json")
@@ -842,7 +898,13 @@ def main() -> int:
     ):
         raise LocalValidationError("plan identity is malformed")
     source = _source_identity()
-    if plan.get("source") != source:
+    repair: dict[str, object] | None = None
+    if args.allow_validator_repair:
+        frozen_source = plan.get("source")
+        if not isinstance(frozen_source, Mapping):
+            raise LocalValidationError("plan source is malformed")
+        repair = _repair_provenance(frozen_source, source)
+    elif plan.get("source") != source:
         raise LocalValidationError(
             "validator requires exact clean frozen source, lock, code, and rules"
         )
@@ -1214,6 +1276,8 @@ def main() -> int:
         "status": "passed",
         "plan_fingerprint": plan["plan_fingerprint"],
         "source": source,
+        "mode": "exact-frozen-source" if repair is None else REPAIR_MODE,
+        "repair": repair,
         "checks": {
             "source_lock_code_rules": True,
             "six_corpus_schedules_assignments_and_alignment": True,

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from agent_avenue.agents import RNG_ALGORITHM, RandomAgent
+from agent_avenue.agents import RNG_ALGORITHM, RandomAgent, derive_seed
 from agent_avenue.runners import (
     POPULATION_PAIR_COUNT,
     AgentSpec,
@@ -30,6 +32,15 @@ from agent_avenue.runners.population_experiment import (
     _read_json,
     _require_treatment_split_coverage,
 )
+
+
+def _validator_module() -> Any:
+    script_path = Path("scripts/validate_population_replay_v1.py")
+    spec = importlib.util.spec_from_file_location("population_validator_script", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _toy_config(tmp_path: Path) -> PopulationExperimentConfig:
@@ -56,6 +67,77 @@ def _full_toy_config(tmp_path: Path) -> PopulationExperimentConfig:
         checkpoint_paths=paths,
         holdout_roots=(tmp_path / "holdout",),
     )
+
+
+def test_validator_nested_bootstrap_matches_production_byte_for_byte() -> None:
+    module = _validator_module()
+    rows = ((0.0, 0.5, 1.0), (1.0, 0.0, 0.5), (0.5, 1.0, 0.0))
+    seed = derive_seed(2026091102, "m7-population-replay-v1:global-nested-bootstrap:v1")
+    domain = "treatment-vs-control"
+    production = nested_population_bootstrap(rows, seed=seed, domain=domain)
+    local = module._nested(rows, seed, domain)
+    assert (
+        json.dumps(local, sort_keys=True, separators=(",", ":")).encode()
+        == json.dumps(production, sort_keys=True, separators=(",", ":")).encode()
+    )
+
+
+def test_validator_repair_provenance_allows_only_declared_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _validator_module()
+    source = {
+        "git_revision": "fde19b5d3c327e539c29913a973b5e4d76ffff5b",
+        "uv_lock_sha256": "a" * 64,
+        "rules_fingerprint": "b" * 64,
+        "code_fingerprint": "c" * 64,
+    }
+    current = {
+        **source,
+        "git_revision": "d" * 40,
+        "tracked_tree_clean": True,
+        "runner_clean_check": {"tracked_and_nonignored_untracked_clean": True},
+    }
+
+    def allowed_run(*_args: object, **_kwargs: object) -> object:
+        return type(
+            "Completed",
+            (),
+            {
+                "stdout": (
+                    "scripts/validate_population_replay_v1.py\n"
+                    "tests/runners/test_population_experiment.py\n"
+                )
+            },
+        )()
+
+    monkeypatch.setattr(module.subprocess, "run", allowed_run)
+    monkeypatch.setattr(module, "repository_root", lambda: tmp_path)
+    repair = module._repair_provenance(source, current)
+    assert repair["mode"] == "validator-repair-1"
+    assert repair["changed_paths"] == [
+        "scripts/validate_population_replay_v1.py",
+        "tests/runners/test_population_experiment.py",
+    ]
+
+    def refused_run(*_args: object, **_kwargs: object) -> object:
+        return type(
+            "Completed", (), {"stdout": "src/agent_avenue/runners/population_experiment.py\n"}
+        )()
+
+    monkeypatch.setattr(module.subprocess, "run", refused_run)
+    with pytest.raises(RuntimeError, match="non-validator-only"):
+        module._repair_provenance(source, current)
+
+
+def test_validator_repair_cli_help_is_exposed() -> None:
+    completed = subprocess.run(
+        (sys.executable, "scripts/validate_population_replay_v1.py", "--help"),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "--allow-validator-repair" in completed.stdout
 
 
 def test_population_experiment_plan_freezes_six_corpora_and_arena_schedule(

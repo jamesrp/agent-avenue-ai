@@ -6,7 +6,7 @@
 **Repair:** `repair-1`
 **Status:** Complete; exact-source validation passed
 **Repair date:** September 12, 2026
-**Claim source:** `a63f081`
+**Claim source:** `a63f0819dd679308fe03ec23d619e609529b1166`
 
 ## Failure
 

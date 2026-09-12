@@ -3,9 +3,9 @@
 **As of:** September 12, 2026
 **Current selected hybrid champion:** q0-terminal-safety-v1
 **Permanent pure-neural baseline:** historical q0
-**Latest completed learned experiment:** [M7 population replay v1](M7_POPULATION_REPLAY_RESULTS.md)
+**Latest completed learned experiment:** [M7 structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md)
 
-**Latest completed research cycle:** [M7 population replay v1](M7_POPULATION_REPLAY_RESULTS.md)
+**Latest completed research cycle:** [M7 structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md)
 
 This document is the concise, living index of completed work and current next steps. Historical
 milestone documents describe the intended scope at the time; `README.md` and this file describe the
@@ -25,7 +25,8 @@ actual present state.
 | [q0 strength audit](Q0_STRENGTH_AUDIT_RESULTS.md) | Complete | 72,000 fresh games; exact missed-lethal and exploit-surface diagnostics |
 | [Terminal-offense confirmation](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; tactical envelope adopted for steps 2–4 |
 | [Population replay v1](M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Mixed replay beat matched controls but frozen robustness gates failed |
-| [7: controlled RL experiments](MILESTONE7.md) | In progress; stronger-policy steps 1–2 complete | [Structured model v2 is next](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md) |
+| [Structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | V2 beat v1 in both data arms; mixed selected for Step-4 development |
+| [7: controlled RL experiments](MILESTONE7.md) | In progress; stronger-policy steps 1–3 complete | [Counterfactual rollout supervision is next](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md) |
 
 ## Current measured policies
 
@@ -160,6 +161,19 @@ point was 54.0%. One validator-only repair corrected nested-bootstrap RNG consum
 changing claim artifacts or the decision. Both data arms remain fixed for Step 3. See
 [`M7_POPULATION_REPLAY_RESULTS.md`](M7_POPULATION_REPLAY_RESULTS.md).
 
+## Structured model v2
+
+Step 3 re-encoded both Step-2 data arms with a 519-feature public-history/consequence representation
+and trained six 35,779-parameter q0-embedded residual models. V2 beat matched v1 controls on q0-only
+data at 53.93% [51.47%, 56.63%] and mixed data at 55.80% [52.73%, 58.67%]. Mixed-v2 beat q0-only-v2
+at 64.63% [59.07%, 69.07%]. The data-by-architecture interaction was inconclusive.
+
+Both data arms passed architecture, q0-parent, random, candidate-seat, tactical, and integrity gates,
+but failed the q0-parent heuristic non-regression interval. The exact recipe does not advance. The
+frozen robustness-floor rule selects mixed-v2 only as the development input for Step 4. One
+operational checksum-log repair left all scientific evidence unchanged; exact-source independent
+validation passed. See [`M7_STRUCTURED_MODEL_V2_RESULTS.md`](M7_STRUCTURED_MODEL_V2_RESULTS.md).
+
 ## Web status
 
 The QA web UI currently supports:
@@ -215,6 +229,7 @@ and [experiment protocol](EXPERIMENT_PROTOCOL.md).
 | q0 strength and tactical-leak fresh run | `2cefd151383e9cf3a614e2b58ee3ac2450727a61` | `ae8cd87f4b60c4b32a2b0ac728b1c3c0ec51f74944b9afb4d5089a1547d2e4e5` |
 | Terminal-offense aligned-RNG confirmation | `5bbda9e18d23920f5ad7686e055615aad703c097` | `5dd1d77e67804cf959ccd9a90dd9569a54924623439a30194111da3304c3b4f6` |
 | Population replay v1 claim run | `fde19b5d3c327e539c29913a973b5e4d76ffff5b` | `e0adb698b5329031ad077f155ae5911f982b1d235bde21474f7262fe26694459` |
+| Structured model v2 claim run | `a63f0819dd679308fe03ec23d619e609529b1166` | `82b5111694299b8f24b848222449946508592478fca50d2b2bca4a60139f8911` |
 
 ## Research workflow status
 
@@ -259,15 +274,21 @@ retained 24,000 training games, six datasets/checkpoints, and 24,000 development
 validation reproduced every artifact and the unchanged `does_not_advance` decision. See
 [`M7_POPULATION_REPLAY_RESULTS.md`](M7_POPULATION_REPLAY_RESULTS.md).
 
+The approved structured-model cycle completed after one operational checksum-log repair. Its six
+v2 fits, 30,000 fresh games, local 519-feature reconstruction, complete local arena aggregation, and
+selection reproduced. Mixed-v2 is the fixed development input for Step 4, not a promoted policy. See
+[`M7_STRUCTURED_MODEL_V2_RESULTS.md`](M7_STRUCTURED_MODEL_V2_RESULTS.md).
+
 No research cycle is currently running. VM-reboot execution resume and off-VM artifact durability
 remain unconfigured.
 
 ## Planned next work
 
-1. freeze and implement the 2x2 data-by-architecture structured-model Step 3 using both retained
-   population-replay data arms;
-2. train six information-safe structured v2 models with public history, candidate consequences, and
-   separate play/recruit residual computation while keeping selected-action MC targets fixed;
-3. follow with counterfactual rollout supervision and the final independent league in the already
-   approved order; and
-4. choose an off-VM retention mechanism if stronger disaster recovery is desired.
+1. finish feasibility review and freeze the information-safe counterfactual rollout-supervision
+   design for the selected mixed-v2 development recipe;
+2. implement a separate provenance-safe latent rollout state, fixed-root common-random-number
+   teacher, matched MC control reproduction, and independent target validator;
+3. run Step 4 only if timed production plus validation fits the eight-hour budget without reducing
+   the frozen scientific sample; and
+4. run the final independent league, then choose off-VM retention if stronger disaster recovery is
+   desired.

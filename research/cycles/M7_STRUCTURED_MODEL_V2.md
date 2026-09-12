@@ -3,8 +3,9 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 3 of 5
 **Cycle:** `m7-structured-model-v2`
-**Status:** Approved and implementation-frozen; claim run pending
-**Approved:** September 12, 2026
+**Status:** Complete; structured recipe does not advance
+**Approved and completed:** September 12, 2026
+**Result:** [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](../../docs/M7_STRUCTURED_MODEL_V2_RESULTS.md)
 **Budget:** one CPU process, claim cutoff 7 hours 45 minutes, hard wall-clock limit 8 hours
 
 ## 1. Question and fixed interpretation

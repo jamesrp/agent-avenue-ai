@@ -34,7 +34,8 @@ machine.
 | [q0 strength audit](docs/Q0_STRENGTH_AUDIT_RESULTS.md) | Complete | 72,000 fresh games; exact missed-lethal and exploit-surface diagnostics |
 | [Terminal-offense confirmation](docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; hard immediate-win envelope adopted for research steps 2–4 |
 | [Population replay v1](docs/M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Three paired corpus/training replicates; direct gain but frozen robustness gates failed |
-| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress | Stronger-policy steps 1–2 complete; structured model v2 next |
+| [Structured model v2](docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | Combined recipe beat v1 in both data arms; mixed selected for rollout development |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress | Stronger-policy steps 1–3 complete; rollout supervision next |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
 **q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
@@ -89,6 +90,13 @@ parent-heuristic non-regression lower endpoint was -5.056 percentage points agai
 bound, and the all-candidate seat rule was triggered by the losing control side of the direct arena.
 Both data arms and all six checkpoints remain fixed inputs for the structured-model Step 3. See
 [`docs/M7_POPULATION_REPLAY_RESULTS.md`](docs/M7_POPULATION_REPLAY_RESULTS.md).
+
+The September 12 structured-model experiment then re-encoded both Step-2 data arms with 519 safe
+features and trained six 35,779-parameter q0-embedded residual models. Structured v2 beat matched v1
+on q0-only data at 53.93% and mixed data at 55.80%; mixed-v2 beat q0-only-v2 at 64.63%. Both arms
+still failed only the frozen q0-parent heuristic non-regression gate, so neither advances. The
+predeclared robustness-floor rule selects mixed-v2 solely as the development input for rollout
+supervision. See [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](docs/M7_STRUCTURED_MODEL_V2_RESULTS.md).
 
 Historical Milestone 6 results remain in
 [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md), and the original q0 evaluation remains in

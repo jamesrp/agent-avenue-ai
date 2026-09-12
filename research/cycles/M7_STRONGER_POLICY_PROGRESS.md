@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 12, 2026
-**Overall state:** Step 2 complete; Step 3 claim run ready to dispatch
+**Overall state:** Step 3 complete; Step 4 rollout design under feasibility review
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -39,8 +39,8 @@ public-history signaling, and specializes to narrow self-play distributions.
 | --- | --- | --- | --- | --- | --- |
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
 | 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
-| 3. Structured model v2 | Claim-ready | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | `b1f2b6f`, `2bfe619`, `2e18f15`, `a74d21c`, `68ed5fe`, `388a001`, `e6d2327`, `7dcae27`, `7321aa1` | Pending | Pending |
-| 4. Counterfactual rollouts | Authorized, waiting | Pending | Pending | Pending | Pending |
+| 3. Structured model v2 | Complete; does not advance | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | `b1f2b6f` through `7321aa1` | Six fits + 30,000 games; exact-source validation passed after one operational repair | [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](../../docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) |
+| 4. Counterfactual rollouts | Designing | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | Pending | Pending | Pending |
 | 5. Independent league | Authorized, waiting | Pending | Pending | Pending | Pending |
 
 ## Completed step 1
@@ -65,19 +65,33 @@ The claim runner completed at `fde19b5`. One validator-only repair corrected nes
 consumption order; repaired validation at `2bf8822` reproduced all evidence and the unchanged
 decision. Both data arms, six datasets, and six v1 checkpoints remain fixed inputs for Step 3.
 
-## Current step: structured model v2 design
+## Completed step 3
 
-Step 3 is frozen as a 2x2 data-by-architecture study. The retained Step-2 v1 checkpoints are
-controls; six new structured v2 models train on the same q0-only and mixed datasets. Encoder v2 has a
-519-feature safe vector: unchanged v1 prefix, eight completed public turns, 64 play-consequence
-features, and 54 recruit support/consequence features. The 35,779-parameter model embeds q0 exactly
-through its trainable v1 base and zero-initialized phase-specific residual heads.
+The combined structured v2 recipe beat matched v1 controls in both arms: q0-only 53.93%
+[51.47%, 56.63%], mixed 55.80% [52.73%, 58.67%], and pooled 54.87% [52.50%, 56.85%]. Mixed-v2
+also beat q0-only-v2 at 64.63% [59.07%, 69.07%]. The interaction was inconclusive, so there is no
+claim that mixed replay benefits disproportionately from v2.
 
-Play consequence terminal bits use exact public-material adjudication; recruit terminal fields are
-guaranteed/support bits over every public-consistent hidden identity. No GameState, transition,
-belief target, or counterfactual label enters the encoder. Fresh evaluation uses 30,000 games and
-aligned architecture blocks for within-arm effects and the data-by-architecture interaction. The
-complete Step-2 input freeze is `m7-structured-model-v2-inputs.json`, fingerprint `534ea9aa…a186`.
+Both arm gates failed only the parent-heuristic non-regression condition. Mixed was closer at -3.56
+points with interval [-8.83, +1.67], versus q0-only -8.0 [-12.0, -4.22]. All candidate seat,
+q0-parent, random, tactical, and integrity gates passed. The frozen robustness-floor rule selects M
+as a development input for Step 4, not as an advancement or promotion.
+
+One operational repair restored wrapper-managed `driver.stdout` to the empty hash already captured
+by checksums; no scientific artifact/source changed. Exact-source independent validation then
+passed. Future checksum scopes exclude wrapper logs. Combined claim plus validation took about 3h36.
+
+## Current step: counterfactual rollout design
+
+Step 4 will compare exact reproductions of the three selected M-v2 fits with paired treatments that
+add only fixed all-legal-action rollout supervision. The proposed teacher samples hidden worlds from
+public observations, holds the root action fixed across indistinguishable worlds, uses common
+continuation randomness, and never passes latent state to policies or encoders.
+
+The initial proposal of 1,800 positions × 20 full rollouts per candidate implies roughly 520,000
+candidate rollouts before independent recomputation. This budget is under explicit feasibility
+review and will not be frozen or implemented until a timing-based design fits the eight-hour step
+limit without weakening information safety.
 
 ## Completed implementation work
 
@@ -87,7 +101,7 @@ complete Step-2 input freeze is `m7-structured-model-v2-inputs.json`, fingerprin
 - `b18a13e`: exhaustive setup holdout and corrected guaranteed-win prefix endpoints.
 - `23fe496`: independent validator path, frozen provenance checks, whole-step budget metadata, and
   descriptive-only direct comparison.
-- Current validation: Ruff and strict mypy pass; 290 tests pass.
+- Current validation: Ruff and strict mypy pass; 291 tests pass.
 - Step-3 implementation: structured encoder/model/data/checkpoint/agent, six-fit runner, 60-cell
   evaluation, nested interaction statistics, robustness-floor selection, historical compatibility,
   deadline/resume/checksum boundaries, and independent local feature/arena/statistics validation are
@@ -100,6 +114,13 @@ complete Step-2 input freeze is `m7-structured-model-v2-inputs.json`, fingerprin
 
 ## Decision log
 
+- **September 12 — step-3 result:** structured v2 beat v1 in both data arms, but both failed only the
+  frozen parent-heuristic non-regression gate. Select mixed-v2 as the development Step-4 input by the
+  predeclared robustness floor; no policy is promoted.
+- **September 12 — step-3 repair:** exact-source validation passed after restoring mutable
+  `driver.stdout` to its already-checksummed empty state. Future checksum code excludes wrapper logs.
+- **September 12 — step-4 design review:** do not freeze the initial 520,000-full-rollout proposal
+  until measured rollout and independent-recomputation throughput demonstrate an eight-hour fit.
 - **September 12 — step-3 implementation freeze:** the structured core, six-fit/60-cell experiment,
   independent validator, full historical input compatibility, and 22 adversarial validator mutation
   tests are committed. A retained-input smoke passed and projects 5h22 combined execution.

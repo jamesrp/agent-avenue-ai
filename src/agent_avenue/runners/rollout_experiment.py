@@ -604,7 +604,10 @@ def _cells(config: RolloutExperimentConfig) -> tuple[RolloutArenaCell, ...]:
                     candidate,
                     opponent,
                     pairs,
-                    derive_seed(ROOT_SEED, f"step4:arena:{key}:{current_replicate}")
+                    derive_seed(
+                        ROOT_SEED,
+                        f"step4:arena:{shared if shared is not None else key}:{current_replicate}",
+                    )
                     & ((1 << 63) - 1),
                     shared,
                 )
@@ -652,13 +655,16 @@ def _holdout_scan(
         for spec in schedule_arena(config_cell):
             identity = population_setup_identity(normalize_config(spec.config), spec.setup_seed)
             previous = current.get(identity)
-            current[identity] = {
-                "replicate": cell.replicate_id,
-                "cell": cell.key,
-                "shared": cell.shared_group,
-            }
-            if previous is not None and previous != current[identity]:
+            if previous is not None and not (
+                previous["replicate"] == cell.replicate_id
+                and previous["shared"] is not None
+                and previous["shared"] == cell.shared_group
+            ):
                 raise RolloutExperimentError("undeclared internal arena setup overlap")
+            current.setdefault(
+                identity,
+                {"replicate": cell.replicate_id, "cell": cell.key, "shared": cell.shared_group},
+            )
     prior: dict[str, list[str]] = {}
     scanned: list[dict[str, object]] = []
     output = config.output.resolve()
@@ -1527,9 +1533,8 @@ def _statistics(
         direct = _pair_scores(by_key[f"T{index}-vs-C{index}"])
         parent = _pair_scores(by_key[f"T{index}-vs-q0-parent"])
         random = _pair_scores(by_key[f"T{index}-vs-random"])
-        heur_t, heur_c, heur_q0 = (
-            _pair_scores(by_key[f"{candidate}{index}-vs-heuristic"]) for candidate in ("T", "C")
-        )
+        heur_t = _pair_scores(by_key[f"T{index}-vs-heuristic"])
+        heur_c = _pair_scores(by_key[f"C{index}-vs-heuristic"])
         heur_q0 = _pair_scores(by_key[f"q0-parent-vs-heuristic-reference-{index}"])
         rows["direct"].append(direct)
         rows["parent"].append(parent)
@@ -2098,37 +2103,66 @@ def run_rollout_experiment(config: RolloutExperimentConfig) -> dict[str, object]
         _integer(item["rows"], label="rollout row count") * 10
         for item in rollout_manifests.values()
     )
+    full_target_units = target_units if config.claim else target_units * 20
+    rollout_ratio = full_target_units / target_units
     elapsed_target = sum(
         value for key, value in timing_values.items() if key.startswith("rollouts:")
     )
     units_per_second = target_units / elapsed_target if elapsed_target else float("inf")
+    current_games = sum(cell.pair_count * 2 for cell in cells)
+    arena_ratio = 24_000 / current_games
+    projected_phase_seconds: dict[str, float] = {}
+    for key, value in timing_values.items():
+        if key.startswith("rollouts:"):
+            projected_phase_seconds[key] = value * rollout_ratio
+        elif key.startswith("training:") and config.is_smoke:
+            replicate = key.removeprefix("training:")
+            horizon = next(
+                _integer(item.checkpoint["epochs_completed"], label="retained horizon")
+                for item in inputs
+                if item.replicate_id == replicate
+            )
+            # Smoke executes one treatment epoch while control and lambda-zero paths remain exact:
+            # observed = 3E + 1, claim = 4E optimizer-horizon equivalents.
+            projected_phase_seconds[key] = value * (4 * horizon) / (3 * horizon + 1)
+        elif key.startswith("arena:"):
+            projected_phase_seconds[key] = value * arena_ratio
+        elif key == "statistics" and config.is_smoke:
+            # A one-pair smoke has no nested samples.  Use the frozen 30-minute claim allocation
+            # rather than pretending zero observed work can be scaled.
+            projected_phase_seconds[key] = 30 * 60
+        else:
+            # Input audit and full source replay/panel selection already run at full corpus scale.
+            projected_phase_seconds[key] = value
+    projected_seconds = sum(projected_phase_seconds.values())
+    leaf_fraction = max(
+        cast(float, value["depth_leaf_fraction"]) for value in rollout_manifests.values()
+    )
     projection = _artifact(
-        "m7-counterfactual-rollout-runtime-v1",
+        "m7-counterfactual-rollout-runtime-v2",
         mode="claim" if config.claim else "nonclaim-smoke",
         phase_timings_seconds=timing_values,
+        projected_phase_seconds=projected_phase_seconds,
+        projection_ratios={
+            "input_and_panel": 1.0,
+            "rollout_targets": rollout_ratio,
+            "arenas": arena_ratio,
+            "smoke_treatment_horizon": "4E/(3E+1) per replicate",
+            "statistics": "frozen-30-minute-allocation when smoke has zero nested work",
+        },
         rollout_work_units=target_units,
+        full_rollout_work_units=full_target_units,
         rollout_units_per_second=units_per_second,
         required_minimum_units_per_second=67,
-        leaf_fraction=max(
-            cast(float, value["depth_leaf_fraction"]) for value in rollout_manifests.values()
-        ),
+        leaf_fraction=leaf_fraction,
         mechanical_cap_errors=0,
-        projected_full_minutes=(
-            sum(timing_values.values()) / 60
-            if config.claim
-            else (sum(timing_values.values()) * 20 / 60)
-        ),
+        projected_full_seconds=projected_seconds,
+        projected_full_minutes=projected_seconds / 60,
         claim_cutoff_minutes=465,
         claim_eligible_runtime=(
-            config.claim
-            or (
-                units_per_second >= 67
-                and max(
-                    cast(float, value["depth_leaf_fraction"])
-                    for value in rollout_manifests.values()
-                )
-                <= 0.5
-            )
+            units_per_second >= 67
+            and leaf_fraction <= 0.5
+            and projected_seconds < CLAIM_CUTOFF_SECONDS
         ),
     )
     _write_immutable(output / "runtime-extrapolation.json", projection, label="runtime")

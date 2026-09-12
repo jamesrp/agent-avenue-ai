@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,8 @@ from agent_avenue.runners.rollout_experiment import (
     RolloutExperimentError,
     _cells,
     _check_cardinality,
+    _fingerprint,
+    _validator_preflight,
 )
 
 
@@ -41,7 +44,31 @@ def test_claim_and_smoke_schedule_cardinalities_are_explicit(tmp_path: Path) -> 
     assert [(cell.key, cell.pair_count) for cell in smoke_cells] == [("T1-vs-C1", 1)]
 
 
-def test_smoke_rejects_hidden_claim_like_defaults(tmp_path: Path) -> None:
+def test_claim_preflight_requires_matching_independent_runtime_artifact(tmp_path: Path) -> None:
+    payload = {
+        "version": "m7-counterfactual-rollout-independent-runtime-preflight-v1",
+        "claim_eligible": True,
+        "both_target_throughputs_at_least_67": True,
+        "leaf_and_cap_gate": True,
+        "source_code_fingerprint": "a" * 64,
+        "input_manifest_fingerprint": "b" * 64,
+    }
+    payload["artifact_fingerprint"] = _fingerprint(payload)
+    path = tmp_path / "preflight.json"
+    path.write_text(json.dumps(payload))
+    accepted, reason = _validator_preflight(
+        path,
+        source={"code_fingerprint": "a" * 64},
+        input_manifest_fingerprint="b" * 64,
+    )
+    assert accepted is not None and reason is None
+    rejected, reason = _validator_preflight(
+        path,
+        source={"code_fingerprint": "c" * 64},
+        input_manifest_fingerprint="b" * 64,
+    )
+    assert rejected is None and reason == "invalid_independent_validator_preflight"
+
     with pytest.raises(RolloutExperimentError, match="only supported smoke"):
         RolloutExperimentConfig(
             output=tmp_path / "smoke",

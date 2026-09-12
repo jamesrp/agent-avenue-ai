@@ -35,7 +35,7 @@ from agent_avenue.agents import (
     filter_terminal_actions,
 )
 from agent_avenue.encoding.schema import CARD_ORDER
-from agent_avenue.engine import Phase, PlayerId, apply_action, new_game
+from agent_avenue.engine import GameConfig, Phase, PlayerId, apply_action, new_game
 from agent_avenue.engine.cards import CARD_DEFINITIONS, CardEffect, CardName, recruit_effect
 from agent_avenue.engine.model import (
     Action,
@@ -523,19 +523,37 @@ def source_guard() -> None:
     source = Path(__file__).read_text()
     tree = ast.parse(source)
     forbidden_modules = {
+        "agent_avenue.encoding.candidate_v1",
         "agent_avenue.encoding.candidate_structured_v2",
         "agent_avenue.runners.structured_experiment",
         "agent_avenue.runners.arena",
     }
+    forbidden_entry_points = {
+        "encode_v1",
+        "encode_v2",
+        "arena_report_from_records",
+        "structured_statistics",
+        "structured_selection",
+    }
     for node in ast.walk(tree):
+        if isinstance(node, ast.Import) and any(
+            alias.name in forbidden_modules for alias in node.names
+        ):
+            raise ValidationError("validator imports forbidden production module")
         if isinstance(node, ast.ImportFrom) and node.module in forbidden_modules:
             raise ValidationError(f"validator imports forbidden production module {node.module}")
         if isinstance(node, ast.ImportFrom) and any(
-            alias.name
-            in {"structured_statistics", "structured_selection", "arena_report_from_records"}
-            for alias in node.names
+            alias.name in forbidden_entry_points for alias in node.names
         ):
             raise ValidationError("validator imports forbidden production entry point")
+        if isinstance(node, ast.Call) and (
+            (isinstance(node.func, ast.Name) and node.func.id in forbidden_entry_points)
+            or (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr in forbidden_entry_points
+            )
+        ):
+            raise ValidationError("validator calls forbidden production entry point")
 
 
 def replay_dataset(corpus: Path, v1_dataset: Path, v2_dataset: Path) -> None:
@@ -828,6 +846,9 @@ def local_arena_report(
         raise ValidationError("arena policy identifiers differ from frozen cell")
     pair_count = cast(int, cell["paired_blocks"])
     master = cast(int, cell["master_seed"])
+    expected_game_config = normalize_config(GameConfig())
+    if retained.get("game_config") != expected_game_config:
+        raise ValidationError("arena report game configuration differs from canonical schedule")
     if len(records) != pair_count * 2:
         raise ValidationError("arena record cardinality differs")
     wins = {a_id: 0, b_id: 0}
@@ -858,12 +879,16 @@ def local_arena_report(
             or record.game_id != f"{pair_id}-{'a' if a_first else 'b'}-first"
             or record.pair_id != pair_id
             or record.replay.seed != setup
-            or normalize_config(record.replay.config) != retained["game_config"]
+            or normalize_config(record.replay.config) != expected_game_config
         ):
             raise ValidationError("arena record schedule identity differs")
         if (
             tuple(seat.agent_id for seat in record.seats) != expected_ids
             or tuple(seat.seed for seat in record.seats) != expected_seeds
+            or tuple(seat.seed_derivation for seat in record.seats)
+            != (SEED_DERIVATION, SEED_DERIVATION)
+            or tuple(seat.rng_algorithm for seat in record.seats)
+            != (RNG_ALGORITHM, RNG_ALGORITHM)
             or tuple(seat.rng_domain for seat in record.seats) != expected_domains
         ):
             raise ValidationError("arena record seat/RNG identity differs")
@@ -924,7 +949,7 @@ def local_arena_report(
         "master_seed": master,
         "seed_derivation": SEED_DERIVATION,
         "rng_algorithm": RNG_ALGORITHM,
-        "game_config": retained["game_config"],
+        "game_config": expected_game_config,
         "rules_fingerprint": rules_fingerprint(),
         "code_fingerprint": code_fingerprint(),
     }

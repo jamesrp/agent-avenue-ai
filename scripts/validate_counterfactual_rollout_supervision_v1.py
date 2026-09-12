@@ -14,18 +14,39 @@ import ast
 import gzip
 import hashlib
 import json
+import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from math import exp
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 
-from agent_avenue.agents import derive_seed
+from agent_avenue.agents import (
+    Agent,
+    GreedyHeuristicAgent,
+    GreedyHeuristicConfig,
+    RandomAgent,
+    RandomAgentConfig,
+    RandomSource,
+    TerminalOffenseAgent,
+    TerminalSafetyAgent,
+)
 from agent_avenue.agents.ordering import semantic_action_key
-from agent_avenue.engine import Phase, apply_action, new_game
-from agent_avenue.engine.cards import CANONICAL_DECK
-from agent_avenue.engine.model import Action
+from agent_avenue.encoding.candidate_structured_v2 import encode_candidate
+from agent_avenue.engine import apply_action, new_game
+from agent_avenue.engine.cards import CANONICAL_DECK, CardName, recruit_effect
+from agent_avenue.engine.model import (
+    Action,
+    CompletedTurn,
+    OfferSlot,
+    Phase,
+    PlayerId,
+    PlayOfferAction,
+    RecruitAction,
+)
 from agent_avenue.learning import (
     StructuredTrainingConfig,
     StructuredTrainingData,
@@ -34,8 +55,12 @@ from agent_avenue.learning import (
     tensor_digest,
     train_structured_model,
 )
-from agent_avenue.observation import observation_to_data, observe
-from agent_avenue.observation.model import PlayerObservation, RecruitContext
+from agent_avenue.observation.model import (
+    PlayContext,
+    PlayerObservation,
+    PublicPlayer,
+    RecruitContext,
+)
 from agent_avenue.storage import GameRecord, game_record_fingerprint, load_corpus
 
 CYCLE_ID = "m7-counterfactual-rollout-supervision-v1"
@@ -100,7 +125,7 @@ def artifact(value: Mapping[str, object], label: str) -> None:
 def static_source_guard() -> None:
     tree = ast.parse(Path(__file__).read_text())
     banned = {
-        "agent_avenue.rollout.identity",
+        "agent_avenue.observation.build",
         "agent_avenue.rollout.latent",
         "agent_avenue.rollout.targets",
         "agent_avenue.rollout.artifact",
@@ -126,6 +151,135 @@ def canonical_actions(actions: Iterable[Action]) -> tuple[Action, ...]:
     return result
 
 
+def local_action_data(action: Action) -> dict[str, object]:
+    if isinstance(action, RecruitAction):
+        return {
+            "type": "recruit",
+            "revision": action.revision,
+            "actor": action.actor.value,
+            "slot": action.slot.value,
+        }
+    return {
+        "type": "play_offer",
+        "revision": action.revision,
+        "actor": action.actor.value,
+        "face_up": action.face_up.value,
+        "face_down": action.face_down.value,
+    }
+
+
+def local_observation_data(observation: PlayerObservation) -> dict[str, object]:
+    decision = observation.decision
+    if isinstance(decision, PlayContext):
+        decision_data: dict[str, object] = {
+            "kind": "play",
+            "revision": decision.revision,
+            "actor": decision.actor.value,
+        }
+    elif isinstance(decision, RecruitContext):
+        decision_data = {
+            "kind": "recruit",
+            "revision": decision.revision,
+            "actor": decision.actor.value,
+            "offered_by": decision.offered_by.value,
+            "face_up": decision.face_up.value,
+            "known_face_down": None
+            if decision.known_face_down is None
+            else decision.known_face_down.value,
+            "slots": [slot.value for slot in decision.slots],
+        }
+    else:
+        raise ValidationError("terminal observation cannot be a panel member")
+    return {
+        "viewer": observation.viewer.value,
+        "own_hand": [card.value for card in observation.own_hand],
+        "players": [
+            {
+                "player": player.player.value,
+                "score": player.score,
+                "recruited": [card.value for card in player.recruited],
+                "hand_size": player.hand_size,
+            }
+            for player in observation.players
+        ],
+        "active_player": observation.active_player.value,
+        "turn": observation.turn,
+        "phase": observation.phase.value,
+        "remaining_deck_count": observation.remaining_deck_count,
+        "history": [
+            {
+                "turn": item.turn,
+                "active_player": item.active_player.value,
+                "face_up": item.face_up.value,
+                "face_down": item.face_down.value,
+                "chosen_slot": item.chosen_slot.value,
+                "opponent_recruited": item.opponent_recruited.value,
+                "active_recruited": item.active_recruited.value,
+                "score_changes": list(item.score_changes),
+            }
+            for item in observation.history
+        ],
+        "decision": decision_data,
+        "legal_actions": [local_action_data(action) for action in observation.legal_actions],
+    }
+
+
+def local_engine_observation(state: object, viewer: PlayerId) -> PlayerObservation:
+    """Locally project a replayed authoritative state without calling production observe()."""
+    raw: Any = state
+    decision: PlayContext | RecruitContext
+    if raw.phase is Phase.PLAY:
+        decision = PlayContext("play", raw.revision, raw.active_player)
+        actor = raw.active_player
+    elif raw.phase is Phase.RECRUIT:
+        if raw.offer is None:
+            raise ValidationError("replayed recruit state has no offer")
+        actor = raw.active_player.other()
+        decision = RecruitContext(
+            "recruit", raw.revision, actor, raw.active_player, raw.offer.face_up, None
+        )
+    else:
+        raise ValidationError("replayed terminal state cannot enter panel")
+    if viewer is not actor:
+        raise ValidationError("local replay observer has the wrong viewer")
+    if raw.phase is Phase.PLAY:
+        hand = raw.hands[player_index_local(raw.active_player)]
+        names = tuple(dict.fromkeys(hand))
+        actions: tuple[Action, ...]
+        if len(names) == 1:
+            actions = (PlayOfferAction(raw.revision, raw.active_player, names[0], names[0]),)
+        else:
+            actions = tuple(
+                PlayOfferAction(raw.revision, raw.active_player, up, down)
+                for up in names
+                for down in names
+                if up is not down
+            )
+    else:
+        actions = tuple(RecruitAction(raw.revision, actor, slot) for slot in OfferSlot)
+    players = tuple(
+        PublicPlayer(
+            player,
+            raw.scores[player_index_local(player)],
+            raw.recruited[player_index_local(player)],
+            len(raw.hands[player_index_local(player)]),
+        )
+        for player in PlayerId
+    )
+    return PlayerObservation(
+        viewer,
+        raw.hands[player_index_local(viewer)],
+        (players[0], players[1]),
+        raw.active_player,
+        raw.turn,
+        raw.phase,
+        len(raw.deck),
+        raw.history,
+        decision,
+        canonical_actions(actions),
+    )
+
+
 def safe_identity(observation: PlayerObservation) -> str:
     actions = canonical_actions(observation.legal_actions)
     decision = observation.decision
@@ -133,7 +287,7 @@ def safe_identity(observation: PlayerObservation) -> str:
     revision = getattr(decision, "revision", None)
     if observation.viewer is not actor or type(revision) is not int:
         raise ValidationError("local panel observation is not the decision actor view")
-    canonical_observation = observation_to_data(
+    canonical_observation = local_observation_data(
         PlayerObservation(
             observation.viewer,
             observation.own_hand,
@@ -220,10 +374,10 @@ def local_panel(
             actor = (
                 state.active_player if state.phase is Phase.PLAY else state.active_player.other()
             )
-            observation = observe(state, actor)
+            observation = local_engine_observation(state, actor)
             label = stratum(observation)
             if label is not None:
-                canonical_data = observation_to_data(
+                canonical_data = local_observation_data(
                     PlayerObservation(
                         observation.viewer,
                         observation.own_hand,
@@ -376,12 +530,803 @@ def validate_controls(output: Path, step3_root: Path, plan: Mapping[str, object]
             raise ValidationError(f"retained control summary differs: {replicate}")
 
 
-def validate_targets(output: Path, plan: Mapping[str, object]) -> None:
-    """Validate safe arrays, common seeds, leaf gate, and quarantine boundaries locally."""
+@dataclass(frozen=True, slots=True)
+class LocalOffer:
+    offered_by: PlayerId
+    face_up: CardName
+    face_down: CardName
+
+
+@dataclass(frozen=True, slots=True)
+class LocalOutcome:
+    winner: PlayerId
+    reason: str
+    resolution: str
+
+
+@dataclass(frozen=True, slots=True)
+class LocalLatentState:
+    """Validator-owned synthetic state; never converted to an engine GameState."""
+
+    deck: tuple[CardName, ...]
+    hands: tuple[tuple[CardName, ...], tuple[CardName, ...]]
+    recruited: tuple[tuple[CardName, ...], tuple[CardName, ...]]
+    scores: tuple[int, int]
+    active_player: PlayerId
+    turn: int
+    phase: Phase
+    revision: int
+    offer: LocalOffer | None = None
+    history: tuple[CompletedTurn, ...] = ()
+    outcome: LocalOutcome | None = None
+
+
+EXPANDED_DECK = (
+    *(CardName.DOUBLE_AGENT for _ in range(6)),
+    *(CardName.ENFORCER for _ in range(6)),
+    *(CardName.CODEBREAKER for _ in range(6)),
+    *(CardName.DAREDEVIL for _ in range(6)),
+    *(CardName.SABOTEUR for _ in range(6)),
+    *(CardName.SENTINEL for _ in range(6)),
+    CardName.SIDEKICK,
+    CardName.MOLE,
+)
+POLICY_SLOTS = (
+    ("q0-1", "q0"),
+    ("q0-2", "q0"),
+    ("q0-3", "q0"),
+    ("q0-4", "q0"),
+    ("q1", "q1"),
+    ("q2", "q2"),
+    ("q3", "q3"),
+    ("q4", "q4"),
+    ("greedy-public-v1", "heuristic"),
+    ("random", "random"),
+)
+
+
+def derive_seed_local(root_seed: int, domain: str) -> int:
+    if type(root_seed) is not int or not domain:
+        raise ValidationError("local seed inputs are malformed")
+    payload = canonical({"domain": domain, "root_seed": root_seed, "version": "sha256-domain-v1"})
+    return int.from_bytes(hashlib.sha256(payload).digest(), "big")
+
+
+@dataclass(slots=True)
+class LocalRandom:
+    seed: int
+    domain: str
+    counter: int = 0
+
+    def randbelow(self, upper: int) -> int:
+        if type(upper) is not int or upper <= 0:
+            raise ValidationError("local RNG upper bound is malformed")
+        modulus = 1 << 256
+        limit = modulus - modulus % upper
+        while True:
+            payload = canonical(
+                {
+                    "algorithm": "sha256-counter-rejection-v1",
+                    "counter": self.counter,
+                    "domain": self.domain,
+                    "seed": self.seed,
+                }
+            )
+            self.counter += 1
+            value = int.from_bytes(hashlib.sha256(payload).digest(), "big")
+            if value < limit:
+                return value % upper
+
+
+def card_index(card: CardName) -> int:
+    return tuple(CardName).index(card)
+
+
+def player_index_local(player: PlayerId) -> int:
+    return 0 if player is PlayerId.PLAYER_ONE else 1
+
+
+def canonical_cards(cards: Iterable[CardName]) -> tuple[CardName, ...]:
+    return tuple(sorted(cards, key=card_index))
+
+
+def local_adjudicate(
+    *,
+    scores: tuple[int, int],
+    recruited: tuple[tuple[CardName, ...], tuple[CardName, ...]],
+    active_player: PlayerId,
+    deck_empty: bool,
+    next_player_hand_size: int,
+) -> LocalOutcome | None:
+    players = (PlayerId.PLAYER_ONE, PlayerId.PLAYER_TWO)
+    score_winners = tuple(
+        player
+        for player in players
+        if scores[player_index_local(player)] >= scores[player_index_local(player.other())] + 7
+    )
+    counts = tuple(Counter(cards) for cards in recruited)
+    instant_winners = tuple(
+        player
+        for player in players
+        if counts[player_index_local(player)][CardName.CODEBREAKER] >= 3
+    )
+    instant_losers = tuple(
+        player for player in players if counts[player_index_local(player)][CardName.DAREDEVIL] >= 3
+    )
+    candidates = set(score_winners) | set(instant_winners)
+    candidates.update(player.other() for player in instant_losers)
+    ordered = tuple(player for player in players if player in candidates)
+    if ordered:
+        return LocalOutcome(
+            ordered[0] if len(ordered) == 1 else active_player,
+            "condition",
+            "sole_candidate" if len(ordered) == 1 else "active_condition_tie",
+        )
+    if deck_empty and next_player_hand_size < 2:
+        next_player = active_player.other()
+        active_score = scores[player_index_local(active_player)]
+        next_score = scores[player_index_local(next_player)]
+        if active_score == next_score:
+            return LocalOutcome(active_player, "deck_exhaustion", "active_score_tie")
+        return LocalOutcome(
+            active_player if active_score > next_score else next_player,
+            "deck_exhaustion",
+            "high_score",
+        )
+    return None
+
+
+def validate_local_state(state: LocalLatentState) -> None:
+    if state.phase not in (Phase.PLAY, Phase.RECRUIT, Phase.TERMINAL):
+        raise ValidationError("local state has invalid phase")
+    if not 1 <= state.turn <= 19 or state.revision < 0 or len(state.hands) != 2:
+        raise ValidationError("local state turn/revision/hand shape is invalid")
+    if any(len(hand) > 4 for hand in state.hands):
+        raise ValidationError("local state hand size exceeds four")
+    cards = [
+        *state.deck,
+        *state.hands[0],
+        *state.hands[1],
+        *state.recruited[0],
+        *state.recruited[1],
+    ]
+    if state.offer is not None:
+        cards.extend((state.offer.face_up, state.offer.face_down))
+    if Counter(cards) != Counter(EXPANDED_DECK):
+        raise ValidationError("local latent card conservation failed")
+    if state.phase is Phase.PLAY and (state.offer is not None or state.outcome is not None):
+        raise ValidationError("local play state has offer/outcome")
+    if state.phase is Phase.RECRUIT and (state.offer is None or state.outcome is not None):
+        raise ValidationError("local recruit state is malformed")
+    if state.phase is Phase.TERMINAL and (state.offer is not None or state.outcome is None):
+        raise ValidationError("local terminal state is malformed")
+    expected_revision = len(state.history) * 2 + (1 if state.phase is Phase.RECRUIT else 0)
+    if expected_revision != state.revision:
+        raise ValidationError("local state revision is inconsistent")
+
+
+def local_legal_actions(state: LocalLatentState) -> tuple[Action, ...]:
+    validate_local_state(state)
+    if state.phase is Phase.TERMINAL:
+        return ()
+    if state.phase is Phase.PLAY:
+        hand = state.hands[player_index_local(state.active_player)]
+        names = tuple(dict.fromkeys(hand))
+        if len(hand) < 2:
+            return ()
+        if len(names) == 1:
+            return (PlayOfferAction(state.revision, state.active_player, names[0], names[0]),)
+        return tuple(
+            PlayOfferAction(state.revision, state.active_player, up, down)
+            for up in names
+            for down in names
+            if up is not down
+        )
+    return tuple(
+        RecruitAction(state.revision, state.active_player.other(), slot) for slot in OfferSlot
+    )
+
+
+def local_decision_actor(state: LocalLatentState) -> PlayerId:
+    if state.phase is Phase.TERMINAL:
+        raise ValidationError("terminal local state has no decision actor")
+    return state.active_player if state.phase is Phase.PLAY else state.active_player.other()
+
+
+def local_observation(state: LocalLatentState, viewer: PlayerId) -> PlayerObservation:
+    validate_local_state(state)
+    legal = canonical_actions(local_legal_actions(state))
+    decision: PlayContext | RecruitContext
+    if state.phase is Phase.PLAY:
+        decision = PlayContext("play", state.revision, state.active_player)
+    else:
+        assert state.offer is not None
+        decision = RecruitContext(
+            "recruit",
+            state.revision,
+            state.active_player.other(),
+            state.offer.offered_by,
+            state.offer.face_up,
+            None,
+        )
+    players = tuple(
+        PublicPlayer(
+            player,
+            state.scores[player_index_local(player)],
+            state.recruited[player_index_local(player)],
+            len(state.hands[player_index_local(player)]),
+        )
+        for player in PlayerId
+    )
+    return PlayerObservation(
+        viewer,
+        canonical_cards(state.hands[player_index_local(viewer)]),
+        (players[0], players[1]),
+        state.active_player,
+        state.turn,
+        state.phase,
+        len(state.deck),
+        state.history,
+        decision,
+        legal,
+    )
+
+
+def parse_action(value: object) -> Action:
+    if not isinstance(value, Mapping):
+        raise ValidationError("target action is malformed")
+    try:
+        revision = value["revision"]
+        actor = PlayerId(cast(str, value["actor"]))
+        action_type = value["type"]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValidationError("target action fields are malformed") from exc
+    if type(revision) is not int:
+        raise ValidationError("target action revision is malformed")
+    if action_type == "recruit":
+        return RecruitAction(revision, actor, OfferSlot(cast(str, value["slot"])))
+    if action_type == "play_offer":
+        return PlayOfferAction(
+            revision,
+            actor,
+            CardName(cast(str, value["face_up"])),
+            CardName(cast(str, value["face_down"])),
+        )
+    raise ValidationError("target action type is unknown")
+
+
+def parse_observation(value: object) -> PlayerObservation:
+    if not isinstance(value, Mapping):
+        raise ValidationError("panel observation is malformed")
+    try:
+        history = tuple(
+            CompletedTurn(
+                cast(int, item["turn"]),
+                PlayerId(cast(str, item["active_player"])),
+                CardName(cast(str, item["face_up"])),
+                CardName(cast(str, item["face_down"])),
+                OfferSlot(cast(str, item["chosen_slot"])),
+                CardName(cast(str, item["opponent_recruited"])),
+                CardName(cast(str, item["active_recruited"])),
+                (
+                    cast(int, cast(list[object], item["score_changes"])[0]),
+                    cast(int, cast(list[object], item["score_changes"])[1]),
+                ),
+            )
+            for item in cast(list[Mapping[str, object]], value["history"])
+        )
+        players = tuple(
+            PublicPlayer(
+                PlayerId(cast(str, item["player"])),
+                cast(int, item["score"]),
+                tuple(CardName(cast(str, card)) for card in cast(list[object], item["recruited"])),
+                cast(int, item["hand_size"]),
+            )
+            for item in cast(list[Mapping[str, object]], value["players"])
+        )
+        if len(players) != 2:
+            raise ValidationError("panel observation player count is invalid")
+        decision_data = cast(Mapping[str, object], value["decision"])
+        decision: PlayContext | RecruitContext
+        if decision_data["kind"] == "play":
+            decision = PlayContext(
+                "play",
+                cast(int, decision_data["revision"]),
+                PlayerId(cast(str, decision_data["actor"])),
+            )
+        elif decision_data["kind"] == "recruit":
+            known = decision_data.get("known_face_down")
+            decision = RecruitContext(
+                "recruit",
+                cast(int, decision_data["revision"]),
+                PlayerId(cast(str, decision_data["actor"])),
+                PlayerId(cast(str, decision_data["offered_by"])),
+                CardName(cast(str, decision_data["face_up"])),
+                None if known is None else CardName(cast(str, known)),
+                (
+                    OfferSlot(cast(str, cast(list[object], decision_data["slots"])[0])),
+                    OfferSlot(cast(str, cast(list[object], decision_data["slots"])[1])),
+                ),
+            )
+        else:
+            raise ValidationError("panel terminal observation is not eligible")
+        actions = tuple(parse_action(item) for item in cast(list[object], value["legal_actions"]))
+        return PlayerObservation(
+            PlayerId(cast(str, value["viewer"])),
+            tuple(CardName(cast(str, card)) for card in cast(list[object], value["own_hand"])),
+            (players[0], players[1]),
+            PlayerId(cast(str, value["active_player"])),
+            cast(int, value["turn"]),
+            Phase(cast(str, value["phase"])),
+            cast(int, value["remaining_deck_count"]),
+            history,
+            decision,
+            canonical_actions(actions),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, ValidationError):
+            raise
+        raise ValidationError("panel observation cannot be locally reconstructed") from exc
+
+
+def local_sample_world(observation: PlayerObservation, rng: LocalRandom) -> LocalLatentState:
+    if observation.viewer is not getattr(observation.decision, "actor", None):
+        raise ValidationError("sampled observation is not the decision actor view")
+    if observation.phase not in (Phase.PLAY, Phase.RECRUIT):
+        raise ValidationError("sampled observation phase is invalid")
+    remaining = list(EXPANDED_DECK)
+    for player in observation.players:
+        for card in player.recruited:
+            remaining.remove(card)
+    own_hand = canonical_cards(observation.own_hand)
+    for card in own_hand:
+        remaining.remove(card)
+    actor = observation.viewer
+    opponent = actor.other()
+    if observation.phase is Phase.PLAY:
+        opponent_hand = tuple(
+            remaining.pop(rng.randbelow(len(remaining)))
+            for _ in range(observation.players[player_index_local(opponent)].hand_size)
+        )
+        for upper in range(len(remaining) - 1, 0, -1):
+            lower = rng.randbelow(upper + 1)
+            remaining[upper], remaining[lower] = remaining[lower], remaining[upper]
+        hands = (
+            (own_hand, opponent_hand) if actor is PlayerId.PLAYER_ONE else (opponent_hand, own_hand)
+        )
+        play_decision = observation.decision
+        if not isinstance(play_decision, PlayContext):
+            raise ValidationError("play sampler decision is malformed")
+        state = LocalLatentState(
+            tuple(remaining),
+            hands,
+            (observation.players[0].recruited, observation.players[1].recruited),
+            (observation.players[0].score, observation.players[1].score),
+            observation.active_player,
+            observation.turn,
+            Phase.PLAY,
+            play_decision.revision,
+            None,
+            observation.history,
+        )
+    else:
+        decision = observation.decision
+        if not isinstance(decision, RecruitContext) or decision.known_face_down is not None:
+            raise ValidationError("recruit sampler received an unsafe face-down value")
+        remaining.remove(decision.face_up)
+        face_down = remaining.pop(rng.randbelow(len(remaining)))
+        offerer_hand = tuple(
+            remaining.pop(rng.randbelow(len(remaining)))
+            for _ in range(observation.players[player_index_local(decision.offered_by)].hand_size)
+        )
+        for upper in range(len(remaining) - 1, 0, -1):
+            lower = rng.randbelow(upper + 1)
+            remaining[upper], remaining[lower] = remaining[lower], remaining[upper]
+        hands = (
+            (own_hand, offerer_hand) if actor is PlayerId.PLAYER_ONE else (offerer_hand, own_hand)
+        )
+        state = LocalLatentState(
+            tuple(remaining),
+            hands,
+            (observation.players[0].recruited, observation.players[1].recruited),
+            (observation.players[0].score, observation.players[1].score),
+            decision.offered_by,
+            observation.turn,
+            Phase.RECRUIT,
+            decision.revision,
+            LocalOffer(decision.offered_by, decision.face_up, face_down),
+            observation.history,
+        )
+    if len(state.deck) != observation.remaining_deck_count:
+        raise ValidationError("local sampler residual deck count differs from public observation")
+    validate_local_state(state)
+    return state
+
+
+def local_transition(state: LocalLatentState, action: Action) -> LocalLatentState:
+    validate_local_state(state)
+    if state.phase is Phase.TERMINAL or action not in local_legal_actions(state):
+        raise ValidationError("local transition action is illegal")
+    if action.actor is not local_decision_actor(state) or action.revision != state.revision:
+        raise ValidationError("local transition action ownership differs")
+    if isinstance(action, PlayOfferAction):
+        active_index = player_index_local(state.active_player)
+        hand = list(state.hands[active_index])
+        try:
+            hand.remove(action.face_up)
+            hand.remove(action.face_down)
+        except ValueError as exc:
+            raise ValidationError("local transition offered card is absent") from exc
+        draw_count = min(4 - len(hand), len(state.deck))
+        hands = list(state.hands)
+        hands[active_index] = tuple(hand) + state.deck[:draw_count]
+        next_state = LocalLatentState(
+            state.deck[draw_count:],
+            (hands[0], hands[1]),
+            state.recruited,
+            state.scores,
+            state.active_player,
+            state.turn,
+            Phase.RECRUIT,
+            state.revision + 1,
+            LocalOffer(state.active_player, action.face_up, action.face_down),
+            state.history,
+        )
+        validate_local_state(next_state)
+        return next_state
+    assert state.offer is not None
+    active, opponent = state.active_player, state.active_player.other()
+    if action.slot is OfferSlot.FACE_UP:
+        opponent_card, active_card = state.offer.face_up, state.offer.face_down
+    else:
+        opponent_card, active_card = state.offer.face_down, state.offer.face_up
+    active_index, opponent_index = player_index_local(active), player_index_local(opponent)
+    recruited = [list(state.recruited[0]), list(state.recruited[1])]
+    recruited[opponent_index].append(opponent_card)
+    recruited[active_index].append(active_card)
+    score_changes = [0, 0]
+    for index, card in ((opponent_index, opponent_card), (active_index, active_card)):
+        effect = recruit_effect(card, recruited[index].count(card))
+        if effect.kind == "score":
+            score_changes[index] = effect.points
+    scores = (state.scores[0] + score_changes[0], state.scores[1] + score_changes[1])
+    completed = CompletedTurn(
+        state.turn,
+        active,
+        state.offer.face_up,
+        state.offer.face_down,
+        action.slot,
+        opponent_card,
+        active_card,
+        (score_changes[0], score_changes[1]),
+    )
+    outcome = local_adjudicate(
+        scores=scores,
+        recruited=(tuple(recruited[0]), tuple(recruited[1])),
+        active_player=active,
+        deck_empty=not state.deck,
+        next_player_hand_size=len(state.hands[opponent_index]),
+    )
+    if outcome is not None:
+        result = LocalLatentState(
+            state.deck,
+            state.hands,
+            (tuple(recruited[0]), tuple(recruited[1])),
+            scores,
+            active,
+            state.turn,
+            Phase.TERMINAL,
+            state.revision + 1,
+            None,
+            (*state.history, completed),
+            outcome,
+        )
+    else:
+        if state.turn >= 19:
+            raise ValidationError("local mechanical turn cap was reached")
+        result = LocalLatentState(
+            state.deck,
+            state.hands,
+            (tuple(recruited[0]), tuple(recruited[1])),
+            scores,
+            opponent,
+            state.turn + 1,
+            Phase.PLAY,
+            state.revision + 1,
+            None,
+            (*state.history, completed),
+            None,
+        )
+    validate_local_state(result)
+    return result
+
+
+def local_state_digest(state: LocalLatentState) -> str:
+    offer = (
+        None
+        if state.offer is None
+        else {
+            "offered_by": state.offer.offered_by.value,
+            "face_up": state.offer.face_up.value,
+            "face_down": state.offer.face_down.value,
+        }
+    )
+    return digest(
+        {
+            "deck": [card.value for card in state.deck],
+            "hands": [[card.value for card in hand] for hand in state.hands],
+            "recruited": [[card.value for card in cards] for cards in state.recruited],
+            "scores": list(state.scores),
+            "active_player": state.active_player.value,
+            "turn": state.turn,
+            "phase": state.phase.value,
+            "revision": state.revision,
+            "offer": offer,
+        }
+    )
+
+
+def local_state_data(state: LocalLatentState) -> dict[str, object]:
+    return {
+        "deck": [card.value for card in state.deck],
+        "hands": [[card.value for card in hand] for hand in state.hands],
+        "recruited": [[card.value for card in cards] for cards in state.recruited],
+        "scores": list(state.scores),
+        "active_player": state.active_player.value,
+        "turn": state.turn,
+        "phase": state.phase.value,
+        "revision": state.revision,
+    }
+
+
+def local_permutation(values: tuple[str, ...], rng: LocalRandom) -> tuple[str, ...]:
+    result = list(values)
+    for upper in range(len(result) - 1, 0, -1):
+        lower = rng.randbelow(upper + 1)
+        result[upper], result[lower] = result[lower], result[upper]
+    return tuple(result)
+
+
+def local_assignments(replicate: str, identity: str) -> tuple[tuple[str, str], ...]:
+    slots = tuple(slot for slot, _ in POLICY_SLOTS)
+    p1 = local_permutation(
+        slots,
+        LocalRandom(
+            derive_seed_local(
+                ROOT_SEED, f"step4:policy-permutation:{replicate}:{identity}:player_one"
+            ),
+            "step4:policy-permutation/p1",
+        ),
+    )
+    p2 = local_permutation(
+        slots,
+        LocalRandom(
+            derive_seed_local(
+                ROOT_SEED, f"step4:policy-permutation:{replicate}:{identity}:player_two"
+            ),
+            "step4:policy-permutation/p2",
+        ),
+    )
+    return tuple((p1[index], p2[index]) for index in range(10))
+
+
+def policy_id(slot: str) -> str:
+    return dict(POLICY_SLOTS)[slot]
+
+
+def policy_bundle(plan: Mapping[str, object]) -> tuple[dict[str, object], object]:
+    from agent_avenue.agents.learned import LearnedValueAgent
+
+    paths = cast(Mapping[str, object], plan["opponent_paths"])
+
+    def learned(name: str) -> object:
+        return LearnedValueAgent.from_checkpoint(load_checkpoint(Path(cast(str, paths[name]))))
+
+    q0 = learned("q0-parent")
+    return (
+        {
+            "q0": q0,
+            "q1": learned("q1"),
+            "q2": learned("q2"),
+            "q3": learned("q3"),
+            "q4": learned("q4"),
+            "heuristic": GreedyHeuristicAgent(GreedyHeuristicConfig()),
+            "random": RandomAgent(RandomAgentConfig()),
+        },
+        q0,
+    )
+
+
+@dataclass(slots=True)
+class _CaptureAgent:
+    actions: tuple[Action, ...] = ()
+
+    def choose_action(
+        self,
+        observation: PlayerObservation,
+        decision: PlayContext | RecruitContext | object,
+        legal_actions: tuple[Action, ...],
+        rng: RandomSource,
+    ) -> Action:
+        del observation, decision, rng
+        self.actions = legal_actions
+        return legal_actions[0]
+
+
+def enveloped_actions_local(observation: PlayerObservation) -> tuple[Action, ...]:
+    """Obtain the frozen offense+safety legal set through a capture policy on a local observer."""
+    capture = _CaptureAgent()
+    wrapper = TerminalOffenseAgent(TerminalSafetyAgent(cast(Agent, capture)))
+    wrapper.choose_action(
+        observation,
+        observation.decision,
+        observation.legal_actions,
+        LocalRandom(0, "validator-envelope"),
+    )
+    return canonical_actions(capture.actions)
+
+
+def local_rollout(
+    observation: PlayerObservation,
+    replicate: str,
+    identity: str,
+    candidate: Action,
+    world_index: int,
+    policies: Mapping[str, object],
+    leaf: object,
+    *,
+    transcript: bool = False,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    seed = derive_seed_local(ROOT_SEED, f"step4:world:{replicate}:{identity}:{world_index}")
+    state = local_sample_world(
+        observation, LocalRandom(seed, f"step4:world/{identity}/{world_index}")
+    )
+    assignments = local_assignments(replicate, identity)
+    p1_slot, p2_slot = assignments[world_index]
+    root_actor = observation.viewer
+    steps: list[dict[str, object]] = []
+    if transcript:
+        steps.append(
+            {
+                "ordinal": 0,
+                "forced_root": True,
+                "action": local_action_data(candidate),
+                "state_before": local_state_data(state),
+            }
+        )
+    state = local_transition(state, candidate)
+    if transcript:
+        steps[-1]["state_after"] = local_state_data(state)
+    rng_seeds: list[int] = []
+    applied = 1
+    while state.phase is not Phase.TERMINAL and applied < 9:
+        actor = local_decision_actor(state)
+        identifier = policy_id(p1_slot if actor is PlayerId.PLAYER_ONE else p2_slot)
+        base: Agent = cast(Agent, policies[identifier])
+        wrapped = TerminalOffenseAgent(TerminalSafetyAgent(base))
+        local_view = local_observation(state, actor)
+        decision_seed = derive_seed_local(
+            ROOT_SEED,
+            f"step4:rollout-rng:{replicate}:{identity}:{world_index}:{actor.value}:{state.revision}",
+        )
+        policy_rng = LocalRandom(
+            decision_seed, f"step4:rollout-rng/{world_index}/{actor.value}/{state.revision}"
+        )
+        action = wrapped.choose_action(
+            local_view, local_view.decision, local_view.legal_actions, policy_rng
+        )
+        if action not in local_view.legal_actions:
+            raise ValidationError("local continuation policy escaped its safe legal set")
+        rng_seeds.append(decision_seed)
+        if transcript:
+            steps.append(
+                {
+                    "ordinal": applied,
+                    "forced_root": False,
+                    "rng_seed": decision_seed,
+                    "action": local_action_data(action),
+                    "state_before": local_state_data(state),
+                }
+            )
+        state = local_transition(state, action)
+        if transcript:
+            steps[-1]["state_after"] = local_state_data(state)
+        applied += 1
+    if state.phase is Phase.TERMINAL:
+        assert state.outcome is not None
+        root_value = 1.0 if state.outcome.winner is root_actor else 0.0
+        terminal, depth_leaf = True, False
+    else:
+        if state.turn > 19:
+            raise ValidationError("local depth leaf exceeded the mechanical turn cap")
+        leaf_actor = local_decision_actor(state)
+        leaf_view = local_observation(state, leaf_actor)
+        allowed = enveloped_actions_local(leaf_view)
+        leaf_view = PlayerObservation(
+            leaf_view.viewer,
+            leaf_view.own_hand,
+            leaf_view.players,
+            leaf_view.active_player,
+            leaf_view.turn,
+            leaf_view.phase,
+            leaf_view.remaining_deck_count,
+            leaf_view.history,
+            leaf_view.decision,
+            allowed,
+        )
+        leaf_agent: Any = leaf
+        scored: Any = leaf_agent.score_candidates(leaf_view, leaf_view.decision, allowed)
+        logits = tuple(float(value) for value in scored.logits)
+        leaf_value = (
+            1.0 / (1.0 + exp(-max(logits)))
+            if max(logits) >= 0
+            else exp(max(logits)) / (1.0 + exp(max(logits)))
+        )
+        root_value = leaf_value if leaf_actor is root_actor else 1.0 - leaf_value
+        terminal, depth_leaf = False, True
+    sample = {
+        "world_index": world_index,
+        "world_seed": seed,
+        "latent_digest": local_state_digest(
+            local_sample_world(
+                observation, LocalRandom(seed, f"step4:world/{identity}/{world_index}")
+            )
+        ),
+        "player_one_policy_id": policy_id(p1_slot),
+        "player_two_policy_id": policy_id(p2_slot),
+        "continuation_rng_seeds": rng_seeds,
+        "terminal": terminal,
+        "depth_leaf": depth_leaf,
+        "actions_applied": applied,
+        "root_value": root_value,
+    }
+    return sample, steps
+
+
+def _sample_equal(expected: Mapping[str, object], actual: Mapping[str, object]) -> bool:
+    if set(expected) != set(actual):
+        return False
+    for key, value in expected.items():
+        if key == "root_value":
+            actual_value = actual[key]
+            if not isinstance(actual_value, int | float) or actual_value != cast(float, value):
+                return False
+        elif actual[key] != value:
+            return False
+    return True
+
+
+def _panel_rows_for_target(output: Path, replicate: str) -> tuple[dict[str, object], ...]:
+    rows = read_jsonl_gzip(output / "panel" / replicate / "positions.jsonl.gz")
+    if not rows:
+        raise ValidationError("target panel artifact is empty")
+    return tuple(rows)
+
+
+def validate_targets(output: Path, plan: Mapping[str, object]) -> dict[str, object]:
+    """Fully regenerate every retained world/candidate target using validator-local mechanics."""
+    started = time.perf_counter()
+    policies, leaf = policy_bundle(plan)
+    total_units = 0
+    total_leaves = 0
+    total_samples = 0
+    cap_errors = 0
+    transcript_count = 0
     for replicate in ("replicate-1", "replicate-2", "replicate-3"):
         root = output / "rollouts" / replicate
         manifest = read(root / "manifest.json")
         artifact(manifest, f"rollout manifest {replicate}")
+        panel_rows = _panel_rows_for_target(output, replicate)
+        observations: dict[str, PlayerObservation] = {}
+        panel_by_index: dict[int, dict[str, object]] = {}
+        for index, row in enumerate(panel_rows):
+            if row.get("replicate_id") != replicate or row.get("stratum") not in STRATA:
+                raise ValidationError("retained target panel row identity is malformed")
+            observation = parse_observation(row.get("observation"))
+            if safe_identity(observation) != row.get("safe_identity"):
+                raise ValidationError("retained target panel safe identity differs")
+            observations[cast(str, row["safe_identity"])] = observation
+            panel_by_index[index] = row
         with np.load(root / "targets.npz", allow_pickle=False) as data:
             required = {
                 "features",
@@ -394,34 +1339,129 @@ def validate_targets(output: Path, plan: Mapping[str, object]) -> None:
             }
             if set(data.files) != required or data["features"].shape[1] != 519:
                 raise ValidationError(f"target array schema differs: {replicate}")
-            if not np.all(np.isfinite(data["features"])) or not np.all(
-                (data["targets"] >= 0) & (data["targets"] <= 1)
-            ):
-                raise ValidationError(f"target values are outside safe finite bounds: {replicate}")
-            leaves = 0
-            samples = 0
-            for identity, rows in zip(
-                data["safe_identity"].tolist(), data["sample_json"].tolist(), strict=True
-            ):
-                parsed = json.loads(str(rows))
-                if not isinstance(parsed, list) or len(parsed) != 10:
-                    raise ValidationError("target row lacks ten common worlds")
-                for row in parsed:
-                    if row["terminal"] == row["depth_leaf"] or row["world_seed"] != derive_seed(
-                        ROOT_SEED, f"step4:world:{replicate}:{identity}:{row['world_index']}"
-                    ):
-                        raise ValidationError(
-                            "target common-random-number or terminal flags differ"
+            expected_panel = cast(list[object], read(root / "targets.json")["panel"])
+            if len(expected_panel) != len(panel_rows):
+                raise ValidationError("target manifest panel count differs")
+            cursor_by_position: Counter[int] = Counter()
+            for row_index in range(int(data["targets"].size)):
+                position_index = int(data["position_index"][row_index])
+                panel = panel_by_index.get(position_index)
+                if panel is None:
+                    raise ValidationError("target row position index is out of panel bounds")
+                identity = str(data["safe_identity"][row_index])
+                label = str(data["stratum"][row_index])
+                if identity != panel["safe_identity"] or label != panel["stratum"]:
+                    raise ValidationError("target row panel identity/order differs")
+                observation = observations[identity]
+                candidate = parse_action(json.loads(str(data["action_json"][row_index])))
+                expected_actions = canonical_actions(observation.legal_actions)
+                expected_candidate = expected_actions[cursor_by_position[position_index]]
+                cursor_by_position[position_index] += 1
+                if candidate != expected_candidate:
+                    raise ValidationError("candidate semantic ordering differs")
+                vector = np.asarray(
+                    encode_candidate(observation, candidate).vector, dtype=np.float32
+                )
+                if (
+                    vector.tobytes()
+                    != np.asarray(data["features"][row_index], dtype=np.float32).tobytes()
+                ):
+                    raise ValidationError("target feature vector/digest differs")
+                retained_samples = json.loads(str(data["sample_json"][row_index]))
+                if not isinstance(retained_samples, list) or len(retained_samples) != 10:
+                    raise ValidationError("target row lacks fixed ten worlds")
+                expected_samples: list[dict[str, object]] = []
+                for world_index in range(10):
+                    try:
+                        sample, _ = local_rollout(
+                            observation,
+                            replicate,
+                            identity,
+                            candidate,
+                            world_index,
+                            policies,
+                            leaf,
                         )
-                    leaves += int(row["depth_leaf"])
-                    samples += 1
-            if samples == 0 or leaves / samples > 0.5 or manifest.get("mechanical_cap_errors") != 0:
-                raise ValidationError(f"target leaf/cap gate fails: {replicate}")
-        transcripts = read_jsonl_gzip(root / "trusted-world-transcripts.jsonl.gz")
-        if len(transcripts) != 140 or any(
-            row.get("quarantine") != "trusted-hidden-rollout-audit-only-v1" for row in transcripts
-        ):
-            raise ValidationError(f"trusted transcript quarantine/count differs: {replicate}")
+                    except ValidationError:
+                        cap_errors += 1
+                        raise
+                    retained = retained_samples[world_index]
+                    if not isinstance(retained, Mapping) or not _sample_equal(sample, retained):
+                        raise ValidationError("local rollout sample differs from retained target")
+                    expected_samples.append(sample)
+                mean = sum(cast(float, sample["root_value"]) for sample in expected_samples) / 10
+                if (
+                    np.asarray(mean, dtype=np.float32).tobytes()
+                    != np.asarray(data["targets"][row_index], dtype=np.float32).tobytes()
+                ):
+                    raise ValidationError("ten-world rollout target differs")
+                total_units += 10
+                total_samples += 10
+                total_leaves += sum(bool(sample["depth_leaf"]) for sample in expected_samples)
+            for position_index, panel in panel_by_index.items():
+                if cursor_by_position[position_index] != len(
+                    observations[cast(str, panel["safe_identity"])].legal_actions
+                ):
+                    raise ValidationError(
+                        "target rows do not cover every legal candidate exactly once"
+                    )
+        actual_transcripts = read_jsonl_gzip(root / "trusted-world-transcripts.jsonl.gz")
+        expected_transcripts: list[dict[str, object]] = []
+        for label in STRATA:
+            panel = next(row for row in panel_rows if row["stratum"] == label)
+            identity = cast(str, panel["safe_identity"])
+            observation = observations[identity]
+            candidate = canonical_actions(observation.legal_actions)[0]
+            assignments = local_assignments(replicate, identity)
+            for world_index in range(10):
+                sample, steps = local_rollout(
+                    observation,
+                    replicate,
+                    identity,
+                    candidate,
+                    world_index,
+                    policies,
+                    leaf,
+                    transcript=True,
+                )
+                p1_slot, p2_slot = assignments[world_index]
+                expected_transcripts.append(
+                    {
+                        "replicate_id": replicate,
+                        "stratum": label,
+                        "safe_identity": identity,
+                        "candidate": local_action_data(candidate),
+                        "world_index": world_index,
+                        "world_seed": sample["world_seed"],
+                        "player_one_policy_id": policy_id(p1_slot),
+                        "player_two_policy_id": policy_id(p2_slot),
+                        "steps": steps,
+                        "terminal": sample["terminal"],
+                        "quarantine": "trusted-hidden-rollout-audit-only-v1",
+                    }
+                )
+        if actual_transcripts != expected_transcripts:
+            raise ValidationError("local trusted transcript reconstruction differs")
+        if len(actual_transcripts) != 140:
+            raise ValidationError("trusted transcript count differs per replicate")
+        transcript_count += len(actual_transcripts)
+        declared = cast(Mapping[str, object], manifest)
+        if declared.get("mechanical_cap_errors") != 0:
+            raise ValidationError("retained rollout manifest records cap errors")
+    elapsed = time.perf_counter() - started
+    if transcript_count != 420 or total_samples == 0:
+        raise ValidationError("trusted transcript/global target cardinality differs")
+    leaf_fraction = total_leaves / total_samples
+    if leaf_fraction > 0.5 or cap_errors != 0:
+        raise ValidationError("local rollout leaf/cap eligibility gate fails")
+    return {
+        "target_work_units": total_units,
+        "target_elapsed_seconds": elapsed,
+        "target_units_per_second": total_units / elapsed if elapsed else float("inf"),
+        "depth_leaf_fraction": leaf_fraction,
+        "mechanical_cap_errors": cap_errors,
+        "transcript_count": transcript_count,
+    }
 
 
 def validate_arenas_and_stats(output: Path, smoke: bool) -> None:
@@ -488,26 +1528,110 @@ def validate_checksums(output: Path) -> None:
             raise ValidationError(f"checksum differs: {relative}")
 
 
+def _number(value: object, label: str) -> float:
+    if not isinstance(value, int | float):
+        raise ValidationError(f"{label} must be numeric")
+    return float(value)
+
+
+def write_runtime_preflight(
+    output: Path,
+    plan: Mapping[str, object],
+    timings: Mapping[str, float],
+    target: Mapping[str, object],
+) -> dict[str, object]:
+    production = read(output / "runtime-extrapolation.json")
+    artifact(production, "production runtime")
+    production_minutes = _number(production.get("projected_full_minutes"), "production minutes")
+    production_units = _number(production.get("rollout_units_per_second"), "production units/s")
+    production_leaf = _number(production.get("leaf_fraction"), "production leaf fraction")
+    target_units = _number(target.get("target_work_units"), "validator target units")
+    target_seconds = _number(target.get("target_elapsed_seconds"), "validator target seconds")
+    target_rate = _number(target.get("target_units_per_second"), "validator target units/s")
+    execution = cast(Mapping[str, object], plan["execution"])
+    claim_mode = execution.get("claim") is True
+    full_target_units = 42_000 if not claim_mode else target_units
+    target_ratio = full_target_units / target_units
+    current_games = _number(
+        cast(Mapping[str, object], plan["arenas"])["total_physical_games"], "current arena games"
+    )
+    arena_ratio = 24_000 / current_games
+    independent_full_seconds = (
+        timings.get("checksums", 0.0)
+        + timings.get("panel", 0.0)
+        + timings.get("controls", 0.0)
+        + target_seconds * target_ratio
+        + timings.get("arenas_stats", 0.0) * arena_ratio
+    )
+    combined_minutes = production_minutes + independent_full_seconds / 60
+    target_leaf = _number(target.get("depth_leaf_fraction"), "validator leaf fraction")
+    target_caps = target.get("mechanical_cap_errors")
+    if type(target_caps) is not int:
+        raise ValidationError("validator mechanical cap count is malformed")
+    result = {
+        "version": "m7-counterfactual-rollout-independent-runtime-preflight-v1",
+        "source_code_fingerprint": cast(Mapping[str, object], plan["source"])["code_fingerprint"],
+        "input_manifest_fingerprint": plan["input_manifest_fingerprint"],
+        "validator_phase_seconds": dict(timings),
+        "validator_target_work_units": target_units,
+        "validator_target_units_per_second": target_rate,
+        "validator_target_leaf_fraction": target_leaf,
+        "validator_mechanical_cap_errors": target_caps,
+        "validator_full_target_projection_seconds": target_seconds * target_ratio,
+        "validator_full_projection_minutes": independent_full_seconds / 60,
+        "production_full_projection_minutes": production_minutes,
+        "combined_full_projection_minutes": combined_minutes,
+        "claim_cutoff_minutes": 465,
+        "production_units_per_second": production_units,
+        "both_target_throughputs_at_least_67": production_units >= 67 and target_rate >= 67,
+        "leaf_and_cap_gate": production_leaf <= 0.5 and target_leaf <= 0.5 and target_caps == 0,
+        "claim_eligible": production_units >= 67
+        and target_rate >= 67
+        and production_leaf <= 0.5
+        and target_leaf <= 0.5
+        and target_caps == 0
+        and combined_minutes < 465,
+    }
+    result["artifact_fingerprint"] = digest(result)
+    (output / "preflight-runtime.json").write_bytes(canonical(result) + b"\n")
+    return result
+
+
 def validate(output: Path, step3_root: Path) -> dict[str, object]:
+    started = time.perf_counter()
     static_source_guard()
     plan = read(output / "plan.json")
     if plan.get("cycle_id") != CYCLE_ID:
         raise ValidationError("wrong cycle")
     smoke = cast(Mapping[str, object], plan["execution"]).get("claim") is False
+    timings: dict[str, float] = {}
+    stage = time.perf_counter()
     validate_checksums(output)
+    timings["checksums"] = time.perf_counter() - stage
+    stage = time.perf_counter()
     validate_panels(output, step3_root, plan)
-    validate_targets(output, plan)
+    timings["panel"] = time.perf_counter() - stage
+    target = validate_targets(output, plan)
+    timings["targets"] = _number(target["target_elapsed_seconds"], "target elapsed")
+    stage = time.perf_counter()
     validate_controls(output, step3_root, plan)
+    timings["controls"] = time.perf_counter() - stage
+    stage = time.perf_counter()
     validate_arenas_and_stats(output, smoke)
+    timings["arenas_stats"] = time.perf_counter() - stage
+    timings["total"] = time.perf_counter() - started
+    runtime = write_runtime_preflight(output, plan, timings, target)
     return {
-        "version": "m7-counterfactual-rollout-independent-validation-v1",
+        "version": "m7-counterfactual-rollout-independent-validation-v2",
         "plan_fingerprint": plan["plan_fingerprint"],
         "status": "passed",
+        "runtime_preflight_fingerprint": runtime["artifact_fingerprint"],
         "checks": {
             "source_guard": True,
             "input_control_reproduction": True,
             "local_panel_quotas_and_identities": True,
-            "local_target_seed_leaf_and_quarantine_checks": True,
+            "local_latent_sampler_transition_target_recomputation": True,
+            "local_transcript_recomputation_and_quarantine": True,
             "local_arena_schedule_aggregate": True,
             "statistics_selection": True,
             "checksums": True,

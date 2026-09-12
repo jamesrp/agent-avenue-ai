@@ -68,7 +68,7 @@ def test_independent_validator_has_no_forbidden_rollout_or_aggregate_imports() -
         if isinstance(node, ast.ImportFrom) and node.module is not None
     }
     forbidden = {
-        "agent_avenue.rollout.identity",
+        "agent_avenue.observation.build",
         "agent_avenue.rollout.latent",
         "agent_avenue.rollout.targets",
         "agent_avenue.rollout.artifact",

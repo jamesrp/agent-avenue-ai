@@ -23,7 +23,7 @@ def main() -> int:
     mode.add_argument("--smoke", action="store_true", help="run the bounded nonclaim smoke")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--step3-root", type=Path)
-    parser.add_argument("--holdout-root", action="append", type=Path)
+    parser.add_argument("--validator-preflight", type=Path)
     parser.add_argument(
         "--smoke-treatment-epochs",
         type=int,
@@ -40,6 +40,7 @@ def main() -> int:
             or args.step3_root is not None
             or args.holdout_root
             or args.smoke_treatment_epochs != 1
+            or args.validator_preflight is None
         ):
             parser.error(
                 "--claim fixes output, Step-3 root, holdout roots, and has no smoke options"
@@ -48,9 +49,12 @@ def main() -> int:
             output=exact_output,
             step3_root=exact_step3,
             holdout_roots=(root / "runs",),
+            validator_preflight=args.validator_preflight,
             claim=True,
         )
     else:
+        if args.validator_preflight is not None:
+            parser.error("--validator-preflight is only valid with --claim")
         if args.step3_root is None:
             parser.error("--smoke requires --step3-root retained input")
         output = args.output or Path(tempfile.mkdtemp(prefix="agent-avenue-step4-smoke-"))

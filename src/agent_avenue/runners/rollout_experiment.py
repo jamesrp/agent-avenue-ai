@@ -153,6 +153,7 @@ class RolloutExperimentConfig:
     step3_root: Path
     input_manifest: Path = Path("research/cycles/m7-counterfactual-rollout-inputs.json")
     holdout_roots: tuple[Path, ...] = field(default_factory=lambda: (repository_root() / "runs",))
+    validator_preflight: Path | None = None
     claim: bool = False
     smoke_positions_per_stratum: int | None = None
     smoke_treatment_epochs: int | None = None
@@ -166,6 +167,10 @@ class RolloutExperimentConfig:
             self.smoke_treatment_epochs,
             self.smoke_arena_pairs,
         )
+        if not self.claim and self.validator_preflight is not None:
+            raise RolloutExperimentError(
+                "nonclaim smoke cannot consume a claim validator preflight"
+            )
         if self.claim and any(value is not None for value in smoke_values):
             raise RolloutExperimentError("claim configuration cannot use smoke reductions")
         if not self.claim and any(value is None for value in smoke_values):
@@ -1688,6 +1693,8 @@ def _checksums(output: Path) -> dict[str, object]:
         "wrapper-exit.json",
         "validation.stdout",
         "validation.stderr",
+        "validator-runtime.json",
+        "preflight-runtime.json",
     }
     entries: dict[str, str] = {}
     for path in sorted(output.rglob("*")):
@@ -1811,6 +1818,34 @@ def _exact_claim_config(config: RolloutExperimentConfig) -> bool:
     )
 
 
+def _validator_preflight(
+    path: Path | None,
+    *,
+    source: Mapping[str, object],
+    input_manifest_fingerprint: object,
+) -> tuple[dict[str, object] | None, str | None]:
+    if path is None:
+        return None, "missing_independent_validator_preflight"
+    try:
+        value = _read(path)
+    except RolloutExperimentError:
+        return None, "unreadable_independent_validator_preflight"
+    expected = _fingerprint(
+        {key: item for key, item in value.items() if key != "artifact_fingerprint"}
+    )
+    if (
+        value.get("version") != "m7-counterfactual-rollout-independent-runtime-preflight-v1"
+        or value.get("artifact_fingerprint") != expected
+        or value.get("claim_eligible") is not True
+        or value.get("both_target_throughputs_at_least_67") is not True
+        or value.get("leaf_and_cap_gate") is not True
+        or value.get("source_code_fingerprint") != source.get("code_fingerprint")
+        or value.get("input_manifest_fingerprint") != input_manifest_fingerprint
+    ):
+        return None, "invalid_independent_validator_preflight"
+    return value, None
+
+
 def build_rollout_experiment_plan(config: RolloutExperimentConfig) -> dict[str, object]:
     manifest, inputs, input_audit = verify_step3_inputs(config)
     source, cells = _source_identity(), _cells(config)
@@ -1820,6 +1855,13 @@ def build_rollout_experiment_plan(config: RolloutExperimentConfig) -> dict[str, 
         reasons.append("bounded_nonclaim_smoke")
     if config.claim and not _exact_claim_config(config):
         reasons.append("claim_paths_must_be_exact_frozen_defaults")
+    validator_preflight, preflight_reason = _validator_preflight(
+        config.validator_preflight,
+        source=source,
+        input_manifest_fingerprint=manifest["artifact_fingerprint"],
+    )
+    if config.claim and preflight_reason is not None:
+        reasons.append(preflight_reason)
     if (
         source["tracked_tree_clean"] is not True
         or cast(Mapping[str, object], source["runner_clean_check"])[
@@ -1865,6 +1907,17 @@ def build_rollout_experiment_plan(config: RolloutExperimentConfig) -> dict[str, 
             "treatment_epochs": config.treatment_epochs,
             "claim_cutoff_seconds": CLAIM_CUTOFF_SECONDS,
             "hard_budget_seconds": HARD_BUDGET_SECONDS,
+            "validator_preflight": (
+                None
+                if validator_preflight is None
+                else {
+                    "path": str(cast(Path, config.validator_preflight).resolve()),
+                    "artifact_fingerprint": validator_preflight["artifact_fingerprint"],
+                    "combined_full_projection_minutes": validator_preflight[
+                        "combined_full_projection_minutes"
+                    ],
+                }
+            ),
         },
         "holdout_scope": {
             "roots": [str(path.resolve()) for path in config.holdout_roots],

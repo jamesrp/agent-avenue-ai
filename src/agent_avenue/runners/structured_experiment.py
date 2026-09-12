@@ -520,7 +520,7 @@ def _step2_global_input_audit(
     ):
         raise StructuredExperimentError("retained Step-2 plan claim source differs")
     archive = root / "artifacts/archive/m7-population-replay-v1-2026-09-12.tar.gz"
-    archive_sidecar = archive.with_suffix(".tar.gz.sha256")
+    archive_sidecar = Path(f"{archive}.sha256")
     if (
         not archive.is_file()
         or not archive_sidecar.is_file()

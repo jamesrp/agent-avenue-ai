@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 12, 2026
-**Overall state:** Step 3 complete; Step 4 agreement and inputs frozen, implementation pending
+**Overall state:** Step 3 complete; Step 4 claim run ready to dispatch
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -40,7 +40,7 @@ public-history signaling, and specializes to narrow self-play distributions.
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
 | 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
 | 3. Structured model v2 | Complete; does not advance | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | `b1f2b6f` through `7321aa1` | Six fits + 30,000 games; exact-source validation passed after one operational repair | [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](../../docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) |
-| 4. Counterfactual rollouts | Agreement frozen | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | Pending | Pending | Pending |
+| 4. Counterfactual rollouts | Claim-ready | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | `b20699b`, `1b381b9`, `bcc0c04`, `6337f8f`, `6c46d3b`, `a739db3`, `c9a69d1`, `e2029e9`, `cb0e045` | Pending | Pending |
 | 5. Independent league | Authorized, waiting | Pending | Pending | Pending | Pending |
 
 ## Completed step 1
@@ -107,7 +107,13 @@ The complete Step-3/continuation input freeze is `m7-counterfactual-rollout-inpu
 - `b18a13e`: exhaustive setup holdout and corrected guaranteed-win prefix endpoints.
 - `23fe496`: independent validator path, frozen provenance checks, whole-step budget metadata, and
   descriptive-only direct comparison.
-- Current validation: Ruff and strict mypy pass; 291 tests pass.
+- Current validation: Ruff and strict mypy pass; 315 tests pass.
+- Step-4 implementation: safe latent rollout core, target artifacts, paired auxiliary trainer,
+  control reproduction, 54-cell experiment, complete independent target/arena/statistics/tactical
+  validator, and result/checksum/deadline boundaries are committed.
+- Step-4 smoke: one position in every stratum, exact controls, targets, treatment fits, arena, and
+  independent validation passed. Production and validator target rates are about 160 units/s;
+  corrected combined projection is 204.73 minutes with leaf fractions below 50% and zero cap errors.
 - Step-3 implementation: structured encoder/model/data/checkpoint/agent, six-fit runner, 60-cell
   evaluation, nested interaction statistics, robustness-floor selection, historical compatibility,
   deadline/resume/checksum boundaries, and independent local feature/arena/statistics validation are
@@ -120,6 +126,10 @@ The complete Step-3/continuation input freeze is `m7-counterfactual-rollout-inpu
 
 ## Decision log
 
+- **September 12 — step-4 implementation freeze:** rollout core and experiment workers completed
+  the provenance-safe latent state, 10-world depth-nine target teacher, exact control reproduction,
+  paired rollout-loss trainer, claim evaluation, and fully independent numeric target/arena/checksum
+  validation. Final preflight is GO at a 204.73-minute combined projection.
 - **September 12 — step-4 agreement freeze:** 280 positions/replicate across 14 feasible strata,
   10 copy-weighted worlds/candidate, depth-nine q0-leaf targets, safe-only target identity, independent
   policy permutations/per-decision RNG, fixed 0.20 rollout BCE, exact control reproduction, and a

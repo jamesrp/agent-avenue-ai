@@ -3,7 +3,7 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 4 of 5
 **Cycle:** `m7-counterfactual-rollout-supervision-v1`
-**Status:** Approved after feasibility and information-safety review; implementation pending
+**Status:** Approved and implementation-frozen; claim run pending
 **Approved:** September 12, 2026
 **Budget:** one CPU process; claim cutoff 7 h 45 min; hard stop 8 h
 **Parent:** Step-3 mixed-data structured-v2 development recipe M
@@ -503,3 +503,29 @@ permit reducing panel positions, worlds, depth, games, or replicates.
 this fixed rollout teacher under the declared CPU, policy population, exchangeable public-count
 prior, depth-nine/q0-leaf rule, and development league. It does not establish a correct learned
 belief, game-theoretic values, optimal play, or a universal benefit from rollout supervision.
+
+## 11. Frozen implementation and preflight
+
+- `b20699b`: safe panel identity/selection, latent world state/sampler/observer/transitions,
+  candidate-independent continuation assignments/RNG, depth-nine q0-leaf targets, target artifacts,
+  and paired rollout-loss training primitives.
+- `1b381b9`, `bcc0c04`, `6337f8f`, `6c46d3b`: resumable experiment, sharded targets, control
+  reproduction, claim/smoke CLI, and validator-local numeric latent target recomputation.
+- `a739db3`, `c9a69d1`, `e2029e9`: matched claim arena groups, complete local claim statistics,
+  corrected production/validator projections, and serialized report compatibility.
+- `cb0e045`: exact result/cardinality/reference/checksum validation and independent treatment
+  tactical replay.
+
+A retained-input one-position-per-stratum smoke at `/tmp/agent-avenue-step4-smoke-3ac1e6f` passed
+production and independent validation. Production target throughput was 159.93 units/s; independent
+recomputation was 160.32 units/s. Maximum production leaf fraction was 46.86%, validator pooled leaf
+fraction 45.62%, and mechanical cap errors were zero. The corrected full combined projection is
+204.73 minutes, below the 465-minute claim cutoff.
+
+The immutable preflight input is retained at
+`artifacts/preflight/m7-counterfactual-rollout-preflight-cb0e045.json`, artifact fingerprint
+`557d16a9ee239500c7f9064311d16684b65b10b226b2a2430f6f723660088c7d`, bound to package code
+fingerprint `81913c1e52a22776fde97661936b7793f51f6c6882ce418aa76220a03de258d7` and input manifest
+fingerprint `53ba97aed7c40a87b25f5adc1b7925e28f4aad49bd0bfb758e78b125b54181e8`.
+
+Ruff, strict mypy, and 315 tests pass. A final fresh preflight review is GO.

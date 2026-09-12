@@ -14,7 +14,9 @@ import hashlib
 import json
 import math
 import struct
+import subprocess
 import sys
+import time
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -48,7 +50,15 @@ from agent_avenue.learning import (
 )
 from agent_avenue.observation import observe
 from agent_avenue.observation.model import PlayerObservation, PublicPlayer, RecruitContext
-from agent_avenue.storage import game_record_fingerprint, load_corpus
+from agent_avenue.storage import (
+    code_fingerprint,
+    game_record_fingerprint,
+    inspect_source_identity,
+    load_corpus,
+    repository_root,
+    rules_fingerprint,
+    verify_game_record,
+)
 
 CYCLE_ID = "m7-structured-model-v2"
 ROOT_SEED = 2026091203
@@ -443,6 +453,10 @@ def replay_dataset(corpus: Path, v1_dataset: Path, v2_dataset: Path) -> None:
         if not isinstance(fingerprint, str):
             raise ValidationError("v1 source ordering is malformed")
         record = by_fingerprint[fingerprint]
+        final_state = verify_game_record(record, verify_code=False)
+        if final_state.outcome is None:
+            raise ValidationError("nonterminal historical replay")
+        winner = final_state.outcome.winner
         state = new_game(record.replay.config, record.replay.seed)
         destination = "train" if fingerprint in train_ids else "validation"
         for decision_index, action in enumerate(record.replay.actions):
@@ -450,18 +464,10 @@ def replay_dataset(corpus: Path, v1_dataset: Path, v2_dataset: Path) -> None:
                 state.active_player if state.phase is Phase.PLAY else state.active_player.other()
             )
             vector = local_encode(observe(state, actor), action)
-            final = record.replay.actions
-            del final
-            # Winner is available from replay verification performed by corpus load.
-            from agent_avenue.storage import verify_game_record
-
-            outcome = verify_game_record(record, verify_code=False).outcome
-            if outcome is None:
-                raise ValidationError("nonterminal historical replay")
             rebuilt[destination].append(
                 (
                     vector,
-                    float(actor is outcome.winner),
+                    float(actor is winner),
                     game_index,
                     state.phase.value,
                     fingerprint,
@@ -496,20 +502,23 @@ def replay_dataset(corpus: Path, v1_dataset: Path, v2_dataset: Path) -> None:
 def local_tactical(records: Sequence[object]) -> None:
     for raw in records:
         record = cast(object, raw)
-        # Structural typing is intentionally avoided for independently loaded storage values.
         replay = record.replay
+        seats = record.seats
         state = new_game(replay.config, replay.seed)
         for action in replay.actions:
             actor = (
                 state.active_player if state.phase is Phase.PLAY else state.active_player.other()
             )
+            seat = seats[0 if actor is PlayerId.PLAYER_ONE else 1]
             observation = observe(state, actor)
-            safety = filter_terminal_actions(observation, observation.legal_actions)
-            offense = filter_immediate_win_actions(observation, observation.legal_actions)
-            if action in safety.provable_loss_actions and not safety.forced_loss_fallback:
-                raise ValidationError("learned envelope executed avoidable immediate loss")
-            if offense.forced_win_actions and action not in offense.forced_win_actions:
-                raise ValidationError("learned envelope missed guaranteed current-turn win")
+            # Canonical random/heuristic/historical comparators are intentionally unwrapped.
+            if seat.config.get("type") == "terminal_offense":
+                safety = filter_terminal_actions(observation, observation.legal_actions)
+                offense = filter_immediate_win_actions(observation, observation.legal_actions)
+                if action in safety.provable_loss_actions and not safety.forced_loss_fallback:
+                    raise ValidationError("learned envelope executed avoidable immediate loss")
+                if offense.forced_win_actions and action not in offense.forced_win_actions:
+                    raise ValidationError("learned envelope missed guaranteed current-turn win")
             state = apply_action(state, action)
 
 
@@ -528,9 +537,9 @@ def nested(rows: tuple[tuple[float, ...], ...], domain: str) -> dict[str, object
     count = len(rows[0])
     seed = derive_seed(ROOT_SEED, f"step3:nested-bootstrap:{domain}") & ((1 << 63) - 1)
     rng = DeterministicRandom(seed, f"step3:nested-bootstrap:{domain}")
-    outer = tuple(tuple(rng.randbelow(3) for _ in range(3)) for _ in range(RESAMPLES))
     values: list[float] = []
-    for selected in outer:
+    for _ in range(RESAMPLES):
+        selected = tuple(rng.randbelow(3) for _ in range(3))
         values.append(
             sum(
                 sum(rows[index][rng.randbelow(count)] for _ in range(count)) / count
@@ -547,93 +556,346 @@ def nested(rows: tuple[tuple[float, ...], ...], domain: str) -> dict[str, object
     }
 
 
+def joint(
+    control: tuple[tuple[float, ...], ...],
+    mixed: tuple[tuple[float, ...], ...],
+    *,
+    interaction: bool,
+) -> dict[str, object]:
+    count = len(control[0]) if control else 0
+    if (
+        len(control) != 3
+        or len(mixed) != 3
+        or count == 0
+        or any(len(row) != count for row in (*control, *mixed))
+    ):
+        raise ValidationError("independent joint architecture rows are malformed")
+    domain = "interaction" if interaction else "pooled-architecture-main-effect"
+    seed = derive_seed(ROOT_SEED, f"step3:nested-bootstrap:{domain}") & ((1 << 63) - 1)
+    rng = DeterministicRandom(seed, f"step3:nested-bootstrap:{domain}")
+    values: list[float] = []
+    for _ in range(RESAMPLES):
+        selected = tuple(rng.randbelow(3) for _ in range(3))
+        means: list[float] = []
+        for replicate in selected:
+            indexes = tuple(rng.randbelow(count) for _ in range(count))
+            c = sum(control[replicate][index] for index in indexes) / count
+            m = sum(mixed[replicate][index] for index in indexes) / count
+            means.append(m - c if interaction else (m + c) / 2)
+        values.append(sum(means) / 3)
+    values.sort()
+    point_c = sum(sum(row) / count for row in control) / 3
+    point_m = sum(sum(row) / count for row in mixed) / 3
+    return {
+        "point_estimate": point_m - point_c if interaction else (point_m + point_c) / 2,
+        "interval": [values[LOWER], values[UPPER]],
+        "seed": seed,
+        "domain": domain,
+    }
+
+
+def macro(rows: Mapping[str, tuple[tuple[float, ...], ...]], arm: str) -> dict[str, object]:
+    if set(rows) != set(OPPONENTS):
+        raise ValidationError("macro opponent keys differ")
+    domain = f"{arm}-equal-eight-opponent-macro"
+    seed = derive_seed(ROOT_SEED, f"step3:nested-bootstrap:{domain}") & ((1 << 63) - 1)
+    rng = DeterministicRandom(seed, f"step3:nested-bootstrap:{domain}")
+    values: list[float] = []
+    for resample_index in range(RESAMPLES):
+        selected = tuple(rng.randbelow(3) for _ in range(3))
+        replicate_means: list[float] = []
+        for occurrence_index, replicate in enumerate(selected):
+            opponents: list[float] = []
+            for opponent in OPPONENTS:
+                row = rows[opponent][replicate]
+                inner = (
+                    f"{domain}:opponent:{opponent}:resample:{resample_index}:"
+                    f"occurrence:{occurrence_index}"
+                )
+                local = DeterministicRandom(
+                    derive_seed(ROOT_SEED, f"step3:nested-bootstrap:{inner}") & ((1 << 63) - 1),
+                    f"step3:nested-bootstrap:{inner}",
+                )
+                opponents.append(
+                    sum(row[local.randbelow(len(row))] for _ in range(len(row))) / len(row)
+                )
+            replicate_means.append(sum(opponents) / len(opponents))
+        values.append(sum(replicate_means) / 3)
+    values.sort()
+    point = sum(
+        sum(sum(row) / len(row) for row in rows[opponent]) / 3 for opponent in OPPONENTS
+    ) / len(OPPONENTS)
+    return {
+        "point_estimate": point,
+        "interval": [values[LOWER], values[UPPER]],
+        "seed": seed,
+        "domain": domain,
+    }
+
+
+def same_block(left: Mapping[str, object], right: Mapping[str, object]) -> None:
+    left_rows = cast(Mapping[str, object], left["report"]).get("paired_seed_outcomes")
+    right_rows = cast(Mapping[str, object], right["report"]).get("paired_seed_outcomes")
+    if (
+        not isinstance(left_rows, list)
+        or not isinstance(right_rows, list)
+        or len(left_rows) != len(right_rows)
+    ):
+        raise ValidationError("shared arena block cardinality differs")
+    if any(
+        cast(Mapping[str, object], one).get("pair_id")
+        != cast(Mapping[str, object], two).get("pair_id")
+        for one, two in zip(left_rows, right_rows, strict=True)
+    ):
+        raise ValidationError("shared arena pair identifiers differ")
+
+
 def local_statistics(arena_artifacts: Mapping[str, Mapping[str, object]]) -> dict[str, object]:
-    architecture = {arm: [] for arm in ARMS}
+    architecture: dict[str, list[tuple[float, ...]]] = {arm: [] for arm in ARMS}
     data: list[tuple[float, ...]] = []
-    parent = {arm: [] for arm in ARMS}
-    random_rows = {arm: [] for arm in ARMS}
-    heuristic = {arm: [] for arm in ARMS}
+    parent: dict[str, list[tuple[float, ...]]] = {arm: [] for arm in ARMS}
+    random_rows: dict[str, list[tuple[float, ...]]] = {arm: [] for arm in ARMS}
+    heuristic: dict[str, list[tuple[float, ...]]] = {arm: [] for arm in ARMS}
+    external: dict[str, dict[str, list[tuple[float, ...]]]] = {
+        arm: {opponent: [] for opponent in OPPONENTS} for arm in ARMS
+    }
     seats = {arm: 1.0 for arm in ARMS}
+    per_replicate: list[dict[str, object]] = []
     for replicate in REPLICATES:
         index = replicate.removeprefix("replicate-")
-        reference = pair_scores(
-            cast(
-                Mapping[str, object],
-                arena_artifacts[f"q0-parent-vs-heuristic-reference-{index}"]["report"],
-            )
-        )
+        reference = arena_artifacts[f"q0-parent-vs-heuristic-reference-{index}"]
+        row: dict[str, object] = {"replicate_id": replicate, "arms": {}}
         for arm in ARMS:
-            architecture[arm].append(
-                pair_scores(
-                    cast(Mapping[str, object], arena_artifacts[f"{arm}{index}-v2-vs-v1"]["report"])
-                )
-            )
-            parent[arm].append(
-                pair_scores(
-                    cast(
-                        Mapping[str, object],
-                        arena_artifacts[f"{arm}{index}-v2-vs-q0-parent"]["report"],
-                    )
-                )
-            )
+            direct = arena_artifacts[f"{arm}{index}-v2-vs-v1"]
+            candidate_parent = arena_artifacts[f"{arm}{index}-v2-vs-q0-parent"]
+            candidate_random = arena_artifacts[f"{arm}{index}-v2-vs-random"]
+            candidate_heuristic = arena_artifacts[f"{arm}{index}-v2-vs-heuristic"]
+            same_block(candidate_heuristic, reference)
+            architecture[arm].append(pair_scores(cast(Mapping[str, object], direct["report"])))
+            parent[arm].append(pair_scores(cast(Mapping[str, object], candidate_parent["report"])))
             random_rows[arm].append(
-                pair_scores(
-                    cast(
-                        Mapping[str, object],
-                        arena_artifacts[f"{arm}{index}-v2-vs-random"]["report"],
+                pair_scores(cast(Mapping[str, object], candidate_random["report"]))
+            )
+            h = pair_scores(cast(Mapping[str, object], candidate_heuristic["report"]))
+            ref = pair_scores(cast(Mapping[str, object], reference["report"]))
+            heuristic[arm].append(tuple(a - b for a, b in zip(h, ref, strict=True)))
+            for opponent in OPPONENTS:
+                external[arm][opponent].append(
+                    pair_scores(
+                        cast(
+                            Mapping[str, object],
+                            arena_artifacts[f"{arm}{index}-v2-vs-{opponent}"]["report"],
+                        )
                     )
                 )
-            )
-            h = pair_scores(
-                cast(
-                    Mapping[str, object], arena_artifacts[f"{arm}{index}-v2-vs-heuristic"]["report"]
+            candidate_seats: list[float] = []
+            for artifact in (direct, candidate_parent, candidate_random, candidate_heuristic):
+                report = cast(Mapping[str, object], artifact["report"])
+                candidate_seats.extend(
+                    number(cast(Mapping[str, object], item).get("win_rate"), "seat")
+                    for item in cast(Mapping[str, object], report["agent_a_by_seat"]).values()
                 )
-            )
-            heuristic[arm].append(tuple(a - b for a, b in zip(h, reference, strict=True)))
-            for key in (
-                f"{arm}{index}-v2-vs-v1",
-                f"{arm}{index}-v2-vs-q0-parent",
-                f"{arm}{index}-v2-vs-random",
-                f"{arm}{index}-v2-vs-heuristic",
-            ):
-                report = cast(Mapping[str, object], arena_artifacts[key]["report"])
-                seat_values = cast(Mapping[str, object], report["agent_a_by_seat"]).values()
-                seats[arm] = min(
-                    seats[arm],
-                    *(
-                        number(cast(Mapping[str, object], item).get("win_rate"), "seat")
-                        for item in seat_values
-                    ),
-                )
-        data.append(
-            pair_scores(
-                cast(Mapping[str, object], arena_artifacts[f"M{index}-v2-vs-C{index}-v2"]["report"])
-            )
+            seats[arm] = min(seats[arm], min(candidate_seats))
+            cast(dict[str, object], row["arms"])[arm] = {
+                "architecture_v2_minus_v1": sum(architecture[arm][-1]) / len(architecture[arm][-1]),
+                "v2_vs_q0_parent": sum(parent[arm][-1]) / len(parent[arm][-1]),
+                "v2_vs_random": sum(random_rows[arm][-1]) / len(random_rows[arm][-1]),
+                "v2_minus_q0_parent_heuristic": sum(heuristic[arm][-1]) / len(heuristic[arm][-1]),
+            }
+        data_row = pair_scores(
+            cast(Mapping[str, object], arena_artifacts[f"M{index}-v2-vs-C{index}-v2"]["report"])
+        )
+        data.append(data_row)
+        row["v2_data_effect_mixed_minus_control"] = sum(data_row) / len(data_row)
+        per_replicate.append(row)
+    nested_rows: dict[str, object] = {
+        "control_architecture_v2_minus_v1": nested(
+            tuple(architecture["C"]), "control-architecture-v2-minus-v1"
+        ),
+        "mixed_architecture_v2_minus_v1": nested(
+            tuple(architecture["M"]), "mixed-architecture-v2-minus-v1"
+        ),
+        "pooled_architecture_main_effect": joint(
+            tuple(architecture["C"]), tuple(architecture["M"]), interaction=False
+        ),
+        "v2_data_effect_mixed_minus_control": nested(
+            tuple(data), "v2-data-effect-mixed-minus-control"
+        ),
+        "data_x_architecture_interaction": joint(
+            tuple(architecture["C"]), tuple(architecture["M"]), interaction=True
+        ),
+    }
+    for arm in ARMS:
+        nested_rows[f"{arm}_v2_vs_q0_parent"] = nested(tuple(parent[arm]), f"{arm}-v2-vs-q0-parent")
+        nested_rows[f"{arm}_v2_vs_random"] = nested(tuple(random_rows[arm]), f"{arm}-v2-vs-random")
+        nested_rows[f"{arm}_v2_minus_q0_parent_heuristic"] = nested(
+            tuple(heuristic[arm]), f"{arm}-v2-minus-parent-heuristic"
+        )
+        nested_rows[f"{arm}_equal_eight_opponent_macro"] = macro(
+            {name: tuple(values) for name, values in external[arm].items()}, arm
         )
     return {
-        "nested": {
-            "control_architecture_v2_minus_v1": nested(
-                tuple(architecture["C"]), "control-architecture-v2-minus-v1"
-            ),
-            "mixed_architecture_v2_minus_v1": nested(
-                tuple(architecture["M"]), "mixed-architecture-v2-minus-v1"
-            ),
-            "v2_data_effect_mixed_minus_control": nested(
-                tuple(data), "v2-data-effect-mixed-minus-control"
-            ),
-            "C_v2_vs_q0_parent": nested(tuple(parent["C"]), "C-v2-vs-q0-parent"),
-            "M_v2_vs_q0_parent": nested(tuple(parent["M"]), "M-v2-vs-q0-parent"),
-            "C_v2_vs_random": nested(tuple(random_rows["C"]), "C-v2-vs-random"),
-            "M_v2_vs_random": nested(tuple(random_rows["M"]), "M-v2-vs-random"),
-            "C_v2_minus_q0_parent_heuristic": nested(
-                tuple(heuristic["C"]), "C-v2-minus-parent-heuristic"
-            ),
-            "M_v2_minus_q0_parent_heuristic": nested(
-                tuple(heuristic["M"]), "M-v2-minus-parent-heuristic"
-            ),
-        },
+        "nested": nested_rows,
         "minimum_v2_candidate_seat": seats,
+        "per_replicate": per_replicate,
     }
+
+
+def local_selection(statistics: Mapping[str, object]) -> dict[str, object]:
+    nested_rows = cast(Mapping[str, object], statistics["nested"])
+    seats = cast(Mapping[str, object], statistics["minimum_v2_candidate_seat"])
+    replicates = cast(list[object], statistics["per_replicate"])
+
+    def lower(name: str) -> float:
+        return number(cast(Mapping[str, object], nested_rows[name])["interval"][0], name)
+
+    def point(name: str) -> float:
+        return number(cast(Mapping[str, object], nested_rows[name])["point_estimate"], name)
+
+    arms: dict[str, object] = {}
+    viable: list[tuple[float, str]] = []
+    for arm in ARMS:
+        architecture_name = (
+            "control_architecture_v2_minus_v1" if arm == "C" else "mixed_architecture_v2_minus_v1"
+        )
+        replicate_wins = sum(
+            number(
+                cast(Mapping[str, object], cast(Mapping[str, object], row["arms"])[arm])[
+                    "architecture_v2_minus_v1"
+                ],
+                "architecture",
+            )
+            > 0.5
+            for row in replicates
+        )
+        conditions = {
+            "architecture_lower_strictly_above_50": lower(architecture_name) > 0.5,
+            "two_of_three_architecture_replicates_above_50": replicate_wins >= 2,
+            "parent_lower_above_50": lower(f"{arm}_v2_vs_q0_parent") > 0.5,
+            "random_lower_above_50": lower(f"{arm}_v2_vs_random") > 0.5,
+            "parent_heuristic_difference_lower_above_minus_5pp": lower(
+                f"{arm}_v2_minus_q0_parent_heuristic"
+            )
+            > -0.05,
+            "v2_candidate_seat_floor": number(seats[arm], "seat") >= 0.45,
+            "tactical_invariants": True,
+            "integrity": True,
+        }
+        floor = min(
+            lower(architecture_name) - 0.5,
+            lower(f"{arm}_v2_vs_q0_parent") - 0.5,
+            lower(f"{arm}_v2_vs_random") - 0.5,
+            lower(f"{arm}_v2_minus_q0_parent_heuristic") + 0.05,
+            number(seats[arm], "seat") - 0.45,
+        )
+        if all(conditions[key] for key in ("tactical_invariants", "integrity")):
+            viable.append((floor, arm))
+        arms[arm] = {
+            "conditions": conditions,
+            "advancing_structured_recipe": all(conditions.values()),
+            "robustness_floor": floor,
+            "equal_opponent_macro": point(f"{arm}_equal_eight_opponent_macro"),
+            "architecture_point": point(architecture_name),
+        }
+    advancing = [
+        arm
+        for arm in ARMS
+        if cast(Mapping[str, object], arms[arm])["advancing_structured_recipe"] is True
+    ]
+    pooled = lower("pooled_architecture_main_effect") > 0.5
+    if len(advancing) == 2 and pooled:
+        classification = "general_advancement"
+    elif len(advancing) == 1:
+        classification = "data_dependent_recipe_advance"
+    else:
+        crosses = any(
+            lower(name)
+            <= 0.5
+            <= number(cast(Mapping[str, object], nested_rows[name])["interval"][1], name)
+            for name in (
+                "control_architecture_v2_minus_v1",
+                "mixed_architecture_v2_minus_v1",
+            )
+        )
+        classification = "inconclusive_does_not_advance" if crosses else "does_not_advance"
+    selected = None
+    if viable:
+        selected = sorted(
+            viable,
+            key=lambda row: (
+                row[0],
+                number(cast(Mapping[str, object], arms[row[1]])["equal_opponent_macro"], "macro"),
+                number(
+                    cast(Mapping[str, object], arms[row[1]])["architecture_point"], "architecture"
+                ),
+                1 if row[1] == "C" else 0,
+            ),
+            reverse=True,
+        )[0][1]
+    return {"classification": classification, "development_selected_step4_input_recipe": selected}
+
+
+def current_source() -> dict[str, object]:
+    identity = inspect_source_identity()
+    root = repository_root()
+    status = subprocess.run(
+        ("git", "status", "--porcelain=v1", "--untracked-files=all", "--ignored=no"),
+        cwd=root,
+        check=True,
+        capture_output=True,
+    ).stdout
+    return {
+        **identity.to_data(),
+        "rules_fingerprint": rules_fingerprint(),
+        "code_fingerprint": code_fingerprint(),
+        "runner_clean_check": {
+            "version": "structured-model-v2-runner-clean-source-v1",
+            "tracked_and_nonignored_untracked_clean": not bool(status.strip()),
+            "status_sha256": hashlib.sha256(status).hexdigest(),
+        },
+    }
+
+
+def check_completed_cardinality(
+    output: Path, plan: Mapping[str, object], result: Mapping[str, object]
+) -> None:
+    state = read(output / "execution-state.json")
+    if state.get("completed") is not True:
+        raise ValidationError("result execution state is not complete")
+    cells = cast(Mapping[str, object], plan["arenas"]).get("cells")
+    if not isinstance(cells, list) or len(cells) != 60:
+        raise ValidationError("plan does not retain all 60 Step-3 arenas")
+    keys = {f"{arm}{index}" for arm in ARMS for index in ("1", "2", "3")}
+    for name in ("datasets", "checkpoints"):
+        value = result.get(name)
+        if not isinstance(value, Mapping) or set(value) != keys:
+            raise ValidationError(f"result {name} cardinality differs")
+    arenas = result.get("arenas")
+    expected_arenas = {
+        cast(str, cast(Mapping[str, object], cell)["key"])
+        for cell in cells
+        if isinstance(cell, Mapping)
+    }
+    if not isinstance(arenas, Mapping) or set(arenas) != expected_arenas:
+        raise ValidationError("result arena cardinality differs")
+    for name in ("statistics", "safety-report", "selection", "runtime-extrapolation", "checksums"):
+        artifact = read(output / f"{name}.json")
+        check_artifact(artifact, name)
+    for key in keys:
+        artifact = read(output / "datasets" / key / "audit.json")
+        check_artifact(artifact, "dataset")
+        if cast(Mapping[str, object], result["datasets"]).get(key) != artifact.get(
+            "artifact_fingerprint"
+        ):
+            raise ValidationError("result dataset reference differs")
+    checksums = read(output / "checksums.json")
+    files = checksums.get("files")
+    if not isinstance(files, Mapping):
+        raise ValidationError("checksum files mapping is malformed")
+    for relative, expected in files.items():
+        path = output / cast(str, relative)
+        if not path.is_file() or sha256(path) != expected:
+            raise ValidationError("checksum payload differs")
 
 
 def main() -> int:
@@ -649,9 +911,17 @@ def main() -> int:
         {key: value for key, value in plan.items() if key != "plan_fingerprint"}
     ):
         raise ValidationError("plan fingerprint mismatch")
+    if plan.get("source") != current_source():
+        raise ValidationError("validator requires exact clean source, lock, code, and rules")
+    if result.get("result_fingerprint") != digest(
+        {key: value for key, value in result.items() if key != "result_fingerprint"}
+    ):
+        raise ValidationError("result fingerprint mismatch")
+    check_completed_cardinality(output, plan, result)
     execution = cast(Mapping[str, object], plan["execution"])
     if execution.get("claim_eligible") is not True and not args.allow_smoke:
         raise ValidationError("bounded evidence requires --allow-smoke")
+    started = time.perf_counter()
     inputs = cast(list[object], plan["inputs"])
     q0 = load_checkpoint(Path(cast(str, plan["q0_path"])))
     arena_artifacts: dict[str, Mapping[str, object]] = {}
@@ -666,9 +936,16 @@ def main() -> int:
         )
         replay_dataset(corpus, v1, output / "datasets" / key / "dataset.npz")
         checkpoint = load_structured_checkpoint(output / "checkpoints" / key)
-        if checkpoint.manifest.get("sources", {}).get("q0_parent", {}).get(
-            "tensor_digest"
-        ) != tensor_digest(q0.model.state_dict()):
+        if (
+            cast(Mapping[str, object], result["checkpoints"]).get(key)
+            != checkpoint.checkpoint_fingerprint
+        ):
+            raise ValidationError("result checkpoint reference differs")
+        sources = checkpoint.manifest.get("sources")
+        parent = sources.get("q0_parent") if isinstance(sources, Mapping) else None
+        if not isinstance(parent, Mapping) or parent.get("tensor_digest") != tensor_digest(
+            q0.model.state_dict()
+        ):
             raise ValidationError("structured checkpoint q0 lineage differs")
     for report_path in sorted((output / "arenas").glob("*/report.json")):
         artifact = read(report_path)
@@ -697,13 +974,27 @@ def main() -> int:
     check_artifact(safety, "safety")
     selection = read(output / "selection.json")
     check_artifact(selection, "selection")
+    independent_selection = local_selection(independent)
     retained_selection = {
         key: value
         for key, value in selection.items()
-        if key not in {"artifact_fingerprint", "plan_fingerprint"}
+        if key not in {"artifact_fingerprint", "plan_fingerprint", "version"}
     }
-    if result.get("selection") != retained_selection:
-        raise ValidationError("result selection differs")
+    if (
+        result.get("selection") != {"version": selection.get("version"), **retained_selection}
+        or retained_selection.get("classification") != independent_selection["classification"]
+        or retained_selection.get("development_selected_step4_input_recipe")
+        != independent_selection["development_selected_step4_input_recipe"]
+    ):
+        raise ValidationError("independent selection differs")
+    elapsed = time.perf_counter() - started
+    validation_runtime = {
+        "version": "m7-structured-model-v2-validation-runtime-v1",
+        "validation_seconds": elapsed,
+        "full_validation_linear_arena_multiplier": 30_000 / 120,
+    }
+    validation_runtime["artifact_fingerprint"] = digest(validation_runtime)
+    (output / "validation-runtime.json").write_bytes(canonical(validation_runtime) + b"\n")
     validation = {
         "version": "m7-structured-model-v2-independent-validation-v1",
         "status": "passed",
@@ -722,6 +1013,8 @@ def main() -> int:
     validation["artifact_fingerprint"] = digest(
         {key: value for key, value in validation.items() if key != "artifact_fingerprint"}
     )
+    if (output / "validation.json").exists() and read(output / "validation.json") != validation:
+        raise ValidationError("existing independent validation differs")
     (output / "validation.json").write_bytes(canonical(validation) + b"\n")
     print(json.dumps(validation, sort_keys=True, indent=2))
     return 0

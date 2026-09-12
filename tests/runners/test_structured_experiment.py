@@ -1,3 +1,6 @@
+import ast
+import hashlib
+import json
 from pathlib import Path
 
 from agent_avenue.runners.structured_experiment import (
@@ -8,6 +11,12 @@ from agent_avenue.runners.structured_experiment import (
     nested_bootstrap,
     structured_selection,
 )
+
+
+def _artifact_digest(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    ).hexdigest()
 
 
 def _interval(point: float, lower: float, upper: float) -> dict[str, object]:
@@ -49,15 +58,21 @@ def test_smoke_schedule_only_truncates_declared_block_counts() -> None:
 
 def test_nested_bootstrap_and_joint_interaction_materialize_deterministically() -> None:
     rows = ((0.0, 1.0), (0.5, 0.5), (1.0, 0.0))
-    first = nested_bootstrap(rows, domain="test")
-    second = nested_bootstrap(rows, domain="test")
+    first = nested_bootstrap(rows, domain="byte-regression")
+    second = nested_bootstrap(rows, domain="byte-regression")
     assert first == second
-    assert first["outer_draws_materialized_first"] is True
+    assert (
+        _artifact_digest(first)
+        == "c46619146c1c984063a3b0d41b55d46ebd585feaa1984d64d1049962023e46c7"
+    )
     control = ((0.0, 0.5),) * 3
     mixed = ((0.5, 1.0),) * 3
     interaction = _joint_architecture_bootstrap(control, mixed, interaction=True)
     assert interaction["point_estimate"] == 0.5
-    assert interaction["blocks_per_replicate"] == 2
+    assert (
+        _artifact_digest(interaction)
+        == "f1e424a7e37709b4b1ce8ab454f37ca37c3d48a524e82a24e9696c22f997649d"
+    )
 
 
 def test_selection_applies_candidate_only_seat_floor_and_development_label() -> None:
@@ -101,5 +116,44 @@ def test_selection_applies_candidate_only_seat_floor_and_development_label() -> 
     }
     result = structured_selection(statistics, integrity_passed=True)
     assert result["classification"] == "data_dependent_recipe_advance"
-    assert result["development_selected_step4_input_recipe"] == "C"
     assert result["selection_label"] == "development-selected input; not advance/promotion"
+
+
+def test_validator_source_guard_has_no_production_step3_calls() -> None:
+    path = Path("scripts/validate_structured_model_v2.py")
+    tree = ast.parse(path.read_text())
+    imported = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+    assert "agent_avenue.encoding.candidate_structured_v2" not in imported
+    assert "agent_avenue.runners.structured_experiment" not in imported
+    assert "agent_avenue.runners.arena" not in imported
+
+
+def test_validator_replay_verifies_each_record_before_its_decision_loop() -> None:
+    tree = ast.parse(Path("scripts/validate_structured_model_v2.py").read_text())
+    replay = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "replay_dataset"
+    )
+    calls = [
+        node
+        for node in ast.walk(replay)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "verify_game_record"
+    ]
+    assert len(calls) == 1
+    decision_loop = next(
+        node
+        for node in ast.walk(replay)
+        if isinstance(node, ast.For)
+        and isinstance(node.target, ast.Tuple)
+        and any(
+            isinstance(item, ast.Name) and item.id == "decision_index" for item in node.target.elts
+        )
+    )
+    assert calls[0].lineno < decision_loop.lineno

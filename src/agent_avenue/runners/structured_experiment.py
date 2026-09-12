@@ -13,7 +13,8 @@ import os
 import subprocess
 import tempfile
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, cast
@@ -71,6 +72,9 @@ NESTED_LOWER: Final = 499
 NESTED_UPPER: Final = 19_499
 CLAIM_CUTOFF_SECONDS: Final = 7 * 60 * 60 + 45 * 60
 HARD_BUDGET_SECONDS: Final = 8 * 60 * 60
+ALLOWED_RESUME_RETRIES: Final = 1
+EXECUTION_STATE_VERSION: Final = "m7-structured-model-v2-execution-state-v2"
+RUNTIME_VERSION: Final = "m7-structured-model-v2-runtime-extrapolation-v1"
 FIXED_CREATED_AT: Final = "2026-09-12T00:00:00+00:00"
 OPPONENTS: Final[tuple[str, ...]] = (
     "q0-parent",
@@ -1112,9 +1116,11 @@ def nested_bootstrap(rows: tuple[tuple[float, ...], ...], *, domain: str) -> dic
 
     count = len(rows[0])
     rng = DeterministicRandom(_seed(domain), f"step3:nested-bootstrap:{domain}")
-    outer = tuple(tuple(rng.randbelow(3) for _ in range(3)) for _ in range(NESTED_RESAMPLES))
     values: list[float] = []
-    for selected in outer:
+    for _ in range(NESTED_RESAMPLES):
+        # The three outer replicate draws are intentionally all materialized before this
+        # resample consumes any inner block randomness (the Step-2 validator repair lesson).
+        selected = tuple(rng.randbelow(3) for _ in range(3))
         means = [
             sum(rows[index][rng.randbelow(count)] for _ in range(count)) / count
             for index in selected
@@ -1141,12 +1147,13 @@ def _joint_architecture_bootstrap(
         raise StructuredExperimentError("aligned architecture bootstrap requires matched blocks")
     domain = "interaction" if interaction else "pooled-architecture-main-effect"
     rng = DeterministicRandom(_seed(domain), f"step3:nested-bootstrap:{domain}")
-    outer = tuple(tuple(rng.randbelow(3) for _ in range(3)) for _ in range(NESTED_RESAMPLES))
     values: list[float] = []
-    for selected in outer:
+    for _ in range(NESTED_RESAMPLES):
+        selected = tuple(rng.randbelow(3) for _ in range(3))
         draws: list[float] = []
         for replicate in selected:
             indexes = tuple(rng.randbelow(count) for _ in range(count))
+            # Exactly the same block indexes feed C and M for this replicate occurrence.
             c = sum(control[replicate][index] for index in indexes) / count
             m = sum(mixed[replicate][index] for index in indexes) / count
             draws.append((m - c) if interaction else (m + c) / 2)
@@ -1167,18 +1174,22 @@ def _macro_bootstrap(
         raise StructuredExperimentError("external macro must include exactly eight named opponents")
     domain = f"{arm}-equal-eight-opponent-macro"
     rng = DeterministicRandom(_seed(domain), f"step3:nested-bootstrap:{domain}")
-    outer = tuple(tuple(rng.randbelow(3) for _ in range(3)) for _ in range(NESTED_RESAMPLES))
     values: list[float] = []
-    for selected in outer:
+    for resample_index in range(NESTED_RESAMPLES):
+        selected = tuple(rng.randbelow(3) for _ in range(3))
         replicate_values: list[float] = []
-        for replicate in selected:
+        for occurrence_index, replicate in enumerate(selected):
             means: list[float] = []
             for opponent in OPPONENTS:
                 row = rows[opponent][replicate]
-                # Explicitly derive a named stream; this remains separate where sizes match.
+                # Repeated outer replicate IDs remain independent occurrences.  The named seed
+                # includes both resample and occurrence rather than just the replicate identifier.
+                inner_domain = (
+                    f"{domain}:opponent:{opponent}:resample:{resample_index}:"
+                    f"occurrence:{occurrence_index}"
+                )
                 local = DeterministicRandom(
-                    _seed(f"{domain}:{opponent}:{len(values)}:{replicate}"),
-                    f"step3:nested-bootstrap:{domain}:{opponent}",
+                    _seed(inner_domain), f"step3:nested-bootstrap:{inner_domain}"
                 )
                 means.append(
                     sum(row[local.randbelow(len(row))] for _ in range(len(row))) / len(row)
@@ -1501,31 +1512,272 @@ def _safety_report(
 
 
 def _checksums(output: Path) -> dict[str, object]:
+    """Checksum immutable payloads, excluding mutable/cyclic result state."""
     entries: dict[str, str] = {}
+    excluded = {"checksums.json", "execution-state.json", "result.json"}
     for path in sorted(output.rglob("*")):
-        if path.is_file() and path.name not in {"checksums.json", ".lock"}:
+        if (
+            path.is_file()
+            and path.name not in excluded
+            and not path.name.startswith("validation")
+            and path.name != ".lock"
+        ):
             entries[path.relative_to(output).as_posix()] = _sha256(path)
-    return _artifact("m7-structured-model-v2-checksums-v1", files=entries)
+    return _artifact("m7-structured-model-v2-checksums-v2", files=entries)
 
 
-def _execution_state(output: Path, plan: Mapping[str, object], *, complete: bool = False) -> None:
+def _require_artifact(path: Path, *, label: str) -> dict[str, object]:
+    value = _read(path)
+    if value.get("artifact_fingerprint") != _fingerprint(
+        {key: item for key, item in value.items() if key != "artifact_fingerprint"}
+    ):
+        raise StructuredExperimentError(f"{label} artifact fingerprint mismatch")
+    return value
+
+
+def validate_completed_structured_result(
+    output: Path, plan: Mapping[str, object], cells: Sequence[StructuredArenaCell]
+) -> dict[str, object]:
+    """Refuse reuse until every retained cardinality/reference/checksum boundary is complete."""
+    state = _load_execution_state(output / "execution-state.json")
+    if state.get("completed") is not True:
+        raise StructuredExperimentError("existing result has no completed execution state")
+    result = _read(output / "result.json")
+    if (
+        result.get("plan_fingerprint") != plan["plan_fingerprint"]
+        or result.get("status") != "completed"
+        or result.get("result_fingerprint")
+        != _fingerprint(
+            {key: value for key, value in result.items() if key != "result_fingerprint"}
+        )
+    ):
+        raise StructuredExperimentError("existing Step-3 result identity is malformed")
+    expected_keys = {f"{arm}{index}" for arm in ARMS for index in ("1", "2", "3")}
+    datasets = result.get("datasets")
+    checkpoints = result.get("checkpoints")
+    arenas = result.get("arenas")
+    if (
+        not isinstance(datasets, Mapping)
+        or set(datasets) != expected_keys
+        or not isinstance(checkpoints, Mapping)
+        or set(checkpoints) != expected_keys
+        or not isinstance(arenas, Mapping)
+        or set(arenas) != {cell.key for cell in cells}
+    ):
+        raise StructuredExperimentError("completed result artifact cardinalities are incomplete")
+    for key in sorted(expected_keys):
+        dataset = _require_artifact(output / "datasets" / key / "audit.json", label="dataset")
+        if datasets.get(key) != dataset.get("artifact_fingerprint"):
+            raise StructuredExperimentError("result dataset reference differs")
+        from agent_avenue.learning import inspect_structured_checkpoint
+
+        inspected = inspect_structured_checkpoint(output / "checkpoints" / key)
+        if checkpoints.get(key) != inspected.checkpoint_fingerprint:
+            raise StructuredExperimentError("result checkpoint reference differs")
+    for cell in cells:
+        arena = _require_artifact(output / "arenas" / cell.key / "report.json", label="arena")
+        if arenas.get(cell.key) != arena.get("artifact_fingerprint"):
+            raise StructuredExperimentError("result arena reference differs")
+    statistics = _require_artifact(output / "statistics.json", label="statistics")
+    safety = _require_artifact(output / "safety-report.json", label="safety")
+    selection = _require_artifact(output / "selection.json", label="selection")
+    runtime = _require_artifact(output / "runtime-extrapolation.json", label="runtime")
+    checksums = _require_artifact(output / "checksums.json", label="checksums")
+    if (
+        result.get("statistics_fingerprint") != statistics.get("artifact_fingerprint")
+        or result.get("safety_fingerprint") != safety.get("artifact_fingerprint")
+        or result.get("selection_fingerprint") != selection.get("artifact_fingerprint")
+        or result.get("runtime_fingerprint") != runtime.get("artifact_fingerprint")
+        or result.get("checksums_fingerprint") != checksums.get("artifact_fingerprint")
+    ):
+        raise StructuredExperimentError("result derived-artifact references differ")
+    expected_checksums = _checksums(output)
+    if checksums != expected_checksums:
+        raise StructuredExperimentError("checksum manifest no longer matches completed payload")
+    return result
+
+
+def _write_mutable(path: Path, value: Mapping[str, object]) -> None:
+    """Atomically update resumable execution state; all scientific artifacts stay immutable."""
+    normalized = cast(dict[str, object], json.loads(_canonical(dict(value))))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.tmp-", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as destination:
+            destination.write(_canonical(normalized) + b"\n")
+            destination.flush()
+            os.fsync(destination.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _state_fingerprint(state: Mapping[str, object]) -> str:
+    return _fingerprint(
+        {key: value for key, value in state.items() if key != "artifact_fingerprint"}
+    )
+
+
+def _load_execution_state(path: Path) -> dict[str, object]:
+    state = _read(path)
+    if state.get("version") != EXECUTION_STATE_VERSION or state.get(
+        "artifact_fingerprint"
+    ) != _state_fingerprint(state):
+        raise StructuredExperimentError("execution state fingerprint/version is malformed")
+    return state
+
+
+def _save_execution_state(path: Path, state: dict[str, object]) -> None:
+    state["artifact_fingerprint"] = _state_fingerprint(state)
+    _write_mutable(path, state)
+
+
+def _begin_execution(output: Path, plan: Mapping[str, object], *, claim_mode: bool) -> Path:
+    """Start one recorded execution attempt, permitting exactly one interrupted resume."""
     path = output / "execution-state.json"
-    if path.exists():
-        existing = _read(path)
-        if existing.get("plan_fingerprint") != plan["plan_fingerprint"]:
-            raise StructuredExperimentError("resume state belongs to a different immutable plan")
+    now = time.time()
+    if not path.exists():
+        state: dict[str, object] = {
+            "version": EXECUTION_STATE_VERSION,
+            "plan_fingerprint": plan["plan_fingerprint"],
+            "claim_mode": claim_mode,
+            "started_at_epoch_seconds": now,
+            "attempts": [{"attempt": 1, "started_at_epoch_seconds": now}],
+            "phase_timings_seconds": {},
+            "completed": False,
+            "complete_at_epoch_seconds": None,
+            "artifact_fingerprint": "",
+        }
+        _save_execution_state(path, state)
+        return path
+    state = _load_execution_state(path)
+    if (
+        state.get("plan_fingerprint") != plan["plan_fingerprint"]
+        or state.get("claim_mode") is not claim_mode
+    ):
+        raise StructuredExperimentError(
+            "resume state belongs to a different plan or execution mode"
+        )
+    if state.get("completed") is True:
+        return path
+    attempts = state.get("attempts")
+    if not isinstance(attempts, list) or len(attempts) > ALLOWED_RESUME_RETRIES + 1:
+        raise StructuredExperimentError("execution state has malformed attempt accounting")
+    if len(attempts) == ALLOWED_RESUME_RETRIES + 1:
+        raise StructuredExperimentError("only one Step-3 resume is authorized")
+    attempts.append({"attempt": len(attempts) + 1, "started_at_epoch_seconds": now})
+    state["attempts"] = attempts
+    _save_execution_state(path, state)
+    return path
+
+
+def _deadline_elapsed(state: Mapping[str, object]) -> float:
+    started = state.get("started_at_epoch_seconds")
+    if not isinstance(started, int | float):
+        raise StructuredExperimentError("execution state start time is malformed")
+    return time.time() - float(started)
+
+
+def _enforce_deadline(path: Path, *, claim_mode: bool, stage: str) -> None:
+    if not claim_mode:
         return
-    _write_immutable(
-        path,
-        _artifact(
-            "m7-structured-model-v2-execution-state-v1",
-            plan_fingerprint=plan["plan_fingerprint"],
-            started_at_epoch_seconds=time.time(),
+    state = _load_execution_state(path)
+    elapsed = _deadline_elapsed(state)
+    if elapsed >= CLAIM_CUTOFF_SECONDS:
+        raise StructuredExperimentError(
+            f"claim cutoff of {CLAIM_CUTOFF_SECONDS} seconds reached before {stage}"
+        )
+
+
+@contextmanager
+def _timed_stage(path: Path, *, claim_mode: bool, stage: str) -> Iterator[None]:
+    """Account every expensive stage before and after dispatch, including interrupted attempts."""
+    _enforce_deadline(path, claim_mode=claim_mode, stage=f"{stage}:before")
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - started
+        state = _load_execution_state(path)
+        timings = state.get("phase_timings_seconds")
+        if not isinstance(timings, Mapping):
+            raise StructuredExperimentError("execution state timing map is malformed")
+        updated = {str(key): _number(value, label="phase timing") for key, value in timings.items()}
+        updated[stage] = updated.get(stage, 0.0) + elapsed
+        state["phase_timings_seconds"] = updated
+        _save_execution_state(path, state)
+        _enforce_deadline(path, claim_mode=claim_mode, stage=f"{stage}:after")
+
+
+def _complete_execution(path: Path) -> dict[str, object]:
+    state = _load_execution_state(path)
+    state["completed"] = True
+    state["complete_at_epoch_seconds"] = time.time()
+    _save_execution_state(path, state)
+    return state
+
+
+def _runtime_extrapolation(
+    execution: Mapping[str, object], *, smoke_pairs: int | None
+) -> dict[str, object]:
+    """Use observed phase timings and declared work ratios; never change frozen sample sizes."""
+    timings = execution.get("phase_timings_seconds")
+    if not isinstance(timings, Mapping):
+        raise StructuredExperimentError("execution timing map is malformed")
+    observed = {str(key): _number(value, label="phase timing") for key, value in timings.items()}
+    if smoke_pairs is None:
+        return _artifact(
+            RUNTIME_VERSION,
+            mode="claim-default",
+            observed_phase_seconds=observed,
+            projected_full_seconds=sum(observed.values()),
             claim_cutoff_seconds=CLAIM_CUTOFF_SECONDS,
-            hard_budget_seconds=HARD_BUDGET_SECONDS,
-            complete=complete,
-        ),
-        label="execution state",
+            status="claim-run-observation",
+        )
+    arena_ratio = 30_000 / max(2 * 60 * smoke_pairs, 1)
+    training_ratio = 50.0
+    # Bootstrap work is proportional to named inner block draws.  The production suite has
+    # regular, joint, and eight-opponent macro streams; smoke invokes those same stream families.
+    full_bootstrap_blocks = 2 * 500 + 500 + 2 * 500 + 2 * 200 + 2 * 300 + 2 * 1600 + 2 * 500
+    smoke_bootstrap_blocks = 2 + 1 + 2 + 2 + 2 + 16 + 2
+    statistics_ratio = full_bootstrap_blocks / smoke_bootstrap_blocks
+    projected: dict[str, float] = {}
+    for phase, seconds in observed.items():
+        if phase.startswith("training:"):
+            projected[phase] = seconds * training_ratio
+        elif phase.startswith("arena:"):
+            projected[phase] = seconds * arena_ratio
+        elif phase == "statistics":
+            projected[phase] = seconds * statistics_ratio
+        elif phase.startswith("validation:"):
+            projected[phase] = seconds * arena_ratio
+        else:
+            projected[phase] = seconds
+    total = sum(projected.values())
+    return _artifact(
+        RUNTIME_VERSION,
+        mode="bounded-smoke-linear-extrapolation",
+        smoke_pairs=smoke_pairs,
+        observed_phase_seconds=observed,
+        projected_phase_seconds=projected,
+        projected_full_seconds=total,
+        projected_full_minutes=total / 60,
+        claim_cutoff_seconds=CLAIM_CUTOFF_SECONDS,
+        status="fits_claim_cutoff"
+        if total < CLAIM_CUTOFF_SECONDS
+        else "blocked_exceeds_claim_cutoff",
+        no_sample_reduction="all frozen claim quantities retained in projection",
+    )
+
+
+def _claim_config_is_exact(config: StructuredExperimentConfig) -> bool:
+    root = repository_root()
+    return (
+        config.output.resolve() == (root / "runs" / CYCLE_ID).resolve()
+        and config.step2_root.resolve() == (root / "runs" / "m7-population-replay-v1").resolve()
+        and tuple(path.resolve() for path in config.holdout_roots) == ((root / "runs").resolve(),)
     )
 
 
@@ -1546,10 +1798,8 @@ def build_structured_experiment_plan(config: StructuredExperimentConfig) -> dict
         is not True
     ):
         reasons.append("source_not_tracked_clean_including_nonignored_untracked")
-    if config.claim_default and tuple(path.resolve() for path in config.holdout_roots) != (
-        (repository_root() / "runs").resolve(),
-    ):
-        reasons.append("claim_holdout_must_be_exact_repository_runs")
+    if config.claim_default and not _claim_config_is_exact(config):
+        reasons.append("claim_paths_must_be_exact_frozen_defaults")
     plan: dict[str, object] = {
         "version": PLAN_VERSION,
         "cycle_id": CYCLE_ID,
@@ -1603,50 +1853,42 @@ def run_structured_experiment(config: StructuredExperimentConfig) -> dict[str, o
     output = config.output
     output.mkdir(parents=True, exist_ok=True)
     _write_immutable(output / "plan.json", plan, label="plan")
-    if (
-        config.claim_default
-        and cast(Mapping[str, object], plan["execution"])["claim_eligible"] is not True
-    ):
+    claim_mode = config.claim_default
+    execution_data = cast(Mapping[str, object], plan["execution"])
+    if claim_mode and execution_data["claim_eligible"] is not True:
         raise StructuredExperimentError("claim dispatch blocked by frozen clean-source preflight")
-    input_manifest, inputs, audit = verify_step2_inputs(config)
-    del input_manifest
     cells = _cells(config)
-    holdout = _holdout_scan(config, cells)
-    input_artifact = _artifact(
-        INPUT_AUDIT_VERSION,
-        plan_fingerprint=plan["plan_fingerprint"],
-        frozen_inputs=audit,
-        setup_holdout=holdout,
-    )
-    _write_immutable(
-        output / "inputs" / "step2-reference.json", input_artifact, label="Step-2 input audit"
-    )
-    _write_immutable(
-        output / "source-identity.json",
-        cast(Mapping[str, object], plan["source"]),
-        label="source identity",
-    )
-    _write_immutable(
-        output / "encoder-v2-schema.json",
-        _artifact(
-            "m7-structured-model-v2-encoder-schema-v1",
-            schema=FEATURE_SCHEMA.to_data(),
-            schema_fingerprint=FEATURE_SCHEMA.fingerprint,
-        ),
-        label="encoder schema",
-    )
+    if (output / "result.json").exists():
+        return validate_completed_structured_result(output, plan, cells)
+    state_path = _begin_execution(output, plan, claim_mode=claim_mode)
+    with _timed_stage(state_path, claim_mode=claim_mode, stage="input-holdout"):
+        input_manifest, inputs, audit = verify_step2_inputs(config)
+        del input_manifest
+        holdout = _holdout_scan(config, cells)
+        input_artifact = _artifact(
+            INPUT_AUDIT_VERSION,
+            plan_fingerprint=plan["plan_fingerprint"],
+            frozen_inputs=audit,
+            setup_holdout=holdout,
+        )
+        _write_immutable(
+            output / "inputs" / "step2-reference.json", input_artifact, label="Step-2 input audit"
+        )
+        _write_immutable(
+            output / "source-identity.json",
+            cast(Mapping[str, object], plan["source"]),
+            label="source identity",
+        )
     if holdout["status"] != "passed":
         raise StructuredExperimentError("Step-3 setup holdout overlaps prior/training evidence")
-    if (output / "result.json").exists():
-        return _read(output / "result.json")
-    _execution_state(output, plan)
     root = _repository_for_step2(config.step2_root)
     inputs_by_key = {item.key: item for item in inputs}
     datasets: dict[str, Path] = {}
     dataset_audits: dict[str, dict[str, object]] = {}
     records_by_key: dict[str, tuple[GameRecord, ...]] = {}
     for item in inputs:
-        path, dataset_audit, records = _dataset_audit(output, plan, item, source_root=root)
+        with _timed_stage(state_path, claim_mode=claim_mode, stage=f"dataset:{item.key}"):
+            path, dataset_audit, records = _dataset_audit(output, plan, item, source_root=root)
         datasets[item.key] = path
         dataset_audits[item.key] = dataset_audit
         records_by_key[item.key] = records
@@ -1659,20 +1901,32 @@ def run_structured_experiment(config: StructuredExperimentConfig) -> dict[str, o
     _write_immutable(
         output / "q0-initialization.json", initialization, label="q0 initialization audit"
     )
+    _write_immutable(
+        output / "encoder-v2-schema.json",
+        _artifact(
+            "m7-structured-model-v2-encoder-schema-v1",
+            schema=FEATURE_SCHEMA.to_data(),
+            schema_fingerprint=FEATURE_SCHEMA.fingerprint,
+            golden_fixture_panel_digest=_fingerprint(panel),
+            q0_embedding_fingerprint=initialization["artifact_fingerprint"],
+        ),
+        label="encoder schema",
+    )
     training_rows: list[dict[str, object]] = []
     for replicate in REPLICATES:
         row: dict[str, object] = {"replicate_id": replicate, "arms": {}}
         for arm in ARMS:
             item = inputs_by_key[f"{arm}{replicate.removeprefix('replicate-')}"]
-            report = _train_checkpoint(
-                output,
-                plan,
-                item,
-                datasets[item.key],
-                dataset_audits[item.key],
-                _q0_path(config),
-                max_epochs=config.max_epochs,
-            )
+            with _timed_stage(state_path, claim_mode=claim_mode, stage=f"training:{item.key}"):
+                report = _train_checkpoint(
+                    output,
+                    plan,
+                    item,
+                    datasets[item.key],
+                    dataset_audits[item.key],
+                    _q0_path(config),
+                    max_epochs=config.max_epochs,
+                )
             cast(dict[str, object], row["arms"])[arm] = report
         c = cast(Mapping[str, object], cast(Mapping[str, object], row["arms"])["C"])[
             "training_seeds"
@@ -1690,29 +1944,38 @@ def run_structured_experiment(config: StructuredExperimentConfig) -> dict[str, o
     )
     _write_immutable(output / "training-summary.json", training, label="training summary")
     paths = _q_paths(config)
-    artifacts = [_arena_artifact(output, plan, cell, inputs_by_key, paths) for cell in cells]
-    statistics = structured_statistics(artifacts, step2_root=config.step2_root)
-    stats_artifact = _artifact(
-        STATISTICS_VERSION,
-        plan_fingerprint=plan["plan_fingerprint"],
-        **{key: value for key, value in statistics.items() if key != "version"},
-    )
-    _write_immutable(output / "statistics.json", stats_artifact, label="statistics")
+    artifacts: list[dict[str, object]] = []
+    for cell in cells:
+        with _timed_stage(state_path, claim_mode=claim_mode, stage=f"arena:{cell.key}"):
+            artifacts.append(_arena_artifact(output, plan, cell, inputs_by_key, paths))
+    with _timed_stage(state_path, claim_mode=claim_mode, stage="statistics"):
+        statistics = structured_statistics(artifacts, step2_root=config.step2_root)
+        stats_artifact = _artifact(
+            STATISTICS_VERSION,
+            plan_fingerprint=plan["plan_fingerprint"],
+            **{key: value for key, value in statistics.items() if key != "version"},
+        )
+        _write_immutable(output / "statistics.json", stats_artifact, label="statistics")
     integrity = holdout["status"] == "passed" and all(
         cast(Mapping[str, object], artifact["tactical"])["passed"] is True for artifact in artifacts
     )
-    selection = structured_selection(statistics, integrity_passed=integrity)
-    _write_immutable(
-        output / "selection.json",
-        _artifact(
+    with _timed_stage(state_path, claim_mode=claim_mode, stage="safety-selection"):
+        selection = structured_selection(statistics, integrity_passed=integrity)
+        selection_artifact = _artifact(
             SELECTION_VERSION,
             plan_fingerprint=plan["plan_fingerprint"],
             **{key: value for key, value in selection.items() if key != "version"},
-        ),
-        label="selection",
+        )
+        _write_immutable(output / "selection.json", selection_artifact, label="selection")
+        safety = _safety_report(panel, initialization, artifacts)
+        _write_immutable(output / "safety-report.json", safety, label="safety report")
+    runtime = _runtime_extrapolation(
+        _load_execution_state(state_path), smoke_pairs=config.smoke_pairs
     )
-    safety = _safety_report(panel, initialization, artifacts)
-    _write_immutable(output / "safety-report.json", safety, label="safety report")
+    _write_immutable(output / "runtime-extrapolation.json", runtime, label="runtime extrapolation")
+    with _timed_stage(state_path, claim_mode=claim_mode, stage="checksums"):
+        checksums = _checksums(output)
+        _write_immutable(output / "checksums.json", checksums, label="checksums")
     checkpoints: dict[str, object] = {}
     for row in training_rows:
         replicate_index = cast(str, row["replicate_id"]).removeprefix("replicate-")
@@ -1721,7 +1984,7 @@ def run_structured_experiment(config: StructuredExperimentConfig) -> dict[str, o
             checkpoints[f"{arm}{replicate_index}"] = cast(Mapping[str, object], arms[arm])[
                 "checkpoint_fingerprint"
             ]
-    result = {
+    result: dict[str, object] = {
         "version": RESULT_VERSION,
         "cycle_id": CYCLE_ID,
         "status": "completed",
@@ -1739,15 +2002,22 @@ def run_structured_experiment(config: StructuredExperimentConfig) -> dict[str, o
         },
         "statistics_fingerprint": stats_artifact["artifact_fingerprint"],
         "safety_fingerprint": safety["artifact_fingerprint"],
+        "selection_fingerprint": selection_artifact["artifact_fingerprint"],
+        "runtime_fingerprint": runtime["artifact_fingerprint"],
+        "checksums_fingerprint": checksums["artifact_fingerprint"],
         "selection": selection,
+        "checksum_scope": (
+            "all immutable payloads except result/execution-state/checksums/validation"
+        ),
         "result_fingerprint": "",
     }
     result["result_fingerprint"] = _fingerprint(
         {key: value for key, value in result.items() if key != "result_fingerprint"}
     )
-    _write_immutable(output / "result.json", result, label="result")
-    _write_immutable(output / "checksums.json", _checksums(output), label="checksums")
-    return result
+    with _timed_stage(state_path, claim_mode=claim_mode, stage="result"):
+        _write_immutable(output / "result.json", result, label="result")
+    _complete_execution(state_path)
+    return validate_completed_structured_result(output, plan, cells)
 
 
 __all__ = [

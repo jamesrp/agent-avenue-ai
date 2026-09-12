@@ -34,6 +34,8 @@ from agent_avenue.agents import (
     RandomSource,
     TerminalOffenseAgent,
     TerminalSafetyAgent,
+    filter_immediate_win_actions,
+    filter_terminal_actions,
 )
 from agent_avenue.agents.ordering import semantic_action_key
 from agent_avenue.encoding.candidate_structured_v2 import encode_candidate
@@ -52,6 +54,7 @@ from agent_avenue.engine.setup import normalize_config
 from agent_avenue.learning import (
     StructuredTrainingConfig,
     StructuredTrainingData,
+    inspect_structured_checkpoint,
     load_checkpoint,
     load_structured_dataset,
     tensor_digest,
@@ -64,6 +67,7 @@ from agent_avenue.observation.model import (
     RecruitContext,
 )
 from agent_avenue.storage import (
+    GameRecord,
     code_fingerprint,
     game_record_fingerprint,
     load_corpus,
@@ -1883,6 +1887,28 @@ def validate_arenas_and_stats(output: Path, plan: Mapping[str, object], smoke: b
         report = read(output / "arenas" / key / "report.json")
         artifact(report, f"arena {key}")
         raw = local_validate_arena(output / "arenas" / key, report, cell)
+        if cell.get("candidate") == "T":
+            _, treatment_records = load_corpus(
+                output / "arenas" / key / "records", verify_code=False, verify_replays=True
+            )
+            local_tactical = local_treatment_tactical(treatment_records)
+            retained_tactical = cast(Mapping[str, object], report["tactical"])
+            checked = cast(Mapping[str, Mapping[str, object]], retained_tactical["checked_agents"])
+            for agent_id, counts in local_tactical.items():
+                retained_counts = checked[agent_id]
+                if (
+                    retained_counts.get("avoidable_losses") != counts["avoidable_losses"]
+                    or retained_counts.get("missed_guaranteed_wins")
+                    != counts["missed_guaranteed_wins"]
+                    or retained_counts.get("passed")
+                    != (counts["avoidable_losses"] == 0 and counts["missed_guaranteed_wins"] == 0)
+                ):
+                    raise ValidationError("independent treatment tactical audit differs")
+            if any(
+                value["avoidable_losses"] or value["missed_guaranteed_wins"]
+                for value in local_tactical.values()
+            ):
+                raise ValidationError("treatment tactical invariant is violated")
         local_reports[key] = {**raw, "tactical": report["tactical"]}
         shared = cell.get("shared_group")
         if isinstance(shared, str):
@@ -1922,13 +1948,157 @@ def validate_arenas_and_stats(output: Path, plan: Mapping[str, object], smoke: b
         raise ValidationError("local claim gate/disposition differs")
 
 
+CHECKSUM_EXCLUDED_NAMES = frozenset(
+    {
+        "result.json",
+        "execution-state.json",
+        "checksums.json",
+        "validation.json",
+        "driver.stdout",
+        "driver.stderr",
+        "wrapper-exit.json",
+        "validation.stdout",
+        "validation.stderr",
+        "validator-runtime.json",
+        "preflight-runtime.json",
+    }
+)
+
+
+def local_checksum_scope(output: Path) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    for path in sorted(output.rglob("*")):
+        if not path.is_file() or path.name in CHECKSUM_EXCLUDED_NAMES or path.name == ".lock":
+            continue
+        entries[path.relative_to(output).as_posix()] = sha256(path)
+    return entries
+
+
+def validate_result_cross_references(output: Path, plan: Mapping[str, object]) -> None:
+    result = read(output / "result.json")
+    if (
+        result.get("version") != "m7-counterfactual-rollout-result-v1"
+        or result.get("cycle_id") != CYCLE_ID
+        or result.get("status") != "completed"
+        or result.get("plan_fingerprint") != plan.get("plan_fingerprint")
+        or result.get("input_manifest_fingerprint") != plan.get("input_manifest_fingerprint")
+        or result.get("result_fingerprint")
+        != digest({key: value for key, value in result.items() if key != "result_fingerprint"})
+    ):
+        raise ValidationError("result identity/version/status/fingerprint differs")
+    replicates = ("replicate-1", "replicate-2", "replicate-3")
+    panels = cast(Mapping[str, object], result.get("panels"))
+    rollouts = cast(Mapping[str, object], result.get("rollouts"))
+    if set(panels) != set(replicates) or set(rollouts) != set(replicates):
+        raise ValidationError("result panel/rollout replicate cardinality differs")
+    training = read(output / "training" / "summary.json")
+    artifact(training, "training summary")
+    if result.get("training_fingerprint") != training.get("artifact_fingerprint"):
+        raise ValidationError("result training cross-reference differs")
+    rows = training.get("replicates")
+    if not isinstance(rows, list) or len(rows) != 3:
+        raise ValidationError("training summary lacks three paired replicates")
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ValidationError("training summary row is malformed")
+        replicate = row.get("replicate_id")
+        if replicate not in replicates or replicate in seen:
+            raise ValidationError("training replicate cardinality differs")
+        seen.add(cast(str, replicate))
+        for arm in ("control", "treatment"):
+            entry = row.get(arm)
+            if not isinstance(entry, Mapping):
+                raise ValidationError("training arm entry is missing")
+            history = read(output / "training" / arm / cast(str, replicate) / "history.json")
+            artifact(history, f"{arm} training history")
+            if history.get("artifact_fingerprint") != entry.get("artifact_fingerprint"):
+                raise ValidationError("training history cross-reference differs")
+            checkpoint = inspect_structured_checkpoint(
+                output / "checkpoints" / arm / cast(str, replicate)
+            )
+            if checkpoint.checkpoint_fingerprint != entry.get(
+                "checkpoint_fingerprint"
+            ) or checkpoint.tensor_digest != entry.get("tensor_digest"):
+                raise ValidationError("checkpoint/training tensor cross-reference differs")
+        reproduction = read(output / "control-reproduction" / cast(str, replicate) / "summary.json")
+        artifact(reproduction, "control reproduction")
+        if reproduction.get("artifact_fingerprint") != cast(
+            Mapping[str, object], row["reproduction"]
+        ).get("artifact_fingerprint"):
+            raise ValidationError("control reproduction cross-reference differs")
+        if reproduction.get("byte_for_byte_tensor_match") is not True:
+            raise ValidationError("control reproduction is not exact")
+    for replicate in replicates:
+        panel = read(output / "panel" / replicate / "manifest.json")
+        rollout = read(output / "rollouts" / replicate / "manifest.json")
+        artifact(panel, "panel manifest")
+        artifact(rollout, "rollout manifest")
+        if panels.get(replicate) != panel.get("artifact_fingerprint") or rollouts.get(
+            replicate
+        ) != rollout.get("artifact_fingerprint"):
+            raise ValidationError("result panel/rollout manifest cross-reference differs")
+    cells = cast(list[Mapping[str, object]], cast(Mapping[str, object], plan["arenas"])["cells"])
+    arena_result = cast(Mapping[str, object], result.get("arenas"))
+    if set(arena_result) != {cast(str, cell["key"]) for cell in cells}:
+        raise ValidationError("result arena cardinality/cross-reference differs")
+    for cell in cells:
+        key = cast(str, cell["key"])
+        report = read(output / "arenas" / key / "report.json")
+        artifact(report, "arena report")
+        if arena_result.get(key) != report.get("artifact_fingerprint"):
+            raise ValidationError("result arena report reference differs")
+    for filename, key in (
+        ("statistics.json", "statistics_fingerprint"),
+        ("safety-report.json", "safety_fingerprint"),
+        ("selection.json", "selection_fingerprint"),
+        ("runtime-extrapolation.json", "runtime_fingerprint"),
+        ("checksums.json", "checksums_fingerprint"),
+    ):
+        value = read(output / filename)
+        artifact(value, filename)
+        if result.get(key) != value.get("artifact_fingerprint"):
+            raise ValidationError(f"result {filename} cross-reference differs")
+
+
+def local_treatment_tactical(records: Iterable[GameRecord]) -> dict[str, dict[str, int]]:
+    counts: dict[str, dict[str, int]] = {}
+    for record in records:
+        state = new_game(record.replay.config, record.replay.seed)
+        for action in record.replay.actions:
+            actor = (
+                state.active_player if state.phase is Phase.PLAY else state.active_player.other()
+            )
+            seat = record.seats[0 if actor is PlayerId.PLAYER_ONE else 1]
+            if seat.agent_id.startswith("T-replicate-"):
+                observation = local_engine_observation(state, actor)
+                safety = filter_terminal_actions(observation, observation.legal_actions)
+                offense = filter_immediate_win_actions(observation, observation.legal_actions)
+                row = counts.setdefault(
+                    seat.agent_id,
+                    {"avoidable_losses": 0, "missed_guaranteed_wins": 0},
+                )
+                row["avoidable_losses"] += int(
+                    action in safety.provable_loss_actions and not safety.forced_loss_fallback
+                )
+                row["missed_guaranteed_wins"] += int(
+                    bool(offense.forced_win_actions) and action not in offense.forced_win_actions
+                )
+            state = apply_action(state, action)
+    return counts
+
+
 def validate_checksums(output: Path) -> None:
     checksums = read(output / "checksums.json")
     artifact(checksums, "checksums")
-    files = cast(Mapping[str, object], checksums["files"])
-    for relative, expected in files.items():
-        if not isinstance(expected, str) or sha256(output / relative) != expected:
-            raise ValidationError(f"checksum differs: {relative}")
+    files = checksums.get("files")
+    if not isinstance(files, Mapping) or any(
+        not isinstance(key, str) or not isinstance(value, str) for key, value in files.items()
+    ):
+        raise ValidationError("checksum file map is malformed")
+    expected = local_checksum_scope(output)
+    if dict(files) != expected:
+        raise ValidationError("checksum scope has missing, extra, or mismatched payload paths")
 
 
 def _number(value: object, label: str) -> float:
@@ -2014,6 +2184,7 @@ def validate(output: Path, step3_root: Path) -> dict[str, object]:
     timings: dict[str, float] = {}
     stage = time.perf_counter()
     validate_checksums(output)
+    validate_result_cross_references(output, plan)
     timings["checksums"] = time.perf_counter() - stage
     stage = time.perf_counter()
     validate_panels(output, step3_root, plan)

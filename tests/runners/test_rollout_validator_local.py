@@ -139,3 +139,37 @@ def test_transcript_quarantine_and_count_mutations_are_not_accepted(validator: M
     mutated[0] = {"quarantine": "leaked"}
     assert not all(row["quarantine"] == "trusted-hidden-rollout-audit-only-v1" for row in mutated)
     assert len(mutated[:-1]) != 140
+
+
+def _checksum_artifact(validator: ModuleType, files: dict[str, str]) -> dict[str, object]:
+    value: dict[str, object] = {
+        "version": "m7-counterfactual-rollout-checksums-v1",
+        "files": files,
+    }
+    value["artifact_fingerprint"] = validator.digest(value)
+    return value
+
+
+def test_checksum_scope_rejects_removed_rows_extra_and_missing_files(
+    validator: ModuleType, tmp_path: Path
+) -> None:
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"payload")
+    checksums = _checksum_artifact(validator, {"payload.bin": validator.sha256(payload)})
+    (tmp_path / "checksums.json").write_bytes(validator.canonical(checksums) + b"\n")
+    validator.validate_checksums(tmp_path)
+
+    removed = _checksum_artifact(validator, {})
+    (tmp_path / "checksums.json").write_bytes(validator.canonical(removed) + b"\n")
+    with pytest.raises(validator.ValidationError, match="checksum scope"):
+        validator.validate_checksums(tmp_path)
+
+    extra = tmp_path / "extra.bin"
+    extra.write_bytes(b"extra")
+    (tmp_path / "checksums.json").write_bytes(validator.canonical(checksums) + b"\n")
+    with pytest.raises(validator.ValidationError, match="checksum scope"):
+        validator.validate_checksums(tmp_path)
+    extra.unlink()
+    payload.unlink()
+    with pytest.raises(validator.ValidationError, match="checksum scope"):
+        validator.validate_checksums(tmp_path)

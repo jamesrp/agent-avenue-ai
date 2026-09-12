@@ -1,0 +1,225 @@
+{
+  "artifact_fingerprint": "53ba97aed7c40a87b25f5adc1b7925e28f4aad49bd0bfb758e78b125b54181e8",
+  "continuation_policy_inputs": {
+    "historical-q0": {
+      "checkpoint_fingerprint": "bc6f070aa30e2155ed6953a065c9f67e10357b54f222e3e944273493ab4e6e8e",
+      "manifest_sha256": "29d927554731fdac53574f6eec9340407592d1356436c080dd05992c3f58cb5b",
+      "metrics_sha256": "d1dd367ea8fa122e0d5a4fb7c32a250df508d37fc83378b26d2f6578cff51cd1",
+      "path": "runs/terminal-safety-v1/inputs/historical-q0",
+      "tensor_digest": "c8239721005aedcdee9185475db80018dbfc524e833b069ca1c540d9032041b6",
+      "weights_sha256": "be527b242d922895c95cfd4b54b4e9c716d9137ca5f4b67e601bc2a48dac6793"
+    },
+    "q0-parent": {
+      "checkpoint_fingerprint": "b511ae162b794da6450fd3151762d98b4e5c8475c1af23e5b9289d0140a0a06d",
+      "manifest_sha256": "539df0dc8195bb13d8954103e54a5903081e191af896d5ccca5de0d854939be8",
+      "metrics_sha256": "8c4991cba6c341f0d58c76f2bf1045c6757dadfc73a698293634fb266c3ea1e0",
+      "path": "runs/terminal-safety-v1/q0-a1/checkpoint",
+      "tensor_digest": "b1562237220e3a59b1e514327f3a5acc3d60767676befc69970f88ef98253767",
+      "weights_sha256": "8ba20c26b9385be3771445b28c978aedb9e6043f4ca9a49ade0992a6cf80d577"
+    },
+    "q1": {
+      "checkpoint_fingerprint": "77682d3c3a79730c8a3841c8dab7c2bef1ac41c7bcbdc889b2f049186980a0f0",
+      "manifest_sha256": "50bacdc842f3c69783471eb5a468b5f625e77d8f5a42ce7be72d63707edd275b",
+      "metrics_sha256": "31cb3b4945b1191c0dcdaee441fca8a30367c409cef281c2edfaaa84afa217f5",
+      "path": "runs/terminal-safety-v1/q1-a1/candidate",
+      "tensor_digest": "14d6f9b2c3fbacf0100f497df48a87ec27594e6ff5c058549a34dafe72b07f48",
+      "weights_sha256": "2289e16a55782a1e1d8f98150bd4a831ffc8138100b8ff3e80022de7a31cefd8"
+    },
+    "q2": {
+      "checkpoint_fingerprint": "5b97a5b331374b47996f8be06d42d7d7e9e7fe02a11569ba5260b2f5df5b390e",
+      "manifest_sha256": "bb991e431e8853ee258e9f19eb5ea5347e26929f8f35ff14b2e66b10963bce5a",
+      "metrics_sha256": "76813cf6f6a22ae3a83386f36d356d74d1d18c74ba764ee1c58d524620dacc77",
+      "path": "runs/terminal-safety-v1/q2-a1/candidate",
+      "tensor_digest": "a16a65db11fde0b5914f91277ac077ddd00d82012237413abc33ad996f614dac",
+      "weights_sha256": "ec08a71117dae5105494f925bff4ba3a62f615a94b760aceb09f95931bdd37d8"
+    },
+    "q3": {
+      "checkpoint_fingerprint": "b786676125c8c38da9c2977d27c4dbb581acbd63983e448639c360146115cac1",
+      "manifest_sha256": "fd8cecd52a81211104fe571b404afc828e772e282342d005c4b06f43549641ce",
+      "metrics_sha256": "2e620794b4ca7dc9745ccb3f54cc72a8d2bc83d80f46966f287668035dbb9c27",
+      "path": "runs/terminal-safety-v1/q3-a1/candidate",
+      "tensor_digest": "b324181ff05ad5c10ac89834c10d2f0bb890b42fbf097a752ff5136b99d22854",
+      "weights_sha256": "62fd867704bd1345d49d5e6c8426b85bf989fc37f2e20955670d7fa4a93161a2"
+    },
+    "q4": {
+      "checkpoint_fingerprint": "1d002faa454ad1e4b0f29cc620f2d2daf160b127ecc93ae954a8bd8d27dace59",
+      "manifest_sha256": "a44fea5fc36bbf73e5703a1a6fd5e425de4cc751e836ab7f9bbf4daebb5f9a78",
+      "metrics_sha256": "c80d91332af6b0109745cf9f68dd0405a5ff2763d575a56548931b12eed3506b",
+      "path": "runs/terminal-safety-v1/q4-a1/candidate",
+      "tensor_digest": "b7eb791ee4ecd13d9af114274df342e6016a7808ff29acba2eee2465b539a316",
+      "weights_sha256": "ce4d669e624298e04176eb9b320aec68a1ede879e7997c1dd7633dedbc0dffe3"
+    }
+  },
+  "created_date": "2026-09-12",
+  "cycle_id": "m7-counterfactual-rollout-supervision-v1",
+  "encoder": {
+    "fingerprint": "66d806ce7ba667a716cf31be2210e449feabcbf06e90bb6a13754a0909e4c628",
+    "version": "candidate-public-structured-v2",
+    "width": 519
+  },
+  "model": {
+    "parameter_count": 35779,
+    "version": "candidate-structured-residual-mlp-v2"
+  },
+  "program": "m7-stronger-policy-program-v1",
+  "replicates": [
+    {
+      "replicate_id": "replicate-1",
+      "step2_mixed_corpus": {
+        "fingerprint": "d34735fc7c1d8b092a4fe75b1d396a12815079941ab463969f7f11101368b970",
+        "manifest_sha256": "176c1c0966e68d0f434ebd8a0a6b03356e398f2f478cfb0ccbf0d360ab5a89c3",
+        "path": "runs/m7-population-replay-v1/corpora/replicate-1/treatment",
+        "records_sha256": "c01537408b5e0e2d57a55ab4cbd8f362166b6cbf5d77c43ba9e23034745ee7c0"
+      },
+      "step3_m_v2_checkpoint": {
+        "best_epoch": 18,
+        "epochs_completed": 26,
+        "fingerprint": "0497950240a28a76b1f067b344b34897f21e8f7b59f8ad5e0f26e84735c8ada0",
+        "manifest_sha256": "03d0bc3044c255b58d3f0cfbf599c65300f24ca82eb34f09d2e1c376cf7c8af6",
+        "metrics_sha256": "d48007a21903f28dc6f78f7fbc1a6d6a6f16b07515d1910e779e52fdce824ea8",
+        "path": "runs/m7-structured-model-v2/checkpoints/M1",
+        "tensor_digest": "afabd88cda189bbbc4b831bdfb8335901338bc804870722f048ef6c286f523cb",
+        "training_config": {
+          "batch_size": 1024,
+          "calibration_bins": 10,
+          "cpu_threads": 1,
+          "data_loader_workers": 0,
+          "deterministic_algorithms": true,
+          "early_stopping_patience": 8,
+          "gradient_clipping": "disabled",
+          "learning_rate": 0.001,
+          "loss": "binary-cross-entropy-with-logits",
+          "max_epochs": 50,
+          "min_delta": 0.0,
+          "optimizer": "adamw",
+          "projection_seed": 14340871881377733,
+          "seed": 14340871881377733,
+          "shuffle_seed": 7869516308510914708,
+          "weight_decay": 0.0001
+        },
+        "training_seeds": {
+          "fresh_adamw": true,
+          "shuffle": 7869516308510914708,
+          "structured_init": 14340871881377733
+        },
+        "weights_sha256": "e048b6f80697c8351bb69bd4900bd0cd1a86e5717e8f0d8508754d77f52f93ac"
+      },
+      "step3_v2_dataset": {
+        "audit_fingerprint": "96fc6b4b7101c6f69adb74c247e87faafdeedb079051118d4c7bc9d2c85728f8",
+        "fingerprint": "bcfac4ef4b4681ec2fe4eb918e92e7e035de7ff0cafed947c4f5454f8ac5c3b2",
+        "manifest_sha256": "b3584887f8f3245d11bea15f946d9357547cd53609b2aca97eb2e3358a583b6b",
+        "npz_sha256": "326e039f9c2722e1cdf75ebf7ddf436f8d9212a376306f1eb51761e4cbda287d",
+        "path": "runs/m7-structured-model-v2/datasets/M1/dataset.npz"
+      }
+    },
+    {
+      "replicate_id": "replicate-2",
+      "step2_mixed_corpus": {
+        "fingerprint": "8dbeec847f5c94e73173fb8827545583a20006598fab57be99a20b1e28701102",
+        "manifest_sha256": "cc9b90c1216e3cc3864efb210e915d4d22c240492274ef2f4f3cb1fa3d1d8c94",
+        "path": "runs/m7-population-replay-v1/corpora/replicate-2/treatment",
+        "records_sha256": "92e2b391cede16a31e48d4031599739c49af5e2b1a266af4de4e5b5c694a7051"
+      },
+      "step3_m_v2_checkpoint": {
+        "best_epoch": 25,
+        "epochs_completed": 33,
+        "fingerprint": "1cdd1c2efb7aa2071160d48a1b5f86fe16c75b292f42aed49329b851c0389429",
+        "manifest_sha256": "19362d63e4deb69ef76ca07e5921a2a4273ff168e58e63f55582586d8b78c4fb",
+        "metrics_sha256": "73b96a3dbb7306e2464c0e86d48e43103c579a144eca58dca2b563c2530b3ce6",
+        "path": "runs/m7-structured-model-v2/checkpoints/M2",
+        "tensor_digest": "14e3fe14a3e4fb501bc34c86b691438a341375d8f10f6583f2035fa56d16d24e",
+        "training_config": {
+          "batch_size": 1024,
+          "calibration_bins": 10,
+          "cpu_threads": 1,
+          "data_loader_workers": 0,
+          "deterministic_algorithms": true,
+          "early_stopping_patience": 8,
+          "gradient_clipping": "disabled",
+          "learning_rate": 0.001,
+          "loss": "binary-cross-entropy-with-logits",
+          "max_epochs": 50,
+          "min_delta": 0.0,
+          "optimizer": "adamw",
+          "projection_seed": 4718066768767046164,
+          "seed": 4718066768767046164,
+          "shuffle_seed": 8453933419965371175,
+          "weight_decay": 0.0001
+        },
+        "training_seeds": {
+          "fresh_adamw": true,
+          "shuffle": 8453933419965371175,
+          "structured_init": 4718066768767046164
+        },
+        "weights_sha256": "4ce818dc8ff637307fe011ece61ddf15531e26fe4e98fad890c7e19f13803956"
+      },
+      "step3_v2_dataset": {
+        "audit_fingerprint": "225ce6e6ab3fd66169e60862c34ee6a382586f73953f6e58909b2889975b0bc5",
+        "fingerprint": "74ea85ed2a6ac400c322972b78c2b05e8d4904af064d8d3d2fa024ab2fb5f25c",
+        "manifest_sha256": "aa8f73bf9c2c4fd2ad74966502baf7c54dd6ff768d5b7886454f13db5f9dac5f",
+        "npz_sha256": "7446eb203a3ff8c5c6ff3dc2e757aab6808079de884eb92cc92d24ea4498a6d9",
+        "path": "runs/m7-structured-model-v2/datasets/M2/dataset.npz"
+      }
+    },
+    {
+      "replicate_id": "replicate-3",
+      "step2_mixed_corpus": {
+        "fingerprint": "1a928a07d0c8e3e30f283ee0da113ba88d3416c4d3f5f6f9bc1a31f5530d0a78",
+        "manifest_sha256": "289e6c47a649609d239ebcb5f70f09049043a8358b296974c63e745e1a299e55",
+        "path": "runs/m7-population-replay-v1/corpora/replicate-3/treatment",
+        "records_sha256": "39a5ded786d7d1495d39e0e87d2578c4dd98adbb11324b1f20d688f1a62d5142"
+      },
+      "step3_m_v2_checkpoint": {
+        "best_epoch": 23,
+        "epochs_completed": 31,
+        "fingerprint": "918ddc92a4a39c91cf57ff26759f5d221abfec9610035365c884f813b1ac6909",
+        "manifest_sha256": "bf015b7dae1a1994af16698c75508bdc0a27af14f454edaaafedc429e9067cdf",
+        "metrics_sha256": "a2e26a9a09bd28ef56593b81927e75acb6ba591e2974a5b4639317d09c4f919b",
+        "path": "runs/m7-structured-model-v2/checkpoints/M3",
+        "tensor_digest": "1e44393baaaef63de905dc93f21e8d5ae7af3263b0f824015ef2f3a7dff00baf",
+        "training_config": {
+          "batch_size": 1024,
+          "calibration_bins": 10,
+          "cpu_threads": 1,
+          "data_loader_workers": 0,
+          "deterministic_algorithms": true,
+          "early_stopping_patience": 8,
+          "gradient_clipping": "disabled",
+          "learning_rate": 0.001,
+          "loss": "binary-cross-entropy-with-logits",
+          "max_epochs": 50,
+          "min_delta": 0.0,
+          "optimizer": "adamw",
+          "projection_seed": 8906275194996582640,
+          "seed": 8906275194996582640,
+          "shuffle_seed": 361336743459122336,
+          "weight_decay": 0.0001
+        },
+        "training_seeds": {
+          "fresh_adamw": true,
+          "shuffle": 361336743459122336,
+          "structured_init": 8906275194996582640
+        },
+        "weights_sha256": "b67d0fc1cce5b1d8da202ea6ce487144623216466662b49b93a7e579e022130a"
+      },
+      "step3_v2_dataset": {
+        "audit_fingerprint": "68aedd1ccffbb78e42bb34fa0e34164f91cbc99f0a2d38dd8dbf0324814737eb",
+        "fingerprint": "757ad450b057c5ad196378cb750142401328e135fee0eb33f528ad492b480aaa",
+        "manifest_sha256": "447c604aaebaa46746b8efd445407dbdc37d99d259381319cfac65fe22a881d1",
+        "npz_sha256": "6f71463ebb276ffe11771b47ff66e19d95dc77209b409892e9ef71f93ad47856",
+        "path": "runs/m7-structured-model-v2/datasets/M3/dataset.npz"
+      }
+    }
+  ],
+  "step3": {
+    "archive_sha256": "ad42072825d110b10ea878d00ea0232b66b17f817d0f4f1f5e7fb6eb46aab669",
+    "claim_source": "a63f0819dd679308fe03ec23d619e609529b1166",
+    "plan_fingerprint": "edc24d7c1f6a67bf2860bdc3dc401712152b05d7f08c17782045ea284594660a",
+    "result_fingerprint": "346bb85a4ea6c31f6f9ef79671936fdc0c11043f8b1b011380a2589c95e14fac",
+    "selected_recipe": "M",
+    "selection_fingerprint": "5d33deb44583ca58114fc2c30ef50e40e0d215be66d054ae1a8f5d9495fedc08",
+    "statistics_fingerprint": "eadf71e10ede64cdd3ebc9d976b78be31518460cac8abaef0521b6677487a9c2",
+    "validation_fingerprint": "679e297b14d5dfd5c122860eeebb629a305a8ca8191450323aca99d6d87eafc9"
+  },
+  "version": "m7-counterfactual-rollout-inputs-v1"
+}

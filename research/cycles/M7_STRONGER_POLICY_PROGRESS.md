@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 12, 2026
-**Overall state:** Step 3 complete; Step 4 rollout design under feasibility review
+**Overall state:** Step 3 complete; Step 4 agreement and inputs frozen, implementation pending
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -40,7 +40,7 @@ public-history signaling, and specializes to narrow self-play distributions.
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
 | 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
 | 3. Structured model v2 | Complete; does not advance | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | `b1f2b6f` through `7321aa1` | Six fits + 30,000 games; exact-source validation passed after one operational repair | [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](../../docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) |
-| 4. Counterfactual rollouts | Designing | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | Pending | Pending | Pending |
+| 4. Counterfactual rollouts | Agreement frozen | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | Pending | Pending | Pending |
 | 5. Independent league | Authorized, waiting | Pending | Pending | Pending | Pending |
 
 ## Completed step 1
@@ -83,15 +83,21 @@ passed. Future checksum scopes exclude wrapper logs. Combined claim plus validat
 
 ## Current step: counterfactual rollout design
 
-Step 4 will compare exact reproductions of the three selected M-v2 fits with paired treatments that
-add only fixed all-legal-action rollout supervision. The proposed teacher samples hidden worlds from
-public observations, holds the root action fixed across indistinguishable worlds, uses common
-continuation randomness, and never passes latent state to policies or encoders.
+Step 4 is frozen as three paired exact M-v2 control reproductions and rollout-supervised treatments.
+Each replicate selects 280 train-only safe positions across 14 realizable public-structure strata.
+Every legal root action is evaluated in 10 copy-weighted exchangeable latent worlds for depth nine,
+with the root fixed across indistinguishable worlds, candidate-independent policy permutations,
+per-decision common random numbers, and selected q0 as a safe leaf.
 
-The initial proposal of 1,800 positions × 20 full rollouts per candidate implies roughly 520,000
-candidate rollouts before independent recomputation. This budget is under explicit feasibility
-review and will not be frozen or implemented until a timing-based design fits the eight-hour step
-limit without weakening information safety.
+The maximum target workload is 42,000 candidate rollouts / 378,000 transition-or-leaf work units per
+production or independent pass. Treatment adds only position-balanced `0.20 × rollout BCE` to the
+unchanged selected-action MC objective; a lambda-zero integration test must reproduce control
+optimizer states. The 24,000-game evaluation and original robustness gates remain fixed. Claim
+execution is blocked unless all strata fill, mechanical cap errors are zero, leaf fraction is at most
+50%, and timed production+independent throughput projects below 7h45.
+
+The complete Step-3/continuation input freeze is `m7-counterfactual-rollout-inputs.json`, fingerprint
+`53ba97ae…186`. A final design review found no remaining blocker.
 
 ## Completed implementation work
 
@@ -114,6 +120,10 @@ limit without weakening information safety.
 
 ## Decision log
 
+- **September 12 — step-4 agreement freeze:** 280 positions/replicate across 14 feasible strata,
+  10 copy-weighted worlds/candidate, depth-nine q0-leaf targets, safe-only target identity, independent
+  policy permutations/per-decision RNG, fixed 0.20 rollout BCE, exact control reproduction, and a
+  hard measured-throughput gate before the 24,000-game claim.
 - **September 12 — step-3 result:** structured v2 beat v1 in both data arms, but both failed only the
   frozen parent-heuristic non-regression gate. Select mixed-v2 as the development Step-4 input by the
   predeclared robustness floor; no policy is promoted.

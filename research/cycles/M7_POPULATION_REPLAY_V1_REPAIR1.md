@@ -4,8 +4,9 @@
 **Step:** 2 of 5
 **Cycle:** `m7-population-replay-v1`
 **Repair:** `repair-1`
-**Status:** Approved under the step's one-repair allowance
+**Status:** Complete; repaired validation passed
 **Repair date:** September 12, 2026
+**Validation source:** `2bf8822e3247a104870e55746941d438e3f619b0`
 **Original claim source:** `fde19b5d3c327e539c29913a973b5e4d76ffff5b`
 
 ## Failure

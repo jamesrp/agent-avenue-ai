@@ -3,8 +3,10 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 2 of 5
 **Cycle ID:** `m7-population-replay-v1`
-**Status:** Approved and implementation-frozen; claim run pending
+**Status:** Complete; mixed-population model-v1 collection does not advance
 **Approved:** September 11, 2026
+**Completed:** September 12, 2026
+**Result:** [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md)
 **Prerequisite:** [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) completed with structural adoption
 
 ## Question

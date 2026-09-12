@@ -1,11 +1,11 @@
 # Project status
 
-**As of:** September 11, 2026
+**As of:** September 12, 2026
 **Current selected hybrid champion:** q0-terminal-safety-v1
 **Permanent pure-neural baseline:** historical q0
-**Latest completed learned experiment:** [M7 heuristic ranking warm-start screen](M7_HEURISTIC_RANKING_RESULTS.md)
+**Latest completed learned experiment:** [M7 population replay v1](M7_POPULATION_REPLAY_RESULTS.md)
 
-**Latest completed research cycle:** [terminal-offense confirmation](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md)
+**Latest completed research cycle:** [M7 population replay v1](M7_POPULATION_REPLAY_RESULTS.md)
 
 This document is the concise, living index of completed work and current next steps. Historical
 milestone documents describe the intended scope at the time; `README.md` and this file describe the
@@ -24,7 +24,8 @@ actual present state.
 | [Terminal-safety hybrid](TERMINAL_SAFETY_EXPERIMENT.md) | Complete | [Shielded q0–q4 result, all-pairs diagnostics, and archive](TERMINAL_SAFETY_RESULTS.md) |
 | [q0 strength audit](Q0_STRENGTH_AUDIT_RESULTS.md) | Complete | 72,000 fresh games; exact missed-lethal and exploit-surface diagnostics |
 | [Terminal-offense confirmation](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; tactical envelope adopted for steps 2–4 |
-| [7: controlled RL experiments](MILESTONE7.md) | In progress; stronger-policy step 1 complete | [Population replay is next](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md) |
+| [Population replay v1](M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Mixed replay beat matched controls but frozen robustness gates failed |
+| [7: controlled RL experiments](MILESTONE7.md) | In progress; stronger-policy steps 1–2 complete | [Structured model v2 is next](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md) |
 
 ## Current measured policies
 
@@ -144,6 +145,21 @@ replayed decisions, zero setup overlap across 241 prior corpora, and zero pre-en
 policy steps 2–4. The selected checkpoint and web default remain q0-terminal-safety-v1 until step 5.
 See [`M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md).
 
+## Population replay v1
+
+Step 2 collected three paired 4,000-game q0-only and mixed-population corpora, trained six unchanged
+model-v1 checkpoints from identical q0 tensors, and evaluated them over 24,000 fresh development
+games. Mixed replay beat matched controls directly at 62.10% [60.13%, 64.00%], improved matched
+heuristic performance by +6.33 percentage points, and improved q1–q4 stress comparisons by roughly
+12–14.5 points.
+
+The exact recipe does not advance. Its treatment-minus-parent heuristic interval was -5.056 to
++1.278 points against a strict lower-bound requirement above -5. The implemented seat rule also
+failed because it included the losing control side of the direct arena; treatment's own lowest seat
+point was 54.0%. One validator-only repair corrected nested-bootstrap RNG consumption order without
+changing claim artifacts or the decision. Both data arms remain fixed for Step 3. See
+[`M7_POPULATION_REPLAY_RESULTS.md`](M7_POPULATION_REPLAY_RESULTS.md).
+
 ## Web status
 
 The QA web UI currently supports:
@@ -198,6 +214,7 @@ and [experiment protocol](EXPERIMENT_PROTOCOL.md).
 | M7 heuristic ranking warm-start repaired run | `240d33495c29e227c57afe2b58d73ad792fbdbd8` | `9f9e78d1c4a5a124a12d8f01056788520a65bc86bec652ffa113da24e5975b49` |
 | q0 strength and tactical-leak fresh run | `2cefd151383e9cf3a614e2b58ee3ac2450727a61` | `ae8cd87f4b60c4b32a2b0ac728b1c3c0ec51f74944b9afb4d5089a1547d2e4e5` |
 | Terminal-offense aligned-RNG confirmation | `5bbda9e18d23920f5ad7686e055615aad703c097` | `5dd1d77e67804cf959ccd9a90dd9569a54924623439a30194111da3304c3b4f6` |
+| Population replay v1 claim run | `fde19b5d3c327e539c29913a973b5e4d76ffff5b` | `e0adb698b5329031ad077f155ae5911f982b1d235bde21474f7262fe26694459` |
 
 ## Research workflow status
 
@@ -237,15 +254,20 @@ The hard envelope is fixed for steps 2–4 of the approved stronger-policy progr
 [`M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) and the living
 [`stronger-policy progress log`](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md).
 
+The approved population-replay cycle completed after one validator-only repair. The claim runner
+retained 24,000 training games, six datasets/checkpoints, and 24,000 development games. Repaired
+validation reproduced every artifact and the unchanged `does_not_advance` decision. See
+[`M7_POPULATION_REPLAY_RESULTS.md`](M7_POPULATION_REPLAY_RESULTS.md).
+
 No research cycle is currently running. VM-reboot execution resume and off-VM artifact durability
 remain unconfigured.
 
 ## Planned next work
 
-1. freeze and implement the stronger-policy program's population-replay step with three paired
-   corpus/training replicates while holding encoder/model v1 and the tactical envelope fixed;
-2. compare q0-only and mixed-population collection with nested replicate/block uncertainty and carry
-   the predeclared corpus into structured-model step 3;
-3. follow with structured model v2, counterfactual rollout supervision, and the final independent
-   league in the already approved order; and
+1. freeze and implement the 2x2 data-by-architecture structured-model Step 3 using both retained
+   population-replay data arms;
+2. train six information-safe structured v2 models with public history, candidate consequences, and
+   separate play/recruit residual computation while keeping selected-action MC targets fixed;
+3. follow with counterfactual rollout supervision and the final independent league in the already
+   approved order; and
 4. choose an off-VM retention mechanism if stronger disaster recovery is desired.

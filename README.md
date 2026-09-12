@@ -18,7 +18,7 @@ The long-term measure of success is an AI that becomes meaningfully stronger thr
 self-play while remaining fair, testable, auditable, and practical to run on a CPU-only development
 machine.
 
-## Current status — September 11, 2026
+## Current status — September 12, 2026
 
 | Milestone | Status | Result |
 | --- | --- | --- |
@@ -33,7 +33,8 @@ machine.
 | [M7 ranking warm start](docs/M7_HEURISTIC_RANKING_RESULTS.md) | Complete; did not advance | Three paired recipe replicates and 15,600 fresh development games |
 | [q0 strength audit](docs/Q0_STRENGTH_AUDIT_RESULTS.md) | Complete | 72,000 fresh games; exact missed-lethal and exploit-surface diagnostics |
 | [Terminal-offense confirmation](docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; hard immediate-win envelope adopted for research steps 2–4 |
-| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress | Stronger-policy program step 1 complete; step 2 population replay next |
+| [Population replay v1](docs/M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Three paired corpus/training replicates; direct gain but frozen robustness gates failed |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress | Stronger-policy steps 1–2 complete; structured model v2 next |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
 **q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
@@ -80,6 +81,14 @@ clearing the predeclared practical criterion. The envelope is fixed for stronger
 steps 2–4, but the selected checkpoint and web default remain unchanged until the program's final
 league decision. See
 [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md).
+
+The September 12 population-replay experiment then trained three paired q0-only and mixed-policy
+model-v1 replicates. Mixed replay beat its matched controls directly at 62.10% [60.13%, 64.00%] and
+improved heuristic and q1–q4 stress results, but did not advance under the frozen rule: the
+parent-heuristic non-regression lower endpoint was -5.056 percentage points against a strict -5-point
+bound, and the all-candidate seat rule was triggered by the losing control side of the direct arena.
+Both data arms and all six checkpoints remain fixed inputs for the structured-model Step 3. See
+[`docs/M7_POPULATION_REPLAY_RESULTS.md`](docs/M7_POPULATION_REPLAY_RESULTS.md).
 
 Historical Milestone 6 results remain in
 [`docs/MILESTONE6_RESULTS.md`](docs/MILESTONE6_RESULTS.md), and the original q0 evaluation remains in

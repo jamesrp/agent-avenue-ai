@@ -1,8 +1,8 @@
 # Stronger policy program: progress and decision log
 
 **Program:** `m7-stronger-policy-program-v1`
-**Last updated:** September 11, 2026
-**Overall state:** Step 1 complete; Step 2 claim run ready to dispatch
+**Last updated:** September 12, 2026
+**Overall state:** Step 2 complete; Step 3 exact agreement being finalized
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -38,8 +38,8 @@ public-history signaling, and specializes to narrow self-play distributions.
 | Step | State | Exact agreement | Implementation | Claim run | Result |
 | --- | --- | --- | --- | --- | --- |
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
-| 2. Population replay v1 | Claim-ready | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | Pending | Pending |
-| 3. Structured model v2 | Authorized, waiting | Pending | Pending | Pending | Pending |
+| 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
+| 3. Structured model v2 | Designing | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | Pending | Pending | Pending |
 | 4. Counterfactual rollouts | Authorized, waiting | Pending | Pending | Pending | Pending |
 | 5. Independent league | Authorized, waiting | Pending | Pending | Pending | Pending |
 
@@ -52,18 +52,31 @@ pre-endpoint RNG/action-prefix failures. The anchor macro improved by +0.75 perc
 95% interval of +0.60 to +0.908, passing the separate practical criterion. The tactical envelope is
 now fixed for steps 2–4; no checkpoint or web default changed.
 
-## Current step: population replay design
+## Completed step 2
 
-Step 2 is frozen as three paired corpus/training replicates. Each replicate compares 4,000 q0-only
-control games with 4,000 size-matched mixed-population games using exact 40% q0 and 10% each
-q1–q4/heuristic/random logical-slot marginals. The model-v1 encoder, architecture, selected-action MC
-loss, optimizer, q0 initialization, epsilon 1/5, and adopted tactical envelope remain fixed.
+Mixed-population model-v1 collection beat matched q0-only retraining directly in every replicate and
+62.10% overall [60.13%, 64.00%]. It improved matched heuristic performance by +6.33 percentage
+points and q1–q4 stress performance by roughly +12 to +14.5 points. It formally does not advance:
+the treatment-minus-parent heuristic lower endpoint was -5.056 points against a strict greater-than
+-5 threshold, and the all-candidate seat rule was triggered by the losing control side of the direct
+arena. Treatment's own lowest observed seat point was 54.0%.
 
-The run will produce 24,000 training games, 22,200 candidate-comparison development games, and 1,800
-matched q0-parent heuristic-reference games, for 24,000 total development games. Nested uncertainty
-resamples both training replicates and paired setup blocks. Both control and population datasets feed
-step 3 regardless of the step-2 advancement decision, enabling a predeclared data×architecture
-comparison rather than post-result corpus selection.
+The claim runner completed at `fde19b5`. One validator-only repair corrected nested-bootstrap RNG
+consumption order; repaired validation at `2bf8822` reproduced all evidence and the unchanged
+decision. Both data arms, six datasets, and six v1 checkpoints remain fixed inputs for Step 3.
+
+## Current step: structured model v2 design
+
+Step 3 is a predeclared 2x2 data-by-architecture study. The retained Step-2 v1 checkpoints are
+controls; six new structured v2 models train on the same q0-only and mixed datasets. The proposed v2
+keeps the 87-feature prefix and adds completed public history plus safe play/recruit consequence
+blocks, with separate zero-initialized residual heads over the q0-initialized trainable base. It keeps
+the selected-action terminal MC objective and fixed tactical envelope; belief heads and
+counterfactual rollout labels remain Step 4.
+
+Fresh Step-3 arenas will rerun both v1 and v2 controls on new disjoint blocks, estimate architecture
+effects within both data arms and their interaction, then select one structured recipe for Step 4 by
+a frozen robustness-floor rule even if v2 does not advance.
 
 ## Completed implementation work
 
@@ -73,13 +86,21 @@ comparison rather than post-result corpus selection.
 - `b18a13e`: exhaustive setup holdout and corrected guaranteed-win prefix endpoints.
 - `23fe496`: independent validator path, frozen provenance checks, whole-step budget metadata, and
   descriptive-only direct comparison.
-- Current validation: Ruff and strict mypy pass; 247 tests pass.
+- Current validation: Ruff and strict mypy pass; 250 tests pass.
 - Step-2 implementation: deterministic assignment/schedules, resumable six-corpus/six-training
   pipeline, 54 development arenas, exhaustive holdout/source/deadline checks, nested bootstrap,
   decision logic, and a separate independent validator are committed and smoke-tested.
 
 ## Decision log
 
+- **September 12 — step-2 result:** mixed replay strongly beat matched q0-only controls and improved
+  descendant/heuristic stress results but does not advance under the frozen parent-heuristic and
+  all-candidate seat gates. Preserve both data arms for the 2x2 Step-3 study.
+- **September 12 — step-2 repair:** repaired validation passed after the one authorized
+  validator-only RNG-order correction; claim artifacts and decision remained unchanged.
+- **September 12 — step-3 design:** use a q0-embedded structured residual model with an unchanged v1
+  prefix, eight completed public turns, safe play/recruit consequence blocks, and no belief or
+  counterfactual targets. Train on both fixed data arms and evaluate on fresh blocks.
 - **September 11 — step-2 implementation freeze:** schedule and experiment workers completed the
   population assignment, six-model training/evaluation pipeline, independent validator, and three
   bounded preflight hardening passes. The final clean source has no unresolved reviewer blocker.

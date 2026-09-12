@@ -28,6 +28,8 @@ from agent_avenue.agents import (
     RNG_ALGORITHM,
     SEED_DERIVATION,
     DeterministicRandom,
+    GreedyHeuristicConfig,
+    RandomAgentConfig,
     derive_seed,
     filter_immediate_win_actions,
     filter_terminal_actions,
@@ -621,6 +623,114 @@ def local_tactical(records: Sequence[object]) -> None:
             state = apply_action(state, action)
 
 
+def envelope_config(base: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "type": "terminal_offense",
+        "version": "terminal-offense-v1",
+        "selection": "base-policy-on-forced-win-set-v1",
+        "win_definition": "public-guaranteed-current-turn-win-v1",
+        "base": {
+            "type": "terminal_safety",
+            "version": "terminal-safety-v1",
+            "fallback": "all-losing-preserve-complete-v1",
+            "public_uncertainty": "public-remaining-multiset-enumeration-v1",
+            "resolution_scope": "current-offer-resolution-only-v1",
+            "terminal_evaluator": "engine-terminal-v1",
+            "base": dict(base),
+        },
+    }
+
+
+def v1_policy_config(checkpoint: object) -> dict[str, object]:
+    manifest = checkpoint.manifest
+    encoder = cast(Mapping[str, object], manifest["encoder"])
+    model = cast(Mapping[str, object], manifest["model"])
+    return {
+        "type": "learned_value",
+        "version": "learned-value-agent-v1",
+        "checkpoint_fingerprint": checkpoint.checkpoint_fingerprint,
+        "tensor_digest": manifest["tensor_digest"],
+        "encoder_version": encoder["version"],
+        "encoder_fingerprint": encoder["fingerprint"],
+        "encoder_width": encoder["width"],
+        "model_version": model["version"],
+        "output_semantics": model["output_semantics"],
+        "device": "cpu",
+        "inference": "batched-candidate-mlp-v1",
+        "tie_breaking": "uniform-exact-max-logit-semantic-order-v1",
+    }
+
+
+def v2_policy_config(checkpoint: object) -> dict[str, object]:
+    manifest = checkpoint.manifest
+    encoder = cast(Mapping[str, object], manifest["encoder"])
+    model = cast(Mapping[str, object], manifest["model"])
+    return {
+        "type": "structured_value",
+        "version": "structured-value-agent-v2",
+        "checkpoint_fingerprint": checkpoint.checkpoint_fingerprint,
+        "tensor_digest": manifest["tensor_digest"],
+        "encoder_version": encoder["version"],
+        "encoder_fingerprint": encoder["fingerprint"],
+        "encoder_width": encoder["width"],
+        "model_version": model["version"],
+        "output_semantics": model["output_semantics"],
+        "device": "cpu",
+        "inference": "batched-structured-residual-mlp-v2",
+        "tie_breaking": "uniform-exact-max-logit-semantic-order-v1",
+    }
+
+
+def expected_cell_configs(
+    cell: Mapping[str, object], plan: Mapping[str, object], output: Path
+) -> tuple[dict[str, object], dict[str, object]]:
+    key = cast(str, cell["key"])
+    replicate = cast(str, cell["replicate_id"])
+    index = replicate.removeprefix("replicate-")
+    inputs = {
+        cast(str, cast(Mapping[str, object], item)["key"]): cast(Mapping[str, object], item)
+        for item in cast(list[object], plan["inputs"])
+    }
+    root = Path(cast(str, plan["step2_root"])).parents[1]
+
+    def v2(name: str) -> dict[str, object]:
+        return envelope_config(
+            v2_policy_config(load_structured_checkpoint(output / "checkpoints" / name))
+        )
+
+    def v1(name: str) -> dict[str, object]:
+        entry = inputs[name]
+        path = root / cast(str, cast(Mapping[str, object], entry["v1_checkpoint"])["path"])
+        return envelope_config(v1_policy_config(load_checkpoint(path)))
+
+    if key.endswith("v2-vs-v1"):
+        arm = cast(str, cell["candidate_arm"])
+        name = f"{arm}{index}"
+        return v2(name), v1(name)
+    if "-v2-vs-C" in key:
+        return v2(f"M{index}"), v2(f"C{index}")
+    if cast(str, cell["candidate_kind"]) == "parent":
+        q0 = load_checkpoint(Path(cast(str, plan["q0_path"])))
+        return envelope_config(v1_policy_config(q0)), GreedyHeuristicConfig().to_data()
+    arm = cast(str, cell["candidate_arm"])
+    opponent = cast(str, cell["opponent"])
+    if opponent == "heuristic":
+        opponent_config = GreedyHeuristicConfig().to_data()
+    elif opponent == "random":
+        opponent_config = RandomAgentConfig().to_data()
+    else:
+        policy_key = "q0-parent" if opponent == "q0-parent" else opponent
+        external = cast(
+            Mapping[str, object],
+            cast(Mapping[str, object], plan["frozen_step2_input_audit"])["global_step2"],
+        )["policy_inputs"]
+        policy = cast(Mapping[str, object], cast(Mapping[str, object], external)[policy_key])
+        checkpoint = load_checkpoint(Path(cast(str, policy["path"])))
+        base = v1_policy_config(checkpoint)
+        opponent_config = base if opponent == "historical-q0" else envelope_config(base)
+    return v2(f"{arm}{index}"), opponent_config
+
+
 def local_wilson(wins: int, games: int) -> tuple[float, float]:
     z = 1.959963984540054
     proportion = wins / games
@@ -700,15 +810,17 @@ def expected_agent_id(cell: Mapping[str, object]) -> tuple[str, str, str, str]:
 
 
 def local_arena_report(
-    cell: Mapping[str, object], records: Sequence[object], retained: Mapping[str, object]
+    cell: Mapping[str, object],
+    records: Sequence[object],
+    retained: Mapping[str, object],
+    expected_configs: tuple[Mapping[str, object], Mapping[str, object]],
 ) -> dict[str, object]:
     """Reconstruct every semantic arena-report field without production arena aggregation."""
     a_id, b_id, a_rng, b_rng = expected_agent_id(cell)
     agents = retained.get("agents")
     if not isinstance(agents, Mapping):
         raise ValidationError("arena report agent metadata missing")
-    a_config = cast(Mapping[str, object], agents["a"])["config"]
-    b_config = cast(Mapping[str, object], agents["b"])["config"]
+    a_config, b_config = expected_configs
     if (
         cast(Mapping[str, object], agents["a"]).get("id") != a_id
         or cast(Mapping[str, object], agents["b"]).get("id") != b_id
@@ -1317,7 +1429,9 @@ def main() -> int:
         _records_manifest, records = load_corpus(report_path.parent / "records", verify_code=False)
         local_tactical(records)
         report = cast(Mapping[str, object], artifact["report"])
-        local_report = local_arena_report(plan_cells[key], records, report)
+        local_report = local_arena_report(
+            plan_cells[key], records, report, expected_cell_configs(plan_cells[key], plan, output)
+        )
         if local_report != report:
             raise ValidationError("locally recomputed complete arena report differs")
         arena_records[key] = records

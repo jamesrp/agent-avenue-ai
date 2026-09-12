@@ -1632,8 +1632,6 @@ def local_validate_arena(
         "seed_derivation": "sha256-domain-v1",
         "rng_algorithm": "sha256-counter-rejection-v1",
         "game_config": normalize_config(records[0].replay.config),
-        "agent_a_config": agents["a"]["config"],
-        "agent_b_config": agents["b"]["config"],
         "rules_fingerprint": rules_fingerprint(),
         "code_fingerprint": code_fingerprint(),
     }

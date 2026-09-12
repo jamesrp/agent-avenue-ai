@@ -20,7 +20,7 @@ from numpy.typing import NDArray
 
 from agent_avenue.encoding.candidate_structured_v2 import ENCODER_FINGERPRINT, ENCODER_VERSION
 
-from .identity import PANEL_STRATA
+from .identity import PANEL_STRATA, PanelPosition
 from .targets import (
     CONTINUATION_SLOTS,
     RNG_CONTRACT_VERSION,
@@ -373,11 +373,167 @@ def load_rollout_targets(path: str | Path) -> LoadedRolloutTargets:
     )
 
 
+def assemble_rollout_target_shards(
+    shard_paths: tuple[str | Path, ...],
+    positions: tuple[PanelPosition, ...],
+    path: str | Path,
+    *,
+    input_identities: Mapping[str, object],
+) -> tuple[Path, Path]:
+    """Assemble canonical per-stratum target shards without replaying a rollout.
+
+    Each shard is already a complete deterministic target artifact.  The final file only joins
+    safe arrays in canonical panel order, making target generation resumable without performing a
+    second hidden-world pass or changing any identity/seed.
+    """
+    if not shard_paths or not positions:
+        raise RolloutArtifactError("target shard assembly requires non-empty shards and panel")
+    ordered = tuple(
+        sorted(
+            positions,
+            key=lambda item: (
+                PANEL_STRATA.index(item.stratum),
+                item.selection_hash,
+                item.safe_identity,
+            ),
+        )
+    )
+    if ordered != positions:
+        raise RolloutArtifactError("target shard assembly requires canonical panel positions")
+    destination = Path(path)
+    destination = destination if destination.suffix == ".npz" else destination.with_suffix(".npz")
+    manifest_path = destination.with_suffix(".json")
+    loaded = tuple(load_rollout_targets(shard) for shard in shard_paths)
+    seen_positions: set[str] = set()
+    arrays: dict[str, list[NDArray[Any]]] = {
+        "features": [],
+        "targets": [],
+        "position_index": [],
+        "safe_identity": [],
+        "stratum": [],
+        "action_json": [],
+        "sample_json": [],
+    }
+    position_by_id = {position.safe_identity: index for index, position in enumerate(ordered)}
+    shard_fingerprints: list[str] = []
+    for value in loaded:
+        shard_fingerprints.append(value.fingerprint)
+        identities = value.safe_identity.tolist()
+        strata = value.stratum.tolist()
+        if not identities or any(identity not in position_by_id for identity in identities):
+            raise RolloutArtifactError(
+                "target shard contains a panel identity outside the final panel"
+            )
+        if len(set(identities)) != 1 or len(set(strata)) != 1:
+            raise RolloutArtifactError(
+                "a resumable target shard must contain exactly one panel position"
+            )
+        identity = str(identities[0])
+        if identity in seen_positions:
+            raise RolloutArtifactError("target shards duplicate a panel position")
+        seen_positions.add(identity)
+        arrays["features"].append(value.features)
+        arrays["targets"].append(value.targets)
+        arrays["position_index"].append(
+            np.full(value.position_index.shape, position_by_id[identity], dtype=np.int64)
+        )
+        arrays["safe_identity"].append(value.safe_identity)
+        arrays["stratum"].append(value.stratum)
+        arrays["action_json"].append(value.action_json)
+        arrays["sample_json"].append(value.sample_json)
+    if seen_positions != set(position_by_id):
+        raise RolloutArtifactError("target shard set does not cover every canonical panel position")
+    combined = {key: np.concatenate(value) for key, value in arrays.items()}
+    panel = [
+        {
+            "replicate_id": position.replicate_id,
+            "stratum": position.stratum,
+            "safe_identity": position.safe_identity,
+            "selection_hash": position.selection_hash,
+        }
+        for position in ordered
+    ]
+    samples = [json.loads(str(value)) for value in combined["sample_json"].tolist()]
+    leaves = sum(1 for sample_rows in samples for row in sample_rows if row["depth_leaf"])
+    total = sum(len(sample_rows) for sample_rows in samples)
+    if total == 0:
+        raise RolloutArtifactError("assembled target shards have no world samples")
+    manifest: dict[str, object] = {
+        "schema_version": ROLLOUT_TARGET_ARTIFACT_SCHEMA_VERSION,
+        "artifact_kind": ROLLOUT_TARGET_ARTIFACT_KIND,
+        "target_version": ROLLOUT_TARGET_VERSION,
+        "encoder": {"version": ENCODER_VERSION, "fingerprint": ENCODER_FINGERPRINT, "width": 519},
+        "rng_contract": {
+            "version": RNG_CONTRACT_VERSION,
+            "root_seed": STEP4_ROOT_SEED,
+            "world_count": WORLD_COUNT,
+            "expanded_deck": "EXPANDED_CANONICAL_DECK",
+            "sampling": "sha256-counter-rejection-v1+reverse-fisher-yates-v1",
+        },
+        "continuation_population": [
+            {"slot": slot, "policy_id": policy_id} for slot, policy_id in CONTINUATION_SLOTS
+        ],
+        "panel": panel,
+        "input_identities": _copy_json_object(input_identities, name="input_identities"),
+        "counts": {
+            "positions": len(ordered),
+            "rows": int(combined["targets"].size),
+            "world_samples": int(combined["targets"].size) * WORLD_COUNT,
+        },
+        "target_digest": _digest({"assembled_from": shard_fingerprints, "panel": panel}),
+        "row_digest": _digest(
+            {"assembled_from": shard_fingerprints, "rows": int(combined["targets"].size)}
+        ),
+        "diagnostics": {
+            "terminal_fraction": 1.0 - leaves / total,
+            "depth_leaf_fraction": leaves / total,
+            "mechanical_cap_errors": 0,
+        },
+        "array_layout": {key: list(value.shape) for key, value in combined.items()},
+    }
+    manifest["artifact_fingerprint"] = _identity(manifest)
+    if destination.exists() or manifest_path.exists():
+        if (
+            destination.exists()
+            and manifest_path.exists()
+            and load_rollout_targets(destination).fingerprint == manifest["artifact_fingerprint"]
+        ):
+            return destination, manifest_path
+        raise RolloutArtifactError(
+            "target destination already contains a different assembled artifact"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.tmp-", dir=destination.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as target:
+            np.savez_compressed(target, **combined)  # type: ignore[arg-type]
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(temporary, destination)
+        manifest["files"] = {
+            destination.name: {
+                "sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
+                "size": destination.stat().st_size,
+            }
+        }
+        manifest_path.write_bytes(_canonical_json(manifest) + b"\n")
+        return destination, manifest_path
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        if not manifest_path.exists():
+            destination.unlink(missing_ok=True)
+        raise
+
+
 __all__ = [
     "ROLLOUT_TARGET_ARTIFACT_KIND",
     "ROLLOUT_TARGET_ARTIFACT_SCHEMA_VERSION",
     "LoadedRolloutTargets",
     "RolloutArtifactError",
+    "assemble_rollout_target_shards",
     "load_rollout_targets",
     "save_rollout_targets",
 ]

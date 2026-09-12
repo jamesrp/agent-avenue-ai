@@ -70,17 +70,13 @@ def canonical_observation(observation: PlayerObservation) -> PlayerObservation:
     return replace(observation, legal_actions=canonical_legal_actions(observation.legal_actions))
 
 
-def safe_position_identity(
-    observation: PlayerObservation,
-    *,
-    replicate_id: str,
-    stratum: str,
-) -> str:
-    """Hash canonical public material only; audit/source information is intentionally absent."""
-    if not replicate_id:
-        raise PanelSelectionError("replicate_id cannot be empty")
-    if stratum not in PANEL_STRATA:
-        raise PanelSelectionError("stratum is not one of the frozen Step-4 strata")
+def safe_position_identity(observation: PlayerObservation) -> str:
+    """Hash the frozen complete decision-actor public identity only.
+
+    Replicate/stratum select and seed this public identity but are deliberately not part of it.
+    That keeps an identical safe position stable if audit grouping changes and prevents source
+    provenance from influencing its identity.
+    """
     canonical = canonical_observation(observation)
     decision = canonical.decision
     actor = getattr(decision, "actor", None)
@@ -91,8 +87,12 @@ def safe_position_identity(
         "observation": observation_to_data(canonical),
         "decision_actor": actor.value,
         "decision_revision": revision,
-        "replicate_id": replicate_id,
-        "stratum": stratum,
+        "legal_actions": [
+            {
+                "semantic_key": list(semantic_action_key(action)),
+            }
+            for action in canonical.legal_actions
+        ],
     }
     return hashlib.sha256(_canonical_json(payload)).hexdigest()
 
@@ -181,9 +181,7 @@ class PanelCandidate:
     @property
     def safe_identity(self) -> str:
         assert self.stratum is not None
-        return safe_position_identity(
-            self.observation, replicate_id=self.replicate_id, stratum=self.stratum
-        )
+        return safe_position_identity(self.observation)
 
     @property
     def selection_hash(self) -> str:
@@ -208,9 +206,7 @@ class PanelPosition:
             raise PanelSelectionError("selected position has invalid frozen identity metadata")
         if not _valid_fingerprint(self.audit_record_fingerprint):
             raise PanelSelectionError("selected position audit locator must be a SHA-256 digest")
-        expected = safe_position_identity(
-            self.observation, replicate_id=self.replicate_id, stratum=self.stratum
-        )
+        expected = safe_position_identity(self.observation)
         if self.safe_identity != expected:
             raise PanelSelectionError(
                 "selected position identity does not match its public observation"

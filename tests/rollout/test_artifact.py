@@ -27,7 +27,7 @@ def _targets() -> RolloutTargetSet:
     observation = canonical_observation(observe(state, PlayerId.PLAYER_ONE))
     stratum = stratum_for_observation(observation)
     assert stratum is not None
-    safe_id = safe_position_identity(observation, replicate_id="replicate-1", stratum=stratum)
+    safe_id = safe_position_identity(observation)
     rank = hashlib.sha256(f"step4:panel:replicate-1:{stratum}:{safe_id}".encode()).hexdigest()
     position = PanelPosition("replicate-1", stratum, safe_id, rank, observation, "0" * 64)
     samples = tuple(

@@ -53,7 +53,7 @@ def _position(seed: int = 5) -> PanelPosition:
     observation = observe(state, state.active_player)
     stratum = stratum_for_observation(observation)
     assert stratum is not None
-    safe_id = safe_position_identity(observation, replicate_id="replicate-test", stratum=stratum)
+    safe_id = safe_position_identity(observation)
     selection_hash = hashlib.sha256(
         f"step4:panel:replicate-test:{stratum}:{safe_id}".encode()
     ).hexdigest()

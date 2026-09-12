@@ -579,6 +579,7 @@ def generate_rollout_targets(
     leaf_scorer: LeafScorer,
     root_seed: int = STEP4_ROOT_SEED,
     encoder: Encoder = _structured_vector,
+    enforce_depth_leaf_gate: bool = True,
 ) -> RolloutTargetSet:
     """Generate deterministic ten-world targets for every legal action in canonical panel order."""
     ordered = canonical_panel_order(positions)
@@ -615,7 +616,7 @@ def generate_rollout_targets(
                 )
             )
     targets = RolloutTargetSet(ordered, tuple(rows), root_seed)
-    if targets.depth_leaf_fraction > 0.5:
+    if enforce_depth_leaf_gate and targets.depth_leaf_fraction > 0.5:
         raise RolloutTargetError("depth-leaf fraction exceeds the fixed 50% eligibility gate")
     return targets
 

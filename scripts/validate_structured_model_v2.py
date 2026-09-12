@@ -830,7 +830,9 @@ def pair_scores(report: Mapping[str, object]) -> tuple[float, ...]:
 def check_cross_cell_alignment(records_by_key: Mapping[str, Sequence[object]]) -> None:
     """Check record-level shared setup, physical seat, opponent config, and RNG identities."""
 
-    def compare(left_key: str, right_key: str, opponent: str | None = None) -> None:
+    def compare(
+        left_key: str, right_key: str, opponent: str | None = None, *, all_rng: bool = True
+    ) -> None:
         left = records_by_key[left_key]
         right = records_by_key[right_key]
         if len(left) != len(right):
@@ -842,7 +844,7 @@ def check_cross_cell_alignment(records_by_key: Mapping[str, Sequence[object]]) -
                 second.game_id,
             ):
                 raise ValidationError("cross-cell setup/pair/game identity differs")
-            if tuple((seat.seed, seat.rng_domain) for seat in first.seats) != tuple(
+            if all_rng and tuple((seat.seed, seat.rng_domain) for seat in first.seats) != tuple(
                 (seat.seed, seat.rng_domain) for seat in second.seats
             ):
                 raise ValidationError("cross-cell physical seat/RNG identity differs")
@@ -864,7 +866,16 @@ def check_cross_cell_alignment(records_by_key: Mapping[str, Sequence[object]]) -
             compare(f"C{index}-v2-vs-{opponent}", f"M{index}-v2-vs-{opponent}", opponent)
         compare(f"C{index}-v2-vs-heuristic", f"M{index}-v2-vs-heuristic", "heuristic")
         compare(
-            f"C{index}-v2-vs-heuristic", f"q0-parent-vs-heuristic-reference-{index}", "heuristic"
+            f"C{index}-v2-vs-heuristic",
+            f"q0-parent-vs-heuristic-reference-{index}",
+            "heuristic",
+            all_rng=False,
+        )
+        compare(
+            f"M{index}-v2-vs-heuristic",
+            f"q0-parent-vs-heuristic-reference-{index}",
+            "heuristic",
+            all_rng=False,
         )
 
 

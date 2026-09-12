@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import subprocess
+import tarfile
 import tempfile
 import time
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -46,6 +47,7 @@ from agent_avenue.runners.strength_audit import audit_public_forced_wins
 from agent_avenue.storage import (
     GameRecord,
     code_fingerprint,
+    game_record_fingerprint,
     inspect_source_identity,
     load_corpus,
     repository_root,
@@ -76,6 +78,18 @@ ALLOWED_RESUME_RETRIES: Final = 1
 EXECUTION_STATE_VERSION: Final = "m7-structured-model-v2-execution-state-v2"
 RUNTIME_VERSION: Final = "m7-structured-model-v2-runtime-extrapolation-v1"
 FIXED_CREATED_AT: Final = "2026-09-12T00:00:00+00:00"
+STEP2_CLAIM_SOURCE: Final = "fde19b5d3c327e539c29913a973b5e4d76ffff5b"
+_STEP2_PROTECTED_PREFIXES: Final[tuple[str, ...]] = (
+    "src/agent_avenue/engine/",
+    "src/agent_avenue/observation/",
+    "src/agent_avenue/storage/game_record.py",
+    "src/agent_avenue/storage/replay.py",
+    "src/agent_avenue/runners/game.py",
+    "src/agent_avenue/runners/arena.py",
+    "src/agent_avenue/agents/terminal_offense.py",
+    "src/agent_avenue/agents/terminal_safety.py",
+    "src/agent_avenue/encoding/candidate_v1.py",
+)
 OPPONENTS: Final[tuple[str, ...]] = (
     "q0-parent",
     "heuristic",
@@ -404,6 +418,7 @@ def verify_step2_inputs(
         raise StructuredExperimentError(
             "selected q0 checkpoint/tensor does not match frozen manifest"
         )
+    global_audit = _step2_global_input_audit(config, manifest)
     audit = _artifact(
         INPUT_AUDIT_VERSION,
         input_manifest_fingerprint=manifest["artifact_fingerprint"],
@@ -415,6 +430,7 @@ def verify_step2_inputs(
             "checkpoint_fingerprint": q0_json["checkpoint_fingerprint"],
             "tensor_digest": q0_json["tensor_digest"],
         },
+        global_step2=global_audit,
         status="passed",
     )
     return manifest, inputs, audit
@@ -440,6 +456,133 @@ def _q_paths(config: StructuredExperimentConfig) -> dict[str, Path]:
     if config.q_paths is not None:
         defaults.update(config.q_paths)
     return {key: path.resolve() for key, path in defaults.items()}
+
+
+def _historical_compatibility(source: Mapping[str, object]) -> dict[str, object]:
+    """Allow historical corpus replay only when protected Step-2 semantics stayed unchanged."""
+    revision = source.get("git_revision")
+    if not isinstance(revision, str) or len(revision) != 40:
+        raise StructuredExperimentError("current claim source revision is malformed")
+    try:
+        changed = subprocess.run(
+            ("git", "diff", "--name-only", f"{STEP2_CLAIM_SOURCE}..{revision}"),
+            cwd=repository_root(),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise StructuredExperimentError("unable to inspect historical compatibility paths") from exc
+    protected_hits = [
+        path
+        for path in changed
+        if any(path.startswith(prefix) for prefix in _STEP2_PROTECTED_PREFIXES)
+    ]
+    if protected_hits:
+        raise StructuredExperimentError(
+            "Step-3 historical compatibility changed protected Step-2 semantics: "
+            + ", ".join(protected_hits)
+        )
+    return {
+        "version": "m7-structured-model-v2-historical-compatibility-v1",
+        "step2_claim_source": STEP2_CLAIM_SOURCE,
+        "current_claim_source": revision,
+        "rules_fingerprint": rules_fingerprint(),
+        "protected_prefixes": list(_STEP2_PROTECTED_PREFIXES),
+        "changed_paths": changed,
+        "protected_path_hits": protected_hits,
+        "passed": True,
+    }
+
+
+def _step2_global_input_audit(
+    config: StructuredExperimentConfig, manifest: Mapping[str, object]
+) -> dict[str, object]:
+    """Verify retained Step-2 plan/result/repair/archive and q-family policy identities."""
+    root = _repository_for_step2(config.step2_root)
+    step2 = manifest.get("step2")
+    if not isinstance(step2, Mapping):
+        raise StructuredExperimentError("frozen input manifest lacks Step-2 identities")
+    plan = _read(config.step2_root / "plan.json")
+    result = _read(config.step2_root / "result.json")
+    repaired = _read(config.step2_root / "validation.json")
+    split = _read(config.step2_root / "dataset-split-alignment.json")
+    if (
+        plan.get("plan_fingerprint") != step2.get("plan_fingerprint")
+        or result.get("result_fingerprint") != step2.get("result_fingerprint")
+        or repaired.get("artifact_fingerprint") != step2.get("validation_fingerprint")
+        or split.get("artifact_fingerprint") != step2.get("split_alignment_fingerprint")
+    ):
+        raise StructuredExperimentError("retained Step-2 global artifact identities differ")
+    plan_source = plan.get("source")
+    if not isinstance(plan_source, Mapping) or plan_source.get("git_revision") != step2.get(
+        "claim_source"
+    ):
+        raise StructuredExperimentError("retained Step-2 plan claim source differs")
+    archive = root / "artifacts/archive/m7-population-replay-v1-2026-09-12.tar.gz"
+    archive_sidecar = archive.with_suffix(".tar.gz.sha256")
+    if (
+        not archive.is_file()
+        or not archive_sidecar.is_file()
+        or _sha256(archive) != step2.get("archive_sha256")
+    ):
+        raise StructuredExperimentError("retained Step-2 archive SHA-256 differs")
+    sidecar = archive_sidecar.read_text().split(maxsplit=1)
+    if not sidecar or sidecar[0] != step2.get("archive_sha256"):
+        raise StructuredExperimentError("retained Step-2 archive sidecar differs")
+    try:
+        with tarfile.open(archive, "r:gz") as payload:
+            member = payload.getmember("runs/m7-population-replay-v1/archive-manifest.json")
+            stream = payload.extractfile(member)
+            if stream is None:
+                raise StructuredExperimentError("archive manifest payload is missing")
+            archive_manifest_value = json.loads(stream.read().decode("utf-8"))
+    except (OSError, tarfile.TarError, KeyError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        if isinstance(exc, StructuredExperimentError):
+            raise
+        raise StructuredExperimentError(
+            "unable to verify retained Step-2 archive manifest"
+        ) from exc
+    if not isinstance(archive_manifest_value, Mapping):
+        raise StructuredExperimentError("retained Step-2 archive manifest is malformed")
+    checkpoint_identities = plan.get("checkpoint_identities")
+    if not isinstance(checkpoint_identities, Mapping):
+        raise StructuredExperimentError("retained Step-2 checkpoint identities are malformed")
+    from agent_avenue.learning import load_checkpoint, tensor_digest
+
+    paths = _q_paths(config)
+    policies: dict[str, object] = {}
+    for policy in ("q0-parent", "q1", "q2", "q3", "q4", "historical-q0"):
+        step2_name = "q0" if policy == "q0-parent" else policy
+        expected = checkpoint_identities.get(step2_name)
+        if not isinstance(expected, Mapping):
+            raise StructuredExperimentError("retained Step-2 policy identity is missing")
+        checkpoint = load_checkpoint(paths[policy])
+        actual_tensor = tensor_digest(checkpoint.model.state_dict())
+        if checkpoint.checkpoint_fingerprint != expected.get(
+            "checkpoint_fingerprint"
+        ) or actual_tensor != expected.get("tensor_digest"):
+            raise StructuredExperimentError(f"retained {policy} checkpoint/tensor differs")
+        policies[policy] = {
+            "path": _relative_or_absolute(paths[policy]),
+            "checkpoint_fingerprint": checkpoint.checkpoint_fingerprint,
+            "tensor_digest": actual_tensor,
+        }
+    return {
+        "step2_global_artifacts": {
+            "plan_fingerprint": plan["plan_fingerprint"],
+            "result_fingerprint": result["result_fingerprint"],
+            "repaired_validation_fingerprint": repaired["artifact_fingerprint"],
+            "split_alignment_fingerprint": split["artifact_fingerprint"],
+            "claim_source": plan_source["git_revision"],
+        },
+        "archive": {
+            "path": _relative_or_absolute(archive),
+            "sha256": _sha256(archive),
+            "archive_manifest_fingerprint": archive_manifest_value.get("artifact_fingerprint"),
+        },
+        "policy_inputs": policies,
+    }
 
 
 def _cells(config: StructuredExperimentConfig) -> tuple[StructuredArenaCell, ...]:
@@ -593,67 +736,192 @@ def _holdout_scan(
     )
 
 
-def _feature_panel(records: Sequence[GameRecord], limit: int = 256) -> list[dict[str, object]]:
-    """Build a safe, semantic candidate fixture panel for exact q0 embedding checks."""
-    from agent_avenue.encoding.candidate_structured_v2 import encode_candidate as encode_v2
-    from agent_avenue.encoding.candidate_v1 import encode_candidate as encode_v1
-    from agent_avenue.engine import Phase, apply_action, new_game
+def _action_data(action: object) -> dict[str, object]:
+    from agent_avenue.engine import PlayOfferAction, RecruitAction
 
-    rows: list[dict[str, object]] = []
+    if isinstance(action, PlayOfferAction):
+        return {
+            "type": "play_offer",
+            "face_up": action.face_up.value,
+            "face_down": action.face_down.value,
+        }
+    if isinstance(action, RecruitAction):
+        return {"type": "recruit", "slot": action.slot.value}
+    raise StructuredExperimentError("fixture contains unsupported action")
+
+
+def _feature_panel(
+    records: Sequence[GameRecord],
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Choose whole candidate groups that deterministically cover the frozen safety categories."""
+    from agent_avenue.encoding.candidate_structured_v2 import (
+        FEATURE_NAMES,
+    )
+    from agent_avenue.encoding.candidate_structured_v2 import (
+        encode_candidate as encode_v2,
+    )
+    from agent_avenue.encoding.candidate_v1 import encode_candidate as encode_v1
+    from agent_avenue.engine import Phase, PlayOfferAction, apply_action, new_game
+    from agent_avenue.engine.cards import CardName
+
+    required = {
+        *(f"card:{card.value}" for card in CardName),
+        "phase:play",
+        "phase:recruit",
+        "effect:score",
+        "effect:win",
+        "effect:lose",
+        "terminal:win",
+        "terminal:loss",
+        "history:padding",
+        "history:truncated",
+    }
+    covered: set[str] = set()
+    groups: list[dict[str, object]] = []
     for record in records:
         state = new_game(record.replay.config, record.replay.seed)
-        for action in record.replay.actions:
+        record_fingerprint = game_record_fingerprint(record)
+        for decision_index, action in enumerate(record.replay.actions):
             actor = (
                 state.active_player if state.phase is Phase.PLAY else state.active_player.other()
             )
             observation = observe(state, actor)
+            tags = {
+                f"phase:{state.phase.value}",
+                "history:truncated"
+                if len(observation.history) > 8
+                else "history:padding"
+                if len(observation.history) < 8
+                else "history:exact-eight",
+            }
+            rows: list[dict[str, object]] = []
             for candidate in observation.legal_actions:
-                rows.append(
+                v1 = encode_v1(observation, candidate).vector
+                v2 = encode_v2(observation, candidate).vector
+                rows.append({"action": _action_data(candidate), "v1": list(v1), "v2": list(v2)})
+                if isinstance(candidate, PlayOfferAction):
+                    tags.update(
+                        (f"card:{candidate.face_up.value}", f"card:{candidate.face_down.value}")
+                    )
+                elif hasattr(observation.decision, "face_up"):
+                    tags.add(f"card:{observation.decision.face_up.value}")
+                for effect in ("score", "win", "lose"):
+                    if any(
+                        value == 1.0 and name.endswith(f"_effect_{effect}")
+                        for name, value in zip(FEATURE_NAMES, v2, strict=True)
+                    ):
+                        tags.add(f"effect:{effect}")
+                if any(
+                    value == 1.0 and "terminal" in name and name.endswith("_win")
+                    for name, value in zip(FEATURE_NAMES, v2, strict=True)
+                ):
+                    tags.add("terminal:win")
+                if any(
+                    value == 1.0 and "terminal" in name and name.endswith("_loss")
+                    for name, value in zip(FEATURE_NAMES, v2, strict=True)
+                ):
+                    tags.add("terminal:loss")
+            if tags.difference(covered):
+                groups.append(
                     {
-                        "v1": list(encode_v1(observation, candidate).vector),
-                        "v2": list(encode_v2(observation, candidate).vector),
+                        "group_id": f"{record_fingerprint}:{decision_index}",
                         "phase": state.phase.value,
+                        "history_length": len(observation.history),
+                        "coverage_tags": sorted(tags),
+                        "rows": rows,
                     }
                 )
-                if len(rows) >= limit:
-                    return rows
+                covered.update(tags)
             state = apply_action(state, action)
-    if not rows:
-        raise StructuredExperimentError("safe fixture panel is empty")
-    return rows
+            if required <= covered:
+                panel = {
+                    "required_tags": sorted(required),
+                    "covered_tags": sorted(covered),
+                    "group_count": len(groups),
+                    "candidate_count": sum(
+                        len(cast(list[object], group["rows"])) for group in groups
+                    ),
+                }
+                return groups, panel
+    raise StructuredExperimentError(
+        "coverage-complete q0 fixture panel missing: " + ", ".join(sorted(required - covered))
+    )
 
 
 def _initialization_audit(
-    q0_path: Path, panel: Sequence[Mapping[str, object]], seed: int
+    q0_path: Path, groups: Sequence[Mapping[str, object]], panel: Mapping[str, object], seed: int
 ) -> dict[str, object]:
     import torch
 
-    from agent_avenue.learning import load_checkpoint, tensor_digest
+    from agent_avenue.learning import load_checkpoint, structured_tensor_digest, tensor_digest
 
     q0 = load_checkpoint(q0_path)
     model = create_structured_model(q0.model.state_dict(), projection_seed=seed)
-    v1 = torch.tensor([row["v1"] for row in panel], dtype=torch.float32)
-    v2 = torch.tensor([row["v2"] for row in panel], dtype=torch.float32)
-    with torch.inference_mode():
-        q0_logits = q0.model(v1)
-        v2_logits = model(v2)
-    maximum = float(torch.max(torch.abs(q0_logits - v2_logits)).item())
-    # The panel is semantic candidates grouped as captured.  Exact logits imply exact maxima/ties;
-    # retaining the complete vectors makes this independently checkable without state access.
-    if maximum > 1e-7:
-        raise StructuredExperimentError("untrained v2 does not exactly embed q0 on safe fixtures")
+    state = q0.model.state_dict()
+    direct_mapping = {
+        "base_hidden_weight": torch.equal(model.base_hidden.weight, state["hidden.weight"]),
+        "base_hidden_bias": torch.equal(model.base_hidden.bias, state["hidden.bias"]),
+        "base_value_weight": torch.equal(model.base_value.weight, state["output.weight"]),
+        "base_value_bias": torch.equal(model.base_value.bias, state["output.bias"]),
+        "play_residual_zero": bool(
+            torch.count_nonzero(model.play_residual.weight) == 0
+            and torch.count_nonzero(model.play_residual.bias) == 0
+        ),
+        "recruit_residual_zero": bool(
+            torch.count_nonzero(model.recruit_residual.weight) == 0
+            and torch.count_nonzero(model.recruit_residual.bias) == 0
+        ),
+    }
+    if not all(direct_mapping.values()):
+        raise StructuredExperimentError("q0 tensor mapping or zero residual initialization differs")
+    maximum = 0.0
+    summaries: list[dict[str, object]] = []
+    for group in groups:
+        rows = group.get("rows")
+        if not isinstance(rows, list) or not rows:
+            raise StructuredExperimentError("fixture group rows are malformed")
+        v1 = torch.tensor(
+            [cast(Mapping[str, object], row)["v1"] for row in rows], dtype=torch.float32
+        )
+        v2 = torch.tensor(
+            [cast(Mapping[str, object], row)["v2"] for row in rows], dtype=torch.float32
+        )
+        with torch.inference_mode():
+            q0_logits = q0.model(v1)
+            v2_logits = model(v2)
+        difference = float(torch.max(torch.abs(q0_logits - v2_logits)).item())
+        maximum = max(maximum, difference)
+        q0_values = q0_logits.tolist()
+        v2_values = v2_logits.tolist()
+        q0_maxima = tuple(index for index, value in enumerate(q0_values) if value == max(q0_values))
+        v2_maxima = tuple(index for index, value in enumerate(v2_values) if value == max(v2_values))
+        if difference > 1e-7 or q0_maxima != v2_maxima:
+            raise StructuredExperimentError(
+                "untrained v2 does not preserve q0 grouped greedy maxima"
+            )
+        summaries.append(
+            {
+                "group_id": group["group_id"],
+                "phase": group["phase"],
+                "history_length": group["history_length"],
+                "actions": [cast(Mapping[str, object], row)["action"] for row in rows],
+                "q0_maxima": list(q0_maxima),
+                "v2_maxima": list(v2_maxima),
+                "maximum_absolute_logit_difference": difference,
+            }
+        )
     return _artifact(
-        "m7-structured-model-v2-q0-embedding-v1",
+        "m7-structured-model-v2-q0-embedding-v2",
         q0_checkpoint_fingerprint=q0.checkpoint_fingerprint,
         q0_tensor_digest=tensor_digest(q0.model.state_dict()),
         structured_init_seed=seed,
-        fixture_count=len(panel),
-        fixture_digest=_fingerprint(list(panel)),
+        panel=panel,
+        panel_digest=_fingerprint(groups),
+        direct_tensor_mapping=direct_mapping,
+        group_boundaries_and_maxima=summaries,
         maximum_absolute_logit_difference=maximum,
         greedy_choices_identical=True,
-        structured_tensor_digest=__import__(
-            "agent_avenue.learning", fromlist=["structured_tensor_digest"]
-        ).structured_tensor_digest(model.state_dict()),
+        structured_tensor_digest=structured_tensor_digest(model.state_dict()),
         passed=True,
     )
 
@@ -1478,7 +1746,7 @@ def structured_selection(
 
 
 def _safety_report(
-    panel: Sequence[Mapping[str, object]],
+    panel: Mapping[str, object],
     initialization: Mapping[str, object],
     artifacts: Iterable[Mapping[str, object]],
 ) -> dict[str, object]:
@@ -1501,7 +1769,7 @@ def _safety_report(
         SAFETY_VERSION,
         encoder_source_allowlist_passed=True,
         forbidden_encoder_tokens=list(forbidden),
-        fixture_panel_digest=_fingerprint(list(panel)),
+        fixture_panel_digest=initialization["panel_digest"],
         q0_embedding=initialization,
         current_hidden_face_down_invariance=(
             "covered by retained hidden-equivalent fixture vectors/logits/actions and encoder tests"
@@ -1536,11 +1804,15 @@ def _require_artifact(path: Path, *, label: str) -> dict[str, object]:
 
 
 def validate_completed_structured_result(
-    output: Path, plan: Mapping[str, object], cells: Sequence[StructuredArenaCell]
+    output: Path,
+    plan: Mapping[str, object],
+    cells: Sequence[StructuredArenaCell],
+    *,
+    require_execution_complete: bool = True,
 ) -> dict[str, object]:
     """Refuse reuse until every retained cardinality/reference/checksum boundary is complete."""
     state = _load_execution_state(output / "execution-state.json")
-    if state.get("completed") is not True:
+    if require_execution_complete and state.get("completed") is not True:
         raise StructuredExperimentError("existing result has no completed execution state")
     result = _read(output / "result.json")
     if (
@@ -1782,8 +2054,9 @@ def _claim_config_is_exact(config: StructuredExperimentConfig) -> bool:
 
 
 def build_structured_experiment_plan(config: StructuredExperimentConfig) -> dict[str, object]:
-    manifest, inputs, _ = verify_step2_inputs(config)
+    manifest, inputs, frozen_input_audit = verify_step2_inputs(config)
     source = _full_source_identity()
+    compatibility = _historical_compatibility(source)
     cells = _cells(config)
     if config.claim_default:
         _check_default_cardinality(cells)
@@ -1805,7 +2078,9 @@ def build_structured_experiment_plan(config: StructuredExperimentConfig) -> dict
         "cycle_id": CYCLE_ID,
         "root_seed": ROOT_SEED,
         "source": source,
+        "historical_compatibility": compatibility,
         "input_manifest_fingerprint": manifest["artifact_fingerprint"],
+        "frozen_step2_input_audit": frozen_input_audit,
         "step2_root": str(config.step2_root.resolve()),
         "inputs": [
             {
@@ -1859,6 +2134,10 @@ def run_structured_experiment(config: StructuredExperimentConfig) -> dict[str, o
         raise StructuredExperimentError("claim dispatch blocked by frozen clean-source preflight")
     cells = _cells(config)
     if (output / "result.json").exists():
+        validate_completed_structured_result(output, plan, cells, require_execution_complete=False)
+        state_path = output / "execution-state.json"
+        if _load_execution_state(state_path).get("completed") is not True:
+            _complete_execution(state_path)
         return validate_completed_structured_result(output, plan, cells)
     state_path = _begin_execution(output, plan, claim_mode=claim_mode)
     with _timed_stage(state_path, claim_mode=claim_mode, stage="input-holdout"):
@@ -1892,9 +2171,10 @@ def run_structured_experiment(config: StructuredExperimentConfig) -> dict[str, o
         datasets[item.key] = path
         dataset_audits[item.key] = dataset_audit
         records_by_key[item.key] = records
-    panel = _feature_panel(records_by_key["C1"])
+    fixture_groups, panel = _feature_panel(records_by_key["C1"])
     initialization = _initialization_audit(
         _q0_path(config),
+        fixture_groups,
         panel,
         derive_seed(ROOT_SEED, "step3:v2-structured-init:replicate-1") & ((1 << 63) - 1),
     )
@@ -1907,7 +2187,7 @@ def run_structured_experiment(config: StructuredExperimentConfig) -> dict[str, o
             "m7-structured-model-v2-encoder-schema-v1",
             schema=FEATURE_SCHEMA.to_data(),
             schema_fingerprint=FEATURE_SCHEMA.fingerprint,
-            golden_fixture_panel_digest=_fingerprint(panel),
+            golden_fixture_panel_digest=initialization["panel_digest"],
             q0_embedding_fingerprint=initialization["artifact_fingerprint"],
         ),
         label="encoder schema",

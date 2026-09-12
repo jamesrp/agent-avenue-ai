@@ -25,12 +25,13 @@ from typing import cast
 import numpy as np
 
 from agent_avenue.agents import (
+    RNG_ALGORITHM,
+    SEED_DERIVATION,
     DeterministicRandom,
     derive_seed,
     filter_immediate_win_actions,
     filter_terminal_actions,
 )
-from agent_avenue.encoding.candidate_v1 import encode_candidate as encode_v1
 from agent_avenue.encoding.schema import CARD_ORDER
 from agent_avenue.engine import Phase, PlayerId, apply_action, new_game
 from agent_avenue.engine.cards import CARD_DEFINITIONS, CardEffect, CardName, recruit_effect
@@ -41,6 +42,7 @@ from agent_avenue.engine.model import (
     RecruitAction,
     TerminalOutcome,
 )
+from agent_avenue.engine.setup import normalize_config
 from agent_avenue.engine.terminal import adjudicate_position
 from agent_avenue.learning import (
     load_checkpoint,
@@ -68,6 +70,22 @@ OPPONENTS = ("q0-parent", "heuristic", "random", "historical-q0", "q1", "q2", "q
 RESAMPLES = 20_000
 LOWER = 499
 UPPER = 19_499
+
+
+V1_PREFIX_WIDTH = 87
+_V1_REPEATABLE_SCORE_CARDS = (
+    CardName.DOUBLE_AGENT,
+    CardName.ENFORCER,
+    CardName.SABOTEUR,
+    CardName.SENTINEL,
+)
+_V1_THRESHOLDS = (
+    *((card, (1, 2, 3)) for card in _V1_REPEATABLE_SCORE_CARDS),
+    (CardName.CODEBREAKER, (1, 2)),
+    (CardName.DAREDEVIL, (1, 2)),
+    (CardName.SIDEKICK, (1,)),
+    (CardName.MOLE, (1,)),
+)
 
 
 class ValidationError(RuntimeError):
@@ -309,6 +327,87 @@ def safe_unseen(observation: PlayerObservation) -> tuple[int, ...]:
     return tuple(CARD_DEFINITIONS[card].copies - visible[card] for card in CARD_ORDER)
 
 
+def local_v1_prefix(observation: PlayerObservation, action: Action) -> tuple[float, ...]:
+    """Independently rebuild frozen candidate-public-v1's 87 safe features.
+
+    Records have already passed semantic replay verification; these local checks intentionally
+    validate the public accounting needed by the prefix without importing any production encoder.
+    """
+    if action not in observation.legal_actions:
+        raise ValidationError("candidate is not a legal safe-observation action")
+    self_player = public_player(observation, observation.viewer)
+    other_player = public_player(observation, observation.viewer.other())
+    if self_player.hand_size != len(observation.own_hand):
+        raise ValidationError("local v1 self hand accounting differs")
+    if not isinstance(observation.decision, RecruitContext) and observation.phase is not Phase.PLAY:
+        raise ValidationError("local v1 play phase differs")
+    if isinstance(observation.decision, RecruitContext) and observation.phase is not Phase.RECRUIT:
+        raise ValidationError("local v1 recruit phase differs")
+    if (
+        observation.turn < 1
+        or observation.turn > 19
+        or not 0 <= observation.remaining_deck_count <= 30
+    ):
+        raise ValidationError("local v1 turn/deck bounds differ")
+    visible = Counter(observation.own_hand)
+    visible.update(self_player.recruited)
+    visible.update(other_player.recruited)
+    if isinstance(observation.decision, RecruitContext):
+        visible[observation.decision.face_up] += 1
+    unseen = tuple(CARD_DEFINITIONS[card].copies - visible[card] for card in CARD_ORDER)
+    expected_unknown = observation.remaining_deck_count + other_player.hand_size
+    if isinstance(observation.decision, RecruitContext):
+        expected_unknown += 1
+    if any(count < 0 for count in unseen) or sum(unseen) != expected_unknown:
+        raise ValidationError("local v1 safe unseen accounting differs")
+
+    def clip(value: int, limit: int) -> float:
+        return float(max(-limit, min(limit, value)) / limit)
+
+    values: list[float] = [
+        float(observation.phase is Phase.PLAY),
+        float(observation.phase is Phase.RECRUIT),
+        float(observation.turn / 19),
+        float(observation.remaining_deck_count / 30),
+        clip(self_player.score, 14),
+        clip(other_player.score, 14),
+        clip(self_player.score - other_player.score, 7),
+        float(self_player.hand_size / 4),
+        float(other_player.hand_size / 4),
+    ]
+    hand = Counter(observation.own_hand)
+    values.extend(float(hand[card] / CARD_DEFINITIONS[card].copies) for card in CARD_ORDER)
+    for recruited in (self_player.recruited, other_player.recruited):
+        counts = Counter(recruited)
+        values.extend(
+            float(counts[card] >= threshold)
+            for card, thresholds in _V1_THRESHOLDS
+            for threshold in thresholds
+        )
+    values.extend(
+        float(count / CARD_DEFINITIONS[card].copies)
+        for card, count in zip(CARD_ORDER, unseen, strict=True)
+    )
+    values.extend(
+        one_hot(
+            observation.decision.face_up
+            if isinstance(observation.decision, RecruitContext)
+            else None
+        )
+    )
+    values.extend(one_hot(action.face_up if isinstance(action, PlayOfferAction) else None))
+    values.extend(one_hot(action.face_down if isinstance(action, PlayOfferAction) else None))
+    values.extend(
+        (
+            float(isinstance(action, RecruitAction) and action.slot is OfferSlot.FACE_UP),
+            float(isinstance(action, RecruitAction) and action.slot is OfferSlot.FACE_DOWN),
+        )
+    )
+    if len(values) != V1_PREFIX_WIDTH:
+        raise ValidationError("local v1 prefix width differs")
+    return tuple(values)
+
+
 def recruit_features(observation: PlayerObservation, action: RecruitAction) -> list[float]:
     if not isinstance(observation.decision, RecruitContext):
         raise ValidationError("recruit action has no public recruit context")
@@ -403,7 +502,7 @@ def recruit_features(observation: PlayerObservation, action: RecruitAction) -> l
 
 
 def local_encode(observation: PlayerObservation, action: Action) -> tuple[float, ...]:
-    prefix = encode_v1(observation, action).vector
+    prefix = local_v1_prefix(observation, action)
     history = history_features(observation)
     if isinstance(action, PlayOfferAction):
         values = prefix + tuple(history) + tuple(play_features(observation, action)) + (0.0,) * 54
@@ -522,6 +621,203 @@ def local_tactical(records: Sequence[object]) -> None:
             state = apply_action(state, action)
 
 
+def local_wilson(wins: int, games: int) -> tuple[float, float]:
+    z = 1.959963984540054
+    proportion = wins / games
+    z2 = z * z
+    denominator = 1 + z2 / games
+    center = (proportion + z2 / (2 * games)) / denominator
+    radius = (
+        z
+        * math.sqrt(proportion * (1 - proportion) / games + z2 / (4 * games * games))
+        / denominator
+    )
+    return max(0.0, center - radius), min(1.0, center + radius)
+
+
+def local_pair_bootstrap(pair_wins: tuple[int, ...], master_seed: int) -> dict[str, object]:
+    domain = "arena:paired-bootstrap:agent-a-win-rate:v1"
+    seed = derive_seed(master_seed, domain)
+    rng = DeterministicRandom(seed, domain)
+    totals = [
+        sum(pair_wins[rng.randbelow(len(pair_wins))] for _ in pair_wins) for _ in range(20_000)
+    ]
+    totals.sort()
+    return {
+        "method": "paired-percentile-bootstrap-v1",
+        "statistic": "agent_a_win_rate",
+        "unit": "two-game paired seed block",
+        "confidence_level": 0.95,
+        "point_estimate": sum(pair_wins) / (2 * len(pair_wins)),
+        "pair_count": len(pair_wins),
+        "resample_count": 20_000,
+        "order_statistic_indices": {"lower": 499, "upper": 19_499},
+        "interval": [totals[499] / (2 * len(pair_wins)), totals[19_499] / (2 * len(pair_wins))],
+        "bootstrap_seed": seed,
+        "bootstrap_rng_domain": domain,
+        "rng_algorithm": RNG_ALGORITHM,
+        "seed_derivation": SEED_DERIVATION,
+    }
+
+
+def expected_agent_id(cell: Mapping[str, object]) -> tuple[str, str, str, str]:
+    key = cast(str, cell["key"])
+    replicate = cast(str, cell["replicate_id"])
+    index = replicate.removeprefix("replicate-")
+    if key.endswith("v2-vs-v1"):
+        arm = cast(str, cell["candidate_arm"])
+        item = f"{arm}{index}"
+        return (
+            f"{item}-v2",
+            f"{item}-v1",
+            f"step3:{replicate}:architecture-v2",
+            f"step3:{replicate}:architecture-v1",
+        )
+    if "-v2-vs-C" in key:
+        return (
+            f"M{index}-v2",
+            f"C{index}-v2",
+            f"step3:{replicate}:M-candidate",
+            f"step3:{replicate}:C-candidate",
+        )
+    if cast(str, cell["candidate_kind"]) == "parent":
+        return (
+            "q0-parent",
+            "heuristic",
+            f"step3:{replicate}:q0-parent",
+            f"step3:{replicate}:heuristic",
+        )
+    arm = cast(str, cell["candidate_arm"])
+    shared = cell.get("shared_group")
+    candidate = f"{arm}{index}-v2"
+    opponent = cast(str, cell["opponent"])
+    candidate_rng = (
+        f"step3:{replicate}:{shared}:candidate"
+        if isinstance(shared, str)
+        else f"step3:{replicate}:{arm}{index}:candidate"
+    )
+    return candidate, opponent, candidate_rng, f"step3:{replicate}:{opponent}"
+
+
+def local_arena_report(
+    cell: Mapping[str, object], records: Sequence[object], retained: Mapping[str, object]
+) -> dict[str, object]:
+    """Reconstruct every semantic arena-report field without production arena aggregation."""
+    a_id, b_id, a_rng, b_rng = expected_agent_id(cell)
+    agents = retained.get("agents")
+    if not isinstance(agents, Mapping):
+        raise ValidationError("arena report agent metadata missing")
+    a_config = cast(Mapping[str, object], agents["a"])["config"]
+    b_config = cast(Mapping[str, object], agents["b"])["config"]
+    if (
+        cast(Mapping[str, object], agents["a"]).get("id") != a_id
+        or cast(Mapping[str, object], agents["b"]).get("id") != b_id
+    ):
+        raise ValidationError("arena policy identifiers differ from frozen cell")
+    pair_count = cast(int, cell["paired_blocks"])
+    master = cast(int, cell["master_seed"])
+    if len(records) != pair_count * 2:
+        raise ValidationError("arena record cardinality differs")
+    wins = {a_id: 0, b_id: 0}
+    pair_wins: dict[str, int] = {}
+    pair_games: dict[str, int] = {}
+    seat_games = {PlayerId.PLAYER_ONE: 0, PlayerId.PLAYER_TWO: 0}
+    seat_wins = {PlayerId.PLAYER_ONE: 0, PlayerId.PLAYER_TWO: 0}
+    reasons: Counter[str] = Counter()
+    margin = turns = decisions = 0
+    for position, raw in enumerate(records):
+        record = cast(object, raw)
+        pair_index = position // 2
+        a_first = position % 2 == 0
+        pair_id = f"pair-{pair_index:06d}"
+        pair_domain = f"arena:pair:{pair_index}"
+        setup = derive_seed(master, f"{pair_domain}:setup") & ((1 << 64) - 1)
+        seed_a = derive_seed(master, f"{pair_domain}:agent:{a_rng}")
+        seed_b = derive_seed(master, f"{pair_domain}:agent:{b_rng}")
+        expected_ids = (a_id, b_id) if a_first else (b_id, a_id)
+        expected_seeds = (seed_a, seed_b) if a_first else (seed_b, seed_a)
+        expected_domains = (
+            (f"agent:{a_rng}", f"agent:{b_rng}")
+            if a_first
+            else (f"agent:{b_rng}", f"agent:{a_rng}")
+        )
+        if (
+            record.run_id != cell["run_id"]
+            or record.game_id != f"{pair_id}-{'a' if a_first else 'b'}-first"
+            or record.pair_id != pair_id
+            or record.replay.seed != setup
+            or normalize_config(record.replay.config) != retained["game_config"]
+        ):
+            raise ValidationError("arena record schedule identity differs")
+        if (
+            tuple(seat.agent_id for seat in record.seats) != expected_ids
+            or tuple(seat.seed for seat in record.seats) != expected_seeds
+            or tuple(seat.rng_domain for seat in record.seats) != expected_domains
+        ):
+            raise ValidationError("arena record seat/RNG identity differs")
+        expected_configs = (a_config, b_config) if a_first else (b_config, a_config)
+        if tuple(dict(seat.config) for seat in record.seats) != expected_configs:
+            raise ValidationError("arena record policy config differs")
+        winner_id = record.seats[0 if record.winner is PlayerId.PLAYER_ONE else 1].agent_id
+        if winner_id not in wins:
+            raise ValidationError("arena winner agent differs")
+        wins[winner_id] += 1
+        pair_wins[pair_id] = pair_wins.get(pair_id, 0) + int(winner_id == a_id)
+        pair_games[pair_id] = pair_games.get(pair_id, 0) + 1
+        a_seat = PlayerId.PLAYER_ONE if record.seats[0].agent_id == a_id else PlayerId.PLAYER_TWO
+        seat_games[a_seat] += 1
+        seat_wins[a_seat] += int(winner_id == a_id)
+        index = 0 if a_seat is PlayerId.PLAYER_ONE else 1
+        margin += record.final_scores[index] - record.final_scores[1 - index]
+        turns += record.turn_count
+        decisions += record.decision_count
+        reasons[record.terminal_reason] += 1
+    if set(pair_games) != {f"pair-{index:06d}" for index in range(pair_count)} or any(
+        value != 2 for value in pair_games.values()
+    ):
+        raise ValidationError("arena paired blocks differ")
+    pair_values = tuple(pair_wins[f"pair-{index:06d}"] for index in range(pair_count))
+    elapsed = number(retained.get("elapsed_seconds"), "retained elapsed")
+    total = len(records)
+    a_wins = wins[a_id]
+    return {
+        "arena_report_schema_version": 1,
+        "run_id": cell["run_id"],
+        "agents": {"a": {"id": a_id, "config": a_config}, "b": {"id": b_id, "config": b_config}},
+        "total_games": total,
+        "paired_seed_count": pair_count,
+        "wins": {"a": a_wins, "b": wins[b_id]},
+        "agent_a_win_rate": a_wins / total,
+        "confidence_interval_95": list(local_wilson(a_wins, total)),
+        "wilson_confidence_interval_95": list(local_wilson(a_wins, total)),
+        "paired_seed_outcomes": [
+            {"pair_id": f"pair-{index:06d}", "agent_a_wins": pair_values[index]}
+            for index in range(pair_count)
+        ],
+        "paired_bootstrap_confidence_interval_95": local_pair_bootstrap(pair_values, master),
+        "agent_a_by_seat": {
+            seat.value: {
+                "games": seat_games[seat],
+                "wins": seat_wins[seat],
+                "win_rate": seat_wins[seat] / seat_games[seat],
+            }
+            for seat in PlayerId
+        },
+        "terminal_reasons": dict(sorted(reasons.items())),
+        "average_score_margin": margin / total,
+        "average_turns": turns / total,
+        "average_decisions": decisions / total,
+        "elapsed_seconds": elapsed,
+        "games_per_second": total / elapsed if elapsed else math.inf,
+        "master_seed": master,
+        "seed_derivation": SEED_DERIVATION,
+        "rng_algorithm": RNG_ALGORITHM,
+        "game_config": retained["game_config"],
+        "rules_fingerprint": rules_fingerprint(),
+        "code_fingerprint": code_fingerprint(),
+    }
+
+
 def pair_scores(report: Mapping[str, object]) -> tuple[float, ...]:
     rows = report.get("paired_seed_outcomes")
     if not isinstance(rows, list):
@@ -529,6 +825,47 @@ def pair_scores(report: Mapping[str, object]) -> tuple[float, ...]:
     return tuple(
         number(cast(Mapping[str, object], row).get("agent_a_wins"), "pair wins") / 2 for row in rows
     )
+
+
+def check_cross_cell_alignment(records_by_key: Mapping[str, Sequence[object]]) -> None:
+    """Check record-level shared setup, physical seat, opponent config, and RNG identities."""
+
+    def compare(left_key: str, right_key: str, opponent: str | None = None) -> None:
+        left = records_by_key[left_key]
+        right = records_by_key[right_key]
+        if len(left) != len(right):
+            raise ValidationError("cross-cell record count differs")
+        for first, second in zip(left, right, strict=True):
+            if (first.replay.seed, first.pair_id, first.game_id) != (
+                second.replay.seed,
+                second.pair_id,
+                second.game_id,
+            ):
+                raise ValidationError("cross-cell setup/pair/game identity differs")
+            if tuple((seat.seed, seat.rng_domain) for seat in first.seats) != tuple(
+                (seat.seed, seat.rng_domain) for seat in second.seats
+            ):
+                raise ValidationError("cross-cell physical seat/RNG identity differs")
+            if opponent is not None:
+                one = next((seat for seat in first.seats if seat.agent_id == opponent), None)
+                two = next((seat for seat in second.seats if seat.agent_id == opponent), None)
+                if (
+                    one is None
+                    or two is None
+                    or (dict(one.config), one.seed, one.rng_domain)
+                    != (dict(two.config), two.seed, two.rng_domain)
+                ):
+                    raise ValidationError("shared opponent identity/config/RNG differs")
+
+    for replicate in REPLICATES:
+        index = replicate.removeprefix("replicate-")
+        compare(f"C{index}-v2-vs-v1", f"M{index}-v2-vs-v1")
+        for opponent in ("q0-parent", "random", "historical-q0", "q1", "q2", "q3", "q4"):
+            compare(f"C{index}-v2-vs-{opponent}", f"M{index}-v2-vs-{opponent}", opponent)
+        compare(f"C{index}-v2-vs-heuristic", f"M{index}-v2-vs-heuristic", "heuristic")
+        compare(
+            f"C{index}-v2-vs-heuristic", f"q0-parent-vs-heuristic-reference-{index}", "heuristic"
+        )
 
 
 def nested(rows: tuple[tuple[float, ...], ...], domain: str) -> dict[str, object]:
@@ -932,7 +1269,13 @@ def main() -> int:
     dataset_started = time.perf_counter()
     inputs = cast(list[object], plan["inputs"])
     q0 = load_checkpoint(Path(cast(str, plan["q0_path"])))
+    plan_cells = {
+        cast(str, cast(Mapping[str, object], cell)["key"]): cast(Mapping[str, object], cell)
+        for cell in cast(list[object], cast(Mapping[str, object], plan["arenas"])["cells"])
+        if isinstance(cell, Mapping)
+    }
     arena_artifacts: dict[str, Mapping[str, object]] = {}
+    arena_records: dict[str, Sequence[object]] = {}
     for item in inputs:
         entry = cast(Mapping[str, object], item)
         key = cast(str, entry["key"])
@@ -960,14 +1303,17 @@ def main() -> int:
         artifact = read(report_path)
         check_artifact(artifact, "arena")
         key = cast(str, cast(Mapping[str, object], artifact["cell"])["key"])
-        records_manifest, records = load_corpus(report_path.parent / "records", verify_code=False)
+        _records_manifest, records = load_corpus(report_path.parent / "records", verify_code=False)
         local_tactical(records)
         report = cast(Mapping[str, object], artifact["report"])
-        if len(pair_scores(report)) * 2 != report.get(
-            "total_games"
-        ) or records_manifest.record_count != report.get("total_games"):
-            raise ValidationError("local arena aggregate cardinality differs")
-        arena_artifacts[key] = artifact
+        local_report = local_arena_report(plan_cells[key], records, report)
+        if local_report != report:
+            raise ValidationError("locally recomputed complete arena report differs")
+        arena_records[key] = records
+        local_artifact = dict(artifact)
+        local_artifact["report"] = local_report
+        arena_artifacts[key] = local_artifact
+    check_cross_cell_alignment(arena_records)
     statistics_started = time.perf_counter()
     stored = read(output / "statistics.json")
     check_artifact(stored, "statistics")

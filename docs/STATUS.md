@@ -1,6 +1,6 @@
 # Project status
 
-**As of:** September 12, 2026
+**As of:** September 13, 2026
 **Current selected hybrid champion:** q0-terminal-safety-v1
 **Permanent pure-neural baseline:** historical q0
 **Latest completed learned experiment:** [M7 structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md)
@@ -26,8 +26,8 @@ actual present state.
 | [Terminal-offense confirmation](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; tactical envelope adopted for steps 2–4 |
 | [Population replay v1](M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Mixed replay beat matched controls but frozen robustness gates failed |
 | [Structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | V2 beat v1 in both data arms; mixed selected for Step-4 development |
-| [Counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) | Infrastructure blocked | Repair exhausted before canonical targets/training/evaluation; no scientific result |
-| [7: controlled RL experiments](MILESTONE7.md) | Blocked at stronger-policy Step 4 | Step 5 not executed |
+| [Counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) | Trivial repair 2 authorized | Original plan fixed; integer-equivalent target publication pending |
+| [7: controlled RL experiments](MILESTONE7.md) | In progress at stronger-policy Step 4 | Step 5 waits for repaired validation |
 
 ## Current measured policies
 
@@ -185,8 +185,10 @@ The claim did not reach training. Attempt 1 failed because claim shards containe
 stratum while the assembler required one position per shard. The sole repair regenerated all 280
 replicate-1 positions and verified all 1,400 rows exactly, but refused publication when direct
 terminal-count division and `1 - leaf_fraction` differed by one floating-point ULP. No canonical
-three-replicate targets, checkpoints, arenas, statistics, selection, or scientific result exists.
-Step 5 was not executed. See
+three-replicate targets, checkpoints, arenas, statistics, selection, or scientific result yet exists.
+On September 13, the user approved up to three strictly mechanical repairs per step and authorized
+repair 2 to validate integer-equivalent one-ULP metadata without changing target rows or the frozen
+plan. Step 5 remains waiting. See
 [`M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md).
 
 ## Web status
@@ -294,20 +296,20 @@ v2 fits, 30,000 fresh games, local 519-feature reconstruction, complete local ar
 selection reproduced. Mixed-v2 is the fixed development input for Step 4, not a promoted policy. See
 [`M7_STRUCTURED_MODEL_V2_RESULTS.md`](M7_STRUCTURED_MODEL_V2_RESULTS.md).
 
-The stronger-policy program is blocked at Step 4 after exhausting its one operational repair. Step 5
-was not executed because no Step-4 scientific result or selection artifact exists. See
-[`M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md), the
-[`program briefing`](M7_STRONGER_POLICY_PROGRAM_BRIEFING.md), and the living
-[`stronger-policy progress log`](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md).
+The stronger-policy program has reopened Step 4 under the September 13 trivial-repair policy. Repair
+2 preserves the original source/plan/panels/targets and changes only target publication accounting.
+Step 5 remains waiting for a completed validated Step-4 result. See
+[`M7_TRIVIAL_REPAIR_POLICY_V2.md`](../research/cycles/M7_TRIVIAL_REPAIR_POLICY_V2.md),
+[`M7_COUNTERFACTUAL_ROLLOUT_REPAIR2.md`](../research/cycles/M7_COUNTERFACTUAL_ROLLOUT_REPAIR2.md),
+and the living [`stronger-policy progress log`](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md).
 
-No research cycle is currently running. VM-reboot execution resume and off-VM artifact durability
-remain unconfigured.
+Step-4 repair 2 is the current authorized research operation. VM-reboot execution resume and off-VM
+artifact durability remain unconfigured.
 
 ## Planned next work
 
-1. decide whether to authorize a new narrow repair cycle that accepts integer-equivalent terminal
-   accounting and completes the already-frozen Step-4 plan;
-2. if reauthorized, revalidate unchanged panels/seeds/target rows before any training and preserve the
-   existing Step-4 scientific design;
-3. only after a completed Step-4 selection may the final independent league proceed; and
+1. execute Step-4 trivial repair 2 at the original frozen source, preserving every target row and
+   scientific setting;
+2. resume the original Step-4 runner and independent validator only after exact repair evidence;
+3. freeze and run Step 5 if repaired Step 4 produces a completed selection artifact; and
 4. choose an off-VM retention mechanism if stronger disaster recovery is desired.

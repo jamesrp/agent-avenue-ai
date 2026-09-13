@@ -1,8 +1,9 @@
 # Stronger-policy program v1: stopped briefing
 
 **Program:** `m7-stronger-policy-program-v1`
-**Status:** Blocked at Step 4; Step 5 not executed
-**Stopped:** September 12, 2026
+**Status:** Step 4 trivial repair 2 authorized; completion pending
+**Initial stop:** September 12, 2026
+**Reopened:** September 13, 2026
 **Agreement:** [`research/cycles/M7_STRONGER_POLICY_PROGRAM_V1.md`](../research/cycles/M7_STRONGER_POLICY_PROGRAM_V1.md)
 
 ## Executive summary
@@ -53,10 +54,10 @@ supervision itself can be inferred.
 
 ## Decision needed
 
-A new user authorization is required to perform a narrow second Step-4 repair. The scientifically
-clean option is to preserve every frozen panel, seed, world, target row, loss, arena, and gate while
-changing only shard publication/accounting to compare integer terminal/leaf counts or accept the
-bounded one-ULP complement difference. If that completes and validates, Step 5 can then be separately
-resumed under the already approved high-level direction.
+A new user authorization was required to perform a narrow second Step-4 repair. On September 13,
+the user approved up to three strictly mechanical repairs per step and authorized integer-equivalent
+terminal accounting while preserving every frozen panel, seed, world, target row, loss, arena, and
+gate. Step 5 remains waiting until repaired Step 4 completes and validates.
 
-Without that authorization, the program remains stopped and no further experiment should launch.
+If repair 2 does not complete, the program returns to blocked status without changing the scientific
+interpretation above.

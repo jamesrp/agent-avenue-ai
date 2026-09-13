@@ -35,8 +35,8 @@ machine.
 | [Terminal-offense confirmation](docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; hard immediate-win envelope adopted for research steps 2–4 |
 | [Population replay v1](docs/M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Three paired corpus/training replicates; direct gain but frozen robustness gates failed |
 | [Structured model v2](docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | Combined recipe beat v1 in both data arms; mixed selected for rollout development |
-| [Counterfactual rollout supervision](docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) | Infrastructure blocked | Sole repair exhausted before targets/training/evaluation; no scientific result |
-| [7: controlled RL experiments](docs/MILESTONE7.md) | Blocked at stronger-policy Step 4 | Step 5 was not executed |
+| [Counterfactual rollout supervision](docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) | Repair 2 authorized | Original plan/targets fixed; integer-equivalent publication repair pending |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress at stronger-policy Step 4 | Step 5 waits for repaired Step-4 validation |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
 **q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
@@ -103,8 +103,10 @@ Step 4 then implemented an information-safe latent rollout teacher and passed it
 but the claim run stopped at target-shard assembly. Its sole operational repair reproduced all 1,400
 replicate-1 target rows byte-for-byte and assembled a non-published staging target, then correctly
 refused publication over an exact one-ULP terminal-fraction metadata mismatch. No rollout treatment
-was trained or evaluated, so no scientific Step-4 result exists. The sequential program is blocked
-and Step 5 was not executed. See
+was trained or evaluated, so no scientific Step-4 result yet exists. On September 13, the user
+authorized up to three strictly mechanical repairs per step and approved a second Step-4 repair that
+preserves every scientific input while validating terminal/leaf summaries by integer counts and a
+one-ULP bound. Step 5 remains waiting on repaired Step-4 validation. See
 [`docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) and the
 [`program briefing`](docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md).
 
@@ -178,7 +180,8 @@ uv run python -m agent_avenue.research status research/cycles/setup-smoke-v1.jso
 ```
 
 See [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md) for approval, delegation, unattended
-execution, stop/resume, and durability boundaries. No research cycle is currently running.
+execution, stop/resume, and durability boundaries. Step-4 trivial repair 2 is the current authorized
+research operation.
 
 See `AGENTS.md` for package boundaries, engine invariants, testing conventions, and contribution
 rules.

@@ -1,8 +1,8 @@
 # Approved research program: stronger policy v1
 
 **Program ID:** `m7-stronger-policy-program-v1`
-**Status:** Blocked at Step 4; Step 5 not executed
-**Stopped:** September 12, 2026
+**Status:** Step 4 trivial repair 2 authorized; completion pending
+**Stopped:** Superseded by September 13, 2026 repair authorization
 **Briefing:** [`docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md`](../../docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md)
 **Approved:** September 11, 2026
 **Parent result:** [`docs/Q0_STRENGTH_AUDIT_RESULTS.md`](../../docs/Q0_STRENGTH_AUDIT_RESULTS.md)
@@ -97,9 +97,13 @@ step may change the selected champion or web default.
 - Compute budget: up to **8 hours per step**, CPU-only on the current two-core VM.
 - At most one substantial collection/training/evaluation job at a time.
 - At most two bounded implementation/analysis workers in isolated Git worktrees at a time.
+- Up to three strictly mechanical repairs per step are permitted under
+  [`M7_TRIVIAL_REPAIR_POLICY_V2.md`](M7_TRIVIAL_REPAIR_POLICY_V2.md); scientific changes still
+  require new explicit approval.
 - Shelley remains the sole user-facing lead and integrates all work on `main`.
-- Each step permits at most one operational repair/retry that cannot change its scientific recipe,
-  seed domains, budgets, or decision criteria.
+- Each step originally permitted at most one operational repair. This is superseded by the approved
+  trivial-repair policy: up to three mechanically proven, estimand-preserving repairs; no scientific
+  recipe, seed, budget, or decision change.
 - The lead may proceed from one authorized step to the next without another user approval, but must
   update the committed progress record and freeze the next exact step before generating claims.
 - Stop after step 5 briefing. A sixth recipe, larger budget, paid service, GPU, external credential,

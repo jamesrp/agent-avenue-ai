@@ -3,8 +3,9 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 4 of 5
 **Cycle:** `m7-counterfactual-rollout-supervision-v1`
-**Status:** `implementation_blocked_repair_exhausted`; no scientific result
-**Stopped:** September 12, 2026
+**Status:** Historical initial block; trivial repair 2 authorized September 13, 2026
+**Initial stop:** September 12, 2026
+**Reauthorization:** [`research/cycles/M7_COUNTERFACTUAL_ROLLOUT_REPAIR2.md`](../research/cycles/M7_COUNTERFACTUAL_ROLLOUT_REPAIR2.md)
 **Agreement:** [`research/cycles/M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](../research/cycles/M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md)
 **Claim source:** `576b896b305273eb29701521d38791712b160a95`
 
@@ -110,8 +111,9 @@ league, and proceeding would violate the approved sequential program.
 
 A future separately approved repair could compare integer leaf/terminal/sample counts, or explicitly
 accept this bounded one-ULP complementary-fraction difference, while reusing the unchanged plan and
-target rows. That would be scientifically narrow but is a second repair and requires new user
-authorization.
+target rows. On September 13, the user granted that approval under the new trivial-repair policy.
+This document remains the immutable explanation of the original stop; subsequent completion, if any,
+will be recorded separately.
 
 ## Retained partial evidence
 

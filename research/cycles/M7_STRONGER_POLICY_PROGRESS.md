@@ -1,8 +1,8 @@
 # Stronger policy program: progress and decision log
 
 **Program:** `m7-stronger-policy-program-v1`
-**Last updated:** September 13, 2026
-**Overall state:** Step 4 trivial repair 2 authorized and pending; Step 5 remains blocked until validation
+**Last updated:** September 17, 2026
+**Overall state:** Step 4 target repair passed; final trivial resume repair authorized and pending
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -40,7 +40,7 @@ public-history signaling, and specializes to narrow self-play distributions.
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
 | 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
 | 3. Structured model v2 | Complete; does not advance | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | `b1f2b6f` through `7321aa1` | Six fits + 30,000 games; exact-source validation passed after one operational repair | [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](../../docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) |
-| 4. Counterfactual rollouts | Trivial repair 2 authorized | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | `b20699b` through `cb0e045` | Panels + partial replicate-1 targets; repair completion pending | Prior failure superseded if repaired validation passes |
+| 4. Counterfactual rollouts | Repair 2 passed; repair 3 pending | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | `b20699b` through `cb0e045` | All frozen targets published; runner resume/validation pending | Prior failure superseded only if repaired validation passes |
 | 5. Independent league | Waiting on repaired Step 4 | Not frozen | None | None | Requires Step-4 result/selection |
 
 ## Completed step 1
@@ -81,7 +81,17 @@ One operational repair restored wrapper-managed `driver.stdout` to the empty has
 by checksums; no scientific artifact/source changed. Exact-source independent validation then
 passed. Future checksum scopes exclude wrapper logs. Combined claim plus validation took about 3h36.
 
-## Reauthorized step 4 repair
+## Reauthorized step 4 repairs
+
+On September 17, repair 2 passed. It reconstructed the exact retained plan from source `576b896`,
+proved byte-exact equality for all 1,400 replicate-1 rows, generated the two remaining replicates,
+and published three canonical 280-position targets with finite integer-equivalent one-ULP metadata.
+The fresh-context review disposition was GO.
+
+The authorization pause left attempt 1's wall-clock cutoff stale even though only 615.565 seconds of
+active claim phases had run. Repair 3, the final trivial repair allowed for Step 4, will preserve
+that consumed active time, exclude only the inactive pause, and resume the original runner from the
+exact source using canonical path serialization. It may not change any scientific artifact or rule.
 
 On September 13 the user authorized more than one strictly trivial repair. The new policy allows up
 to three mechanically proven, estimand-preserving repairs per step while continuing to prohibit any
@@ -120,6 +130,10 @@ report remains the record of the first authorization boundary.
 
 ## Decision log
 
+- **September 17 — repair 2 complete / repair 3 authorized:** all three frozen rollout targets were
+  published after exact-row and integer/one-ULP validation. The final trivial repair preserves the
+  615.565 seconds of active attempt-1 budget while excluding the multi-day inactive authorization
+  pause and resumes the exact-source runner with canonical plan-path serialization.
 - **September 13 — repair policy v2:** user authorized up to three strictly mechanical,
   scientifically invariant repairs per step. Step-4 trivial repair 2 is approved to accept integer-
   equivalent one-ULP terminal metadata and resume the original claim.
@@ -194,7 +208,8 @@ On context loss, read in order:
 1. `AGENTS.md` and `README.md`;
 2. `research/cycles/M7_STRONGER_POLICY_PROGRAM_V1.md`;
 3. this progress file;
-4. the exact agreement/result for the current step;
+4. the exact agreement/result for the current step, including
+   `M7_COUNTERFACTUAL_ROLLOUT_REPAIR3.md` while repair 3 is active;
 5. `docs/Q0_STRENGTH_AUDIT_RESULTS.md`; and
 6. current `git status`, recent commits, and retained runtime state under
    `runs/research-cycles/m7-stronger-policy-program-v1/`.

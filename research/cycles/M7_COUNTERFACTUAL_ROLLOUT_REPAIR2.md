@@ -4,8 +4,9 @@
 **Step:** 4 of 5
 **Cycle:** `m7-counterfactual-rollout-supervision-v1`
 **Repair:** `trivial-repair-2`
-**Status:** Approved; execution pending
+**Status:** Completed; all three canonical target artifacts published
 **Approved:** September 13, 2026
+**Completed:** September 17, 2026
 **Original claim source:** `576b896b305273eb29701521d38791712b160a95`
 **Repair policy:** [`M7_TRIVIAL_REPAIR_POLICY_V2.md`](M7_TRIVIAL_REPAIR_POLICY_V2.md)
 
@@ -34,6 +35,14 @@ The one-ULP acceptance applies only to derived summary metadata. Target float32 
 sample JSON, action JSON, row ordering, digests, and all scientific outputs remain exact.
 
 ## Completion
+
+Repair 2 completed on September 17. It preserved exact replicate-1 equality across all 1,400 rows,
+published all three 280-position canonical target artifacts, retained finite integer-equivalent
+leaf/terminal accounting within one IEEE-754 ULP, and recorded a fresh-context GO review. No model,
+target row, seed, sample, arena, statistic, or gate changed.
+
+The multi-day authorization pause exposed a separate stale wall-clock resume boundary. That is
+handled, if needed, only by [`M7_COUNTERFACTUAL_ROLLOUT_REPAIR3.md`](M7_COUNTERFACTUAL_ROLLOUT_REPAIR3.md).
 
 If runner and independent validation pass, Step 4 receives its normal scientific classification and
 Step 5 may proceed. If another trivial packaging/validation issue occurs, the program may use at

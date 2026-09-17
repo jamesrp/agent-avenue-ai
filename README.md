@@ -36,7 +36,7 @@ machine.
 | [Population replay v1](docs/M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Three paired corpus/training replicates; direct gain but frozen robustness gates failed |
 | [Structured model v2](docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | Combined recipe beat v1 in both data arms; mixed selected for rollout development |
 | [Counterfactual rollout supervision](docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) | Complete; inconclusive, did not advance | Treatment beat matched control 53.03% [51.80%, 54.30%], but heuristic robustness gate failed |
-| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress at stronger-policy Step 5 | Exact independent-league agreement pending freeze |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress at stronger-policy Step 5 | Exact league design frozen; implementation and preflight pending |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
 **q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
@@ -178,8 +178,8 @@ uv run python -m agent_avenue.research status research/cycles/setup-smoke-v1.jso
 ```
 
 See [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md) for approval, delegation, unattended
-execution, stop/resume, and durability boundaries. Stronger-policy Step 5 is pending an exact
-independent-league agreement freeze.
+execution, stop/resume, and durability boundaries. Stronger-policy Step 5 has a frozen exact league
+design; implementation and preflight are pending before any locked-final game.
 
 See `AGENTS.md` for package boundaries, engine invariants, testing conventions, and contribution
 rules.

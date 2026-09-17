@@ -1,6 +1,6 @@
 # Milestone 7: Controlled RL Environment and Recipe Experiments
 
-**Status:** In progress; stronger-policy program at final independent-league freeze
+**Status:** In progress; stronger-policy Step-5 league design frozen
 **Originally planned:** September 2, 2026
 **Last updated:** September 17, 2026
 **Detailed experiment list:** [Neural AI plan — Milestone 7](NEURAL_AI_PLAN.md#milestone-7-experiments-only-after-the-mc-baseline)
@@ -223,7 +223,10 @@ matched comparison, but steps 2-4 failed the frozen q0-parent heuristic non-regr
 rollout treatment beat matched control at 53.03% [51.80%, 54.30%] and is classified
 `inconclusive_does_not_advance`.
 
-The final Step-5 independent league is pending exact freeze. Retained mixed-data structured-v2 M is
+The final Step-5 independent-league design is frozen. It declares twelve policies, two disjoint
+200-setup families, all 66 unordered matchups, 52,800 games, an aligned q0 tactical-promotion
+estimand, descriptive M1-M3 family analysis, and independent replay validation. Implementation and
+preflight must pass before any locked-final seed is opened. Retained mixed-data structured-v2 M is
 the descriptive learned entry; the selected champion remains `q0-terminal-safety-v1`. See the
 [`program briefing`](M7_STRONGER_POLICY_PROGRAM_BRIEFING.md) and
 [`Step-4 result`](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md).

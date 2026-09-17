@@ -27,7 +27,7 @@ actual present state.
 | [Population replay v1](M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Mixed replay beat matched controls but frozen robustness gates failed |
 | [Structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | V2 beat v1 in both data arms; mixed selected for Step-4 development |
 | [Counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) | Complete; inconclusive, did not advance | Positive matched-control result; heuristic robustness gate failed |
-| [7: controlled RL experiments](MILESTONE7.md) | In progress at stronger-policy Step 5 | Exact independent-league agreement pending freeze |
+| [7: controlled RL experiments](MILESTONE7.md) | In progress at stronger-policy Step 5 | Exact league design frozen; implementation and preflight pending |
 
 ## Current measured policies
 
@@ -305,7 +305,7 @@ additional off-VM durability remain unconfigured.
 
 ## Planned next work
 
-1. freeze and commit the exact Step-5 independent-league and promotion agreement;
-2. implement and preflight the frozen Step-5 runner and independent validator;
-3. execute Step 5 on fresh disjoint blocks, then issue the program's final champion decision; and
+1. implement the frozen Step-5 runner, independent validator, and mutation tests;
+2. run an isolated end-to-end smoke and freeze a clean claim source only if runtime passes;
+3. execute the 52,800-game locked league, then issue the final champion decision; and
 4. choose an off-VM retention mechanism if stronger disaster recovery is desired.

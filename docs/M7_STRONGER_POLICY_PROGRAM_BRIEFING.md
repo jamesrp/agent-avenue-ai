@@ -1,7 +1,7 @@
 # Stronger-policy program v1: Step-4 briefing
 
 **Program:** `m7-stronger-policy-program-v1`
-**Status:** Step 4 complete; Step 5 exact agreement pending freeze
+**Status:** Step 5 design-frozen; implementation and preflight pending
 **Updated:** September 17, 2026
 **Agreement:** [`research/cycles/M7_STRONGER_POLICY_PROGRAM_V1.md`](../research/cycles/M7_STRONGER_POLICY_PROGRAM_V1.md)
 
@@ -54,9 +54,11 @@ threshold, and gate. Exact-source runner and independent validator both passed.
 - Mixed structured v2 M: descriptive Step-5 entry, not currently promoted.
 - Rollout-supervised T1-T3: valid research checkpoints that do not enter Step 5.
 
-## Next boundary
+## Step-5 boundary
 
-Step 5 must be frozen and committed before claim-generating execution. It will use fresh disjoint
-blocks, preserve the selected champion as incumbent, evaluate the retained M recipe descriptively,
-and issue the program's only authorized champion/web-default promotion decision. No additional
-recipe tuning is authorized.
+The exact Step-5 agreement is now frozen. It declares a twelve-policy, two-family locked league with
+52,800 physical games. `q0-terminal-offense-v1` is the sole promotion-eligible challenger to the
+selected `q0-terminal-safety-v1`; retained M1-M3 are descriptive and cannot be selected or promoted.
+
+Implementation, isolated smoke, source freeze, and fresh preclaim review must complete before any
+locked-final game. No additional recipe tuning is authorized.

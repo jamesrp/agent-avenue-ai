@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 17, 2026
-**Overall state:** Step 4 complete without advancement; Step 5 exact agreement pending freeze
+**Overall state:** Step 5 exact design frozen; implementation and preflight pending
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -41,7 +41,7 @@ public-history signaling, and specializes to narrow self-play distributions.
 | 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
 | 3. Structured model v2 | Complete; does not advance | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | `b1f2b6f` through `7321aa1` | Six fits + 30,000 games; exact-source validation passed after one operational repair | [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](../../docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) |
 | 4. Counterfactual rollouts | Complete; inconclusive, does not advance | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | `b20699b` through `cb0e045` | 24,000 games; repaired exact-source validation passed | [`docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md`](../../docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) |
-| 5. Independent league | Exact agreement pending freeze | Not yet frozen | None | None | Descriptive entry is retained Step-3 M-v2 |
+| 5. Independent league | Exact design frozen; implementation pending | [`M7_INDEPENDENT_LEAGUE_PROMOTION_V1.md`](M7_INDEPENDENT_LEAGUE_PROMOTION_V1.md) | None | None | Sole promotion challenger is q0 terminal offense; M-v2 descriptive |
 
 ## Completed step 1
 
@@ -116,6 +116,19 @@ The rollout treatment does not enter Step 5; retained mixed-data structured-v2 M
 entry. The post-run validator target rate of 64.45 units/s is retained as a runtime caveat, not a
 retroactive gate: binding preclaim eligibility passed and completed runtime stayed below cutoff.
 
+## Frozen step 5
+
+The final locked league freezes twelve policies, two disjoint 200-setup families, all 66 unordered
+matchups, 52,800 physical games, and independent replay validation. `q0-terminal-offense-v1` is the
+sole promotion-eligible challenger to `q0-terminal-safety-v1`. q1-q4, M1-M3, historical q0,
+heuristic, and random are descriptive only. M1-M3 remain an exchangeable family with no replicate
+selection.
+
+Promotion requires the aligned three-anchor tactical lift lower endpoint to exceed +0.25 percentage
+points plus exact no-worse, tactical, seat, random, provenance, holdout, and validation gates. The
+input registry fingerprint is `df238b7d9c948563ee15e4e2cfc59fe1525a9721b10e24362a7d251c1dfb7d48`.
+No locked-final game has been run.
+
 ## Completed implementation work
 
 - `de1872a`: explicit agent RNG identities with backward-compatible default schedules.
@@ -143,6 +156,9 @@ retroactive gate: binding preclaim eligibility passed and completed runtime stay
 
 ## Decision log
 
+- **September 17 — Step-5 design freeze:** twelve-policy two-family locked league, 52,800 games,
+  q0 terminal offense as sole promotion challenger, descriptive M replicate family, aligned anchor
+  bootstrap, exact tactical gates, and independent validation are fixed before implementation.
 - **September 17 — Step-4 result:** rollout supervision beat matched controls at 53.03% [51.80%,
   54.30%] but failed the heuristic non-regression lower bound; classify
   `inconclusive_does_not_advance`. Retain Step-3 M-v2 as the descriptive Step-5 entry.

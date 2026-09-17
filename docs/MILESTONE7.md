@@ -1,8 +1,8 @@
 # Milestone 7: Controlled RL Environment and Recipe Experiments
 
-**Status:** In progress; first controlled recipe screen complete
+**Status:** In progress; stronger-policy program at final independent-league freeze
 **Originally planned:** September 2, 2026
-**Last updated:** September 8, 2026
+**Last updated:** September 17, 2026
 **Detailed experiment list:** [Neural AI plan — Milestone 7](NEURAL_AI_PLAN.md#milestone-7-experiments-only-after-the-mc-baseline)
 
 ## Goal
@@ -214,6 +214,19 @@ Each Milestone 7 result should include:
 - hidden-information and replay-equivalence checks;
 - locked-final results only when the recipe was selected before opening that block; and
 - an explicit conclusion: improve, reject, equivalent, or inconclusive.
+
+## Stronger-policy program status
+
+The five-step stronger-policy program has completed terminal-offense confirmation, mixed-population
+replay, structured model v2, and counterfactual rollout supervision. Each learned recipe improved its
+matched comparison, but steps 2-4 failed the frozen q0-parent heuristic non-regression gate. Step 4's
+rollout treatment beat matched control at 53.03% [51.80%, 54.30%] and is classified
+`inconclusive_does_not_advance`.
+
+The final Step-5 independent league is pending exact freeze. Retained mixed-data structured-v2 M is
+the descriptive learned entry; the selected champion remains `q0-terminal-safety-v1`. See the
+[`program briefing`](M7_STRONGER_POLICY_PROGRAM_BRIEFING.md) and
+[`Step-4 result`](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md).
 
 ## Definition of done
 

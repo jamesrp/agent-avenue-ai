@@ -1,8 +1,8 @@
 # Approved research program: stronger policy v1
 
 **Program ID:** `m7-stronger-policy-program-v1`
-**Status:** Step 4 trivial repair 2 authorized; completion pending
-**Stopped:** Superseded by September 13, 2026 repair authorization
+**Status:** Step 4 complete; Step 5 exact agreement pending freeze
+**Completed through:** September 17, 2026
 **Briefing:** [`docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md`](../../docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md)
 **Approved:** September 11, 2026
 **Parent result:** [`docs/Q0_STRENGTH_AUDIT_RESULTS.md`](../../docs/Q0_STRENGTH_AUDIT_RESULTS.md)

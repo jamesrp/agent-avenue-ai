@@ -2,7 +2,7 @@
 
 **Program:** `m7-stronger-policy-program-v1`
 **Last updated:** September 17, 2026
-**Overall state:** Step 4 target repair passed; final trivial resume repair authorized and pending
+**Overall state:** Step 4 complete without advancement; Step 5 exact agreement pending freeze
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -40,8 +40,8 @@ public-history signaling, and specializes to narrow self-play distributions.
 | 1. Terminal offense/RNG | Complete | [`M7_TERMINAL_OFFENSE_CONFIRM_V1.md`](M7_TERMINAL_OFFENSE_CONFIRM_V1.md) | `de1872a`, `b99cc2d`, `b18a13e`, `23fe496` | 60,000 games; validated | [`docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md`](../../docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) |
 | 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
 | 3. Structured model v2 | Complete; does not advance | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | `b1f2b6f` through `7321aa1` | Six fits + 30,000 games; exact-source validation passed after one operational repair | [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](../../docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) |
-| 4. Counterfactual rollouts | Repair 2 passed; repair 3 pending | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | `b20699b` through `cb0e045` | All frozen targets published; runner resume/validation pending | Prior failure superseded only if repaired validation passes |
-| 5. Independent league | Waiting on repaired Step 4 | Not frozen | None | None | Requires Step-4 result/selection |
+| 4. Counterfactual rollouts | Complete; inconclusive, does not advance | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | `b20699b` through `cb0e045` | 24,000 games; repaired exact-source validation passed | [`docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md`](../../docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) |
+| 5. Independent league | Exact agreement pending freeze | Not yet frozen | None | None | Descriptive entry is retained Step-3 M-v2 |
 
 ## Completed step 1
 
@@ -89,19 +89,32 @@ and published three canonical 280-position targets with finite integer-equivalen
 The fresh-context review disposition was GO.
 
 The authorization pause left attempt 1's wall-clock cutoff stale even though only 615.565 seconds of
-active claim phases had run. Repair 3, the final trivial repair allowed for Step 4, will preserve
-that consumed active time, exclude only the inactive pause, and resume the original runner from the
-exact source using canonical path serialization. It may not change any scientific artifact or rule.
+active claim phases had run. Repair 3, the final trivial repair allowed for Step 4, preserved that
+consumed active time, excluded only the inactive pause, and resumed the original runner from exact
+source using canonical path serialization. It changed no scientific artifact or rule.
 
 On September 13 the user authorized more than one strictly trivial repair. The new policy allows up
 to three mechanically proven, estimand-preserving repairs per step while continuing to prohibit any
 change to models, targets, seeds, samples, arenas, statistics, or gates.
 
-Step-4 repair 2 will run at the original source. It reuses exact replicate-1 rows, completes
-one-position packaging for all replicates, and validates terminal/leaf metadata through integer
-counts plus a one-ULP bound. If the original runner and independent validator then pass, Step 4
-returns to its normal scientific decision and Step 5 may proceed. The previously committed failure
-report remains the record of the first authorization boundary.
+Step-4 repair 2 reused exact replicate-1 rows, completed one-position packaging for all replicates,
+and validated terminal/leaf metadata through integer counts plus a one-ULP bound. Repair 3 then
+completed the original runner and validator. The previously committed failure report remains the
+record of the first authorization boundary.
+
+## Completed step 4
+
+Rollout supervision beat matched structured-v2 controls at 53.03% [51.80%, 54.30%], with all three
+direct replicate points above 50%. It passed q0-parent, random, seat, tactical, and integrity gates.
+It failed only the aligned heuristic non-regression gate: treatment minus the q0-parent heuristic
+reference was -2.06 points with interval [-6.11, +2.28], whose lower endpoint did not exceed -5.
+The frozen classification is `inconclusive_does_not_advance`.
+
+Three mechanically scoped repairs preserved the exact plan and scientific payloads. Runner and
+independent validator exited zero, and checksum reconstruction found 1,953/1,953 exact payloads.
+The rollout treatment does not enter Step 5; retained mixed-data structured-v2 M is the descriptive
+entry. The post-run validator target rate of 64.45 units/s is retained as a runtime caveat, not a
+retroactive gate: binding preclaim eligibility passed and completed runtime stayed below cutoff.
 
 ## Completed implementation work
 
@@ -130,6 +143,9 @@ report remains the record of the first authorization boundary.
 
 ## Decision log
 
+- **September 17 — Step-4 result:** rollout supervision beat matched controls at 53.03% [51.80%,
+  54.30%] but failed the heuristic non-regression lower bound; classify
+  `inconclusive_does_not_advance`. Retain Step-3 M-v2 as the descriptive Step-5 entry.
 - **September 17 — repair 2 complete / repair 3 authorized:** all three frozen rollout targets were
   published after exact-row and integer/one-ULP validation. The final trivial repair preserves the
   615.565 seconds of active attempt-1 budget while excluding the multi-day inactive authorization
@@ -208,8 +224,7 @@ On context loss, read in order:
 1. `AGENTS.md` and `README.md`;
 2. `research/cycles/M7_STRONGER_POLICY_PROGRAM_V1.md`;
 3. this progress file;
-4. the exact agreement/result for the current step, including
-   `M7_COUNTERFACTUAL_ROLLOUT_REPAIR3.md` while repair 3 is active;
+4. the exact agreement/result for the current step;
 5. `docs/Q0_STRENGTH_AUDIT_RESULTS.md`; and
 6. current `git status`, recent commits, and retained runtime state under
    `runs/research-cycles/m7-stronger-policy-program-v1/`.

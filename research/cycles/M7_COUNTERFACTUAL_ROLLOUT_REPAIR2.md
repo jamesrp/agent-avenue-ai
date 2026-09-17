@@ -44,7 +44,5 @@ target row, seed, sample, arena, statistic, or gate changed.
 The multi-day authorization pause exposed a separate stale wall-clock resume boundary. That is
 handled, if needed, only by [`M7_COUNTERFACTUAL_ROLLOUT_REPAIR3.md`](M7_COUNTERFACTUAL_ROLLOUT_REPAIR3.md).
 
-If runner and independent validation pass, Step 4 receives its normal scientific classification and
-Step 5 may proceed. If another trivial packaging/validation issue occurs, the program may use at
-most one additional trivial repair under the new three-repair limit. Any scientific change remains
-prohibited.
+The subsequent active-time resume issue was handled by the final allowed repair 3. Exact-source
+runner and independent validation passed; no further Step-4 repair is available or required.

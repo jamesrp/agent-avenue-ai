@@ -1,11 +1,11 @@
 # Project status
 
-**As of:** September 13, 2026
+**As of:** September 17, 2026
 **Current selected hybrid champion:** q0-terminal-safety-v1
 **Permanent pure-neural baseline:** historical q0
-**Latest completed learned experiment:** [M7 structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md)
+**Latest completed learned experiment:** [M7 counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md)
 
-**Latest completed research cycle:** [Step-4 counterfactual rollout infrastructure failure](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md)
+**Latest completed research cycle:** [Step-4 counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md)
 
 This document is the concise, living index of completed work and current next steps. Historical
 milestone documents describe the intended scope at the time; `README.md` and this file describe the
@@ -26,8 +26,8 @@ actual present state.
 | [Terminal-offense confirmation](M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; tactical envelope adopted for steps 2–4 |
 | [Population replay v1](M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Mixed replay beat matched controls but frozen robustness gates failed |
 | [Structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | V2 beat v1 in both data arms; mixed selected for Step-4 development |
-| [Counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) | Trivial repair 2 authorized | Original plan fixed; integer-equivalent target publication pending |
-| [7: controlled RL experiments](MILESTONE7.md) | In progress at stronger-policy Step 4 | Step 5 waits for repaired validation |
+| [Counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) | Complete; inconclusive, did not advance | Positive matched-control result; heuristic robustness gate failed |
+| [7: controlled RL experiments](MILESTONE7.md) | In progress at stronger-policy Step 5 | Exact independent-league agreement pending freeze |
 
 ## Current measured policies
 
@@ -175,21 +175,18 @@ frozen robustness-floor rule selects mixed-v2 only as the development input for 
 operational checksum-log repair left all scientific evidence unchanged; exact-source independent
 validation passed. See [`M7_STRUCTURED_MODEL_V2_RESULTS.md`](M7_STRUCTURED_MODEL_V2_RESULTS.md).
 
-## Counterfactual rollout Step-4 failure
+## Counterfactual rollout supervision
 
-Step 4 implemented a provenance-safe latent state, 14-stratum public panel, 10-world depth-nine q0-
-leaf teacher, paired rollout auxiliary trainer, and independent numeric target validator. Its smoke
-passed at roughly 160 transition/leaf units per second and projected inside the compute budget.
+Step 4 evaluated a fixed position-balanced rollout auxiliary on three matched structured-v2
+replicates. Treatment beat exact matched controls at 53.03% [51.80%, 54.30%], with direct replicate
+points 52.6%, 53.7%, and 52.8%. It also passed q0-parent, random, seat, tactical, and integrity gates.
 
-The claim did not reach training. Attempt 1 failed because claim shards contained 20 positions per
-stratum while the assembler required one position per shard. The sole repair regenerated all 280
-replicate-1 positions and verified all 1,400 rows exactly, but refused publication when direct
-terminal-count division and `1 - leaf_fraction` differed by one floating-point ULP. No canonical
-three-replicate targets, checkpoints, arenas, statistics, selection, or scientific result yet exists.
-On September 13, the user approved up to three strictly mechanical repairs per step and authorized
-repair 2 to validate integer-equivalent one-ULP metadata without changing target rows or the frozen
-plan. Step 5 remains waiting. See
-[`M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md).
+The recipe does not advance. Its aligned heuristic contrast relative to q0 was -2.06 percentage
+points with interval [-6.11, +2.28], failing the strict lower endpoint above -5. The frozen
+classification is `inconclusive_does_not_advance`; retained mixed-data structured-v2 M is the
+descriptive Step-5 entry. Three mechanically scoped repairs preserved the exact targets and
+scientific plan, and exact-source independent validation passed. See
+[`M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md`](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md).
 
 ## Web status
 
@@ -296,20 +293,19 @@ v2 fits, 30,000 fresh games, local 519-feature reconstruction, complete local ar
 selection reproduced. Mixed-v2 is the fixed development input for Step 4, not a promoted policy. See
 [`M7_STRUCTURED_MODEL_V2_RESULTS.md`](M7_STRUCTURED_MODEL_V2_RESULTS.md).
 
-The stronger-policy program has reopened Step 4 under the September 13 trivial-repair policy. Repair
-2 preserves the original source/plan/panels/targets and changes only target publication accounting.
-Step 5 remains waiting for a completed validated Step-4 result. See
-[`M7_TRIVIAL_REPAIR_POLICY_V2.md`](../research/cycles/M7_TRIVIAL_REPAIR_POLICY_V2.md),
-[`M7_COUNTERFACTUAL_ROLLOUT_REPAIR2.md`](../research/cycles/M7_COUNTERFACTUAL_ROLLOUT_REPAIR2.md),
-and the living [`stronger-policy progress log`](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md).
+The approved Step-4 rollout cycle completed after three strictly mechanical repairs. It retained
+4,198 candidate rows, 41,980 latent-world samples, six trained checkpoints, 24,000 fresh games, and
+an independently reproduced selection. Rollout supervision does not advance; retained Step-3 M-v2
+is the descriptive Step-5 entry. See
+[`M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md`](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) and the living
+[`stronger-policy progress log`](../research/cycles/M7_STRONGER_POLICY_PROGRESS.md).
 
-Step-4 repair 2 is the current authorized research operation. VM-reboot execution resume and off-VM
-artifact durability remain unconfigured.
+The final run is retained in a verified 57,385,898-byte archive. VM-reboot execution resume and
+additional off-VM durability remain unconfigured.
 
 ## Planned next work
 
-1. execute Step-4 trivial repair 2 at the original frozen source, preserving every target row and
-   scientific setting;
-2. resume the original Step-4 runner and independent validator only after exact repair evidence;
-3. freeze and run Step 5 if repaired Step 4 produces a completed selection artifact; and
+1. freeze and commit the exact Step-5 independent-league and promotion agreement;
+2. implement and preflight the frozen Step-5 runner and independent validator;
+3. execute Step 5 on fresh disjoint blocks, then issue the program's final champion decision; and
 4. choose an off-VM retention mechanism if stronger disaster recovery is desired.

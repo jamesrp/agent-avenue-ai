@@ -1,63 +1,62 @@
-# Stronger-policy program v1: stopped briefing
+# Stronger-policy program v1: Step-4 briefing
 
 **Program:** `m7-stronger-policy-program-v1`
-**Status:** Step 4 trivial repair 2 authorized; completion pending
-**Initial stop:** September 12, 2026
-**Reopened:** September 13, 2026
+**Status:** Step 4 complete; Step 5 exact agreement pending freeze
+**Updated:** September 17, 2026
 **Agreement:** [`research/cycles/M7_STRONGER_POLICY_PROGRAM_V1.md`](../research/cycles/M7_STRONGER_POLICY_PROGRAM_V1.md)
 
 ## Executive summary
 
-The program found two real improvements but did not complete its final promotion path:
+The program has completed four of five authorized steps:
 
 1. The exact immediate-win envelope is structurally correct and measurably improves q0.
-2. Mixed replay and structured v2 each produce large direct gains over their matched controls.
-3. Neither learned recipe passed the frozen q0-parent heuristic non-regression gate.
-4. Counterfactual rollout supervision was not scientifically evaluated because infrastructure failed
-   before canonical targets, training, or arenas.
-5. The selected champion and web default remain `q0-terminal-safety-v1`; Step 5 was not run.
+2. Mixed replay and structured v2 each produced large direct gains over matched controls.
+3. Both earlier learned recipes failed the frozen q0-parent heuristic non-regression gate.
+4. Counterfactual rollout supervision produced a statistically positive matched-recipe gain, but it
+   also failed that same robustness gate and does not advance.
+5. Step 5 will independently evaluate the retained descriptive entry before any promotion decision.
+
+The selected champion and web default remain `q0-terminal-safety-v1` until Step 5 completes.
 
 ## Step outcomes
 
 | Step | Outcome | Main result |
 | --- | --- | --- |
 | 1. Terminal offense | Adopted for research | +0.75 pp anchor macro [0.60, 0.908]; 3,385/3,385 guaranteed wins converted |
-| 2. Population replay v1 | Does not advance | Mixed beat q0-only control 62.10% [60.13%, 64.00%], but guardrails failed |
+| 2. Population replay v1 | Does not advance | Mixed beat q0-only control 62.10% [60.13%, 64.00%], but robustness gates failed |
 | 3. Structured model v2 | Does not advance | V2 beat v1 in both data arms; mixed-v2 selected only as Step-4 development input |
-| 4. Counterfactual rollout | Infrastructure blocked | Panels and partial replicate-1 targets only; repair exhausted before training |
-| 5. Independent league | Not executed | Sequential prerequisite absent |
+| 4. Counterfactual rollout | Inconclusive; does not advance | Treatment beat matched control 53.03% [51.80%, 54.30%], but heuristic lower bound was -6.11 pp |
+| 5. Independent league | Pending exact freeze | Retained Step-3 mixed structured-v2 M is the descriptive entry |
 
-## Scientific takeaways
+## Step-4 interpretation
 
-The evidence strongly supports the original diagnosis: the selected-action model and narrow
-self-play distribution are limiting action ranking. Population diversity substantially changes
-policy strength, and public history/consequence structure gives another consistent improvement.
-However, direct gains coexist with weaker uncertainty against the q0-parent heuristic reference.
-This is genuine non-transitivity/robustness tension, not a simple monotonic Elo ladder.
+The rollout auxiliary worked in its narrow matched comparison. Direct replicate points were 52.6%,
+53.7%, and 52.8%; the nested treatment-control lower endpoint was above 50%. Treatment also beat q0
+at 84.17% [81.13%, 88.07%] and random at 87.25% [84.83%, 89.75%]. Its lowest seat point was 47.6%,
+and all tactical and integrity checks passed.
 
-Step 3's mixed structured recipe is the strongest development direction produced by the program, but
-it is not promoted. Its architecture effect combines representation, phase routing, and added
-capacity, and its heuristic non-regression lower bound still failed.
+It did not satisfy the frozen cross-opponent robustness rule. Relative to q0 against the aligned
+heuristic blocks, treatment was -2.06 percentage points with interval [-6.11, +2.28], missing the
+strict lower endpoint above -5. The correct classification is `inconclusive_does_not_advance`.
+This is evidence of modest matched-recipe improvement alongside continued non-transitivity, not a
+claim that rollout supervision is generally harmful.
 
-Step 4's partial targets support only infrastructure claims. The one-position repair reproduced all
-replicate-1 rows exactly; the final refusal was one-ULP metadata strictness. No outcome about rollout
-supervision itself can be inferred.
+Three trivial repairs were required to complete Step 4. Fresh scientific and artifact reviews found
+them mechanically scoped: they changed shard packaging, bounded derived-summary comparison, and
+active-time resume accounting, while preserving every target row, tensor, seed, game, statistic,
+threshold, and gate. Exact-source runner and independent validator both passed.
 
 ## Current policy status
 
 - Selected hybrid champion: `q0-terminal-safety-v1`.
 - Permanent pure-neural baseline: historical q0.
-- Terminal offense: validated fixed tactical component for future research, not deployed as web
-  default by this program.
-- Mixed structured v2: development-only evidence, not a champion.
-- Rollout treatment: nonexistent; no valid checkpoint was trained.
+- Terminal offense: validated fixed tactical component for research candidates.
+- Mixed structured v2 M: descriptive Step-5 entry, not currently promoted.
+- Rollout-supervised T1-T3: valid research checkpoints that do not enter Step 5.
 
-## Decision needed
+## Next boundary
 
-A new user authorization was required to perform a narrow second Step-4 repair. On September 13,
-the user approved up to three strictly mechanical repairs per step and authorized integer-equivalent
-terminal accounting while preserving every frozen panel, seed, world, target row, loss, arena, and
-gate. Step 5 remains waiting until repaired Step 4 completes and validates.
-
-If repair 2 does not complete, the program returns to blocked status without changing the scientific
-interpretation above.
+Step 5 must be frozen and committed before claim-generating execution. It will use fresh disjoint
+blocks, preserve the selected champion as incumbent, evaluate the retained M recipe descriptively,
+and issue the program's only authorized champion/web-default promotion decision. No additional
+recipe tuning is authorized.

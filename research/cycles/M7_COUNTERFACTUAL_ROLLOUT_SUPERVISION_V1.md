@@ -3,11 +3,10 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 4 of 5
 **Cycle:** `m7-counterfactual-rollout-supervision-v1`
-**Status:** Trivial repair 2 authorized; claim completion pending
+**Status:** Complete; independently validated; `inconclusive_does_not_advance`
 **Approved:** September 12, 2026
-**Repair reauthorization:** September 13, 2026
-**Prior failure report:** [`docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](../../docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md)
-**Repair 2:** [`M7_COUNTERFACTUAL_ROLLOUT_REPAIR2.md`](M7_COUNTERFACTUAL_ROLLOUT_REPAIR2.md)
+**Completed:** September 17, 2026
+**Result:** [`docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md`](../../docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md)
 **Budget:** one CPU process; claim cutoff 7 h 45 min; hard stop 8 h
 **Parent:** Step-3 mixed-data structured-v2 development recipe M
 

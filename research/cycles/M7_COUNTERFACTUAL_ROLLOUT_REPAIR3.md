@@ -4,8 +4,9 @@
 **Step:** 4 of 5
 **Cycle:** `m7-counterfactual-rollout-supervision-v1`
 **Repair:** `trivial-repair-3`
-**Status:** Approved under repair policy v2; execution pending
+**Status:** Completed; exact-source runner and independent validator passed
 **Approved:** September 17, 2026
+**Completed:** September 17, 2026
 **Original claim source:** `576b896b305273eb29701521d38791712b160a95`
 **Repair policy:** [`M7_TRIVIAL_REPAIR_POLICY_V2.md`](M7_TRIVIAL_REPAIR_POLICY_V2.md)
 
@@ -42,6 +43,9 @@ canonical targets, panels, training, arenas, statistics, thresholds, or selectio
 
 ## Completion
 
-If runner and independent validation pass, Step 4 receives its frozen scientific classification.
-This is the third and final trivial repair allowed for Step 4. Any further failure stops the program
-and returns to the user without Step 5.
+Repair 3 preserved exactly 615.5649927302729 seconds of consumed active claim time, rebuilt the
+immutable plan exactly, and allowed the original runner to complete attempt 2. Runner and independent
+validator both exited zero. The final Step-4 classification is `inconclusive_does_not_advance`; see
+[`docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md`](../../docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md).
+
+This was the third and final trivial repair allowed for Step 4. No further repair was required.

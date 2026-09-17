@@ -35,8 +35,8 @@ machine.
 | [Terminal-offense confirmation](docs/M7_TERMINAL_OFFENSE_CONFIRM_RESULTS.md) | Complete | 60,000 aligned-RNG games; hard immediate-win envelope adopted for research steps 2–4 |
 | [Population replay v1](docs/M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Three paired corpus/training replicates; direct gain but frozen robustness gates failed |
 | [Structured model v2](docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | Combined recipe beat v1 in both data arms; mixed selected for rollout development |
-| [Counterfactual rollout supervision](docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) | Repair 2 authorized | Original plan/targets fixed; integer-equivalent publication repair pending |
-| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress at stronger-policy Step 4 | Step 5 waits for repaired Step-4 validation |
+| [Counterfactual rollout supervision](docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) | Complete; inconclusive, did not advance | Treatment beat matched control 53.03% [51.80%, 54.30%], but heuristic robustness gate failed |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress at stronger-policy Step 5 | Exact independent-league agreement pending freeze |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
 **q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
@@ -99,15 +99,13 @@ still failed only the frozen q0-parent heuristic non-regression gate, so neither
 predeclared robustness-floor rule selects mixed-v2 solely as the development input for rollout
 supervision. See [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](docs/M7_STRUCTURED_MODEL_V2_RESULTS.md).
 
-Step 4 then implemented an information-safe latent rollout teacher and passed its bounded preflight,
-but the claim run stopped at target-shard assembly. Its sole operational repair reproduced all 1,400
-replicate-1 target rows byte-for-byte and assembled a non-published staging target, then correctly
-refused publication over an exact one-ULP terminal-fraction metadata mismatch. No rollout treatment
-was trained or evaluated, so no scientific Step-4 result yet exists. On September 13, the user
-authorized up to three strictly mechanical repairs per step and approved a second Step-4 repair that
-preserves every scientific input while validating terminal/leaf summaries by integer counts and a
-one-ULP bound. Step 5 remains waiting on repaired Step-4 validation. See
-[`docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md`](docs/M7_COUNTERFACTUAL_ROLLOUT_FAILURE.md) and the
+Step 4 then completed an information-safe counterfactual-rollout supervision comparison after three
+strictly mechanical repairs. Treatment beat exact matched structured-v2 controls at 53.03% [51.80%,
+54.30%], with all three replicate points above 50%, but did not advance: its aligned heuristic
+non-regression interval was [-6.11, +2.28] percentage points against a strict lower bound above -5.
+All tactical and integrity checks passed. Retained Step-3 mixed structured-v2 M is therefore the
+descriptive Step-5 entry; the rollout treatments are not. See
+[`docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md`](docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) and the
 [`program briefing`](docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md).
 
 Historical Milestone 6 results remain in
@@ -180,8 +178,8 @@ uv run python -m agent_avenue.research status research/cycles/setup-smoke-v1.jso
 ```
 
 See [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md) for approval, delegation, unattended
-execution, stop/resume, and durability boundaries. Step-4 trivial repair 2 is the current authorized
-research operation.
+execution, stop/resume, and durability boundaries. Stronger-policy Step 5 is pending an exact
+independent-league agreement freeze.
 
 See `AGENTS.md` for package boundaries, engine invariants, testing conventions, and contribution
 rules.

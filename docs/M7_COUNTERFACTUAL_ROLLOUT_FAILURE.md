@@ -3,20 +3,25 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 4 of 5
 **Cycle:** `m7-counterfactual-rollout-supervision-v1`
-**Status:** Historical initial block; trivial repair 2 authorized September 13, 2026
+**Status:** Historical initial block; superseded by completed validated repair
 **Initial stop:** September 12, 2026
-**Reauthorization:** [`research/cycles/M7_COUNTERFACTUAL_ROLLOUT_REPAIR2.md`](../research/cycles/M7_COUNTERFACTUAL_ROLLOUT_REPAIR2.md)
+**Completed result:** [`M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md`](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md)
 **Agreement:** [`research/cycles/M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](../research/cycles/M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md)
 **Claim source:** `576b896b305273eb29701521d38791712b160a95`
 
-## Decision
+## Historical decision
 
-Stop the stronger-policy program before Step 5. Step 4 produced no validated rollout-supervised
-checkpoint, arena, statistic, selection, or strength result. The single authorized operational
-repair was exhausted and no second repair is permitted under the approved agreement.
+This document records the September 12 authorization boundary, not the final scientific outcome.
+Repairs 2 and 3 subsequently completed without changing the frozen estimand, and the exact-source
+runner plus independent validator passed on September 17. The final classification is
+`inconclusive_does_not_advance`; see the completed result linked above.
 
-Do not classify the rollout recipe as stronger, weaker, failed, or inconclusive. The correct status
-is infrastructure-blocked before scientific evaluation.
+At the original stop, Step 4 had produced no validated rollout-supervised checkpoint, arena,
+statistic, selection, or strength result. The then-authorized repair was exhausted, so the program
+correctly stopped before Step 5 pending new user authorization.
+
+The statements below describe that historical boundary. They are superseded for final scientific
+interpretation by the completed result.
 
 ## What completed
 

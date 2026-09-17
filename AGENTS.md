@@ -135,6 +135,14 @@ network access or a browser a requirement for core tests.
   and still use the owning runner's normalized plan/provenance checks.
 - Do not use LLM polling to watch jobs. Detached managed processes report actual exit status; one
   terminal completion message may resume the lead for analysis/review/briefing.
+- Keep research conversations bounded. Redirect bulky command output to retained files and inspect
+  targeted excerpts; use isolated subagents for narrow work and return evidence-bearing summaries.
+  Before each major step, and before rotating a conversation, update and commit the program progress
+  note with the exact source, artifact state, next command, and recovery instructions. Monitor active
+  context usage and rotate to a fresh conversation by roughly 300,000 input/cache-read tokens, or at
+  every major research-step boundary, whichever comes first; never wait for the model context limit.
+- A deterministic context-limit rejection is not transient: do not retry the unchanged request.
+  Recover from the committed handoff in a fresh conversation instead.
 - Stop and budget requests halt new dispatch and preserve evidence. Never launch an unapproved next
   cycle automatically. See `docs/RESEARCH_WORKFLOW.md`.
 

@@ -18,7 +18,7 @@ The long-term measure of success is an AI that becomes meaningfully stronger thr
 self-play while remaining fair, testable, auditable, and practical to run on a CPU-only development
 machine.
 
-## Current status — September 12, 2026
+## Current status — October 7, 2026
 
 | Milestone | Status | Result |
 | --- | --- | --- |

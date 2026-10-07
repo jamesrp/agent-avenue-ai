@@ -1,6 +1,6 @@
 # Project status
 
-**As of:** September 17, 2026
+**As of:** October 7, 2026
 **Current selected hybrid champion:** q0-terminal-safety-v1
 **Permanent pure-neural baseline:** historical q0
 **Latest completed learned experiment:** [M7 counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md)
@@ -244,6 +244,7 @@ and [experiment protocol](EXPERIMENT_PROTOCOL.md).
 | Terminal-offense aligned-RNG confirmation | `5bbda9e18d23920f5ad7686e055615aad703c097` | `5dd1d77e67804cf959ccd9a90dd9569a54924623439a30194111da3304c3b4f6` |
 | Population replay v1 claim run | `fde19b5d3c327e539c29913a973b5e4d76ffff5b` | `e0adb698b5329031ad077f155ae5911f982b1d235bde21474f7262fe26694459` |
 | Structured model v2 claim run | `a63f0819dd679308fe03ec23d619e609529b1166` | `82b5111694299b8f24b848222449946508592478fca50d2b2bca4a60139f8911` |
+| Counterfactual rollout supervision claim run | `576b896b305273eb29701521d38791712b160a95` | `81913c1e52a22776fde97661936b7793f51f6c6882ce418aa76220a03de258d7` |
 
 ## Research workflow status
 

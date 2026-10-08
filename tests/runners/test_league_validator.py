@@ -325,6 +325,12 @@ def test_validator_threshold_boundaries(
     assert validator.decide(roles, statistics, tactical, prefix, False)[0] == "blocked_no_decision"
     bad_m = {**tactical, M_IDS[1]: {**zero, "false_forced_wins": 1}}
     assert validator.decide(roles, statistics, bad_m, prefix, True)[0] == "blocked_no_decision"
+    losing = {**tactical, CHALLENGER_ID: {**zero, "executed_avoidable_provable_losses": 1}}
+    assert validator.decide(roles, statistics, losing, prefix, True)[0] == (
+        "retain_q0_terminal_safety_v1"
+    )
+    assert not validator._unchecksummed("cells/family-a/x/validation.json")
+    assert validator._unchecksummed("cells/family-a/x/records/.lock")
 
 
 # ---------------------------------------------------------------------------------------------

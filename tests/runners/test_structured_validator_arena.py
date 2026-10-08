@@ -114,9 +114,7 @@ def test_local_arena_report_reconstructs_complete_report_byte_for_byte(
         ("average decisions", lambda report: report.update(average_decisions=99.0)),
     ],
 )
-def test_report_aggregate_mutations_are_rejected(
-    validator: Any, field: str, mutate: Any
-) -> None:
+def test_report_aggregate_mutations_are_rejected(validator: Any, field: str, mutate: Any) -> None:
     fixture = _arena_fixture(validator)
     mutated = copy.deepcopy(fixture["report"])
     mutate(mutated)
@@ -144,9 +142,7 @@ def test_record_winner_mutation_reconstructs_differently(validator: Any) -> None
         ("run ID", lambda record: replace(record, run_id="run-tampered")),
     ],
 )
-def test_record_schedule_identity_mutations_raise(
-    validator: Any, field: str, mutate: Any
-) -> None:
+def test_record_schedule_identity_mutations_raise(validator: Any, field: str, mutate: Any) -> None:
     fixture = _arena_fixture(validator)
     records = list(fixture["records"])
     mutated = mutate(records[0])
@@ -168,9 +164,7 @@ def test_record_schedule_identity_mutations_raise(
         ("RNG algorithm", lambda seat: replace(seat, rng_algorithm="tampered-rng")),
     ],
 )
-def test_record_seat_identity_mutations_raise(
-    validator: Any, field: str, mutate_seat: Any
-) -> None:
+def test_record_seat_identity_mutations_raise(validator: Any, field: str, mutate_seat: Any) -> None:
     fixture = _arena_fixture(validator)
     records = list(fixture["records"])
     record = records[0]

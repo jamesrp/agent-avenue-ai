@@ -251,9 +251,16 @@ def build_learned_fixture(tmp_path: Path) -> tuple[Path, Path]:
         path = root / entry["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
         content: dict[str, object] = {"fixture": name}
-        for key in ("artifact_fingerprint", "plan_fingerprint"):
-            if entry[key] is not None:
-                content[key] = entry[key]
+        # Mirror the retained writers: Step-1/3/4 results seal under result_fingerprint.
+        seal_key = (
+            "result_fingerprint"
+            if name.endswith("_result") and name != "terminal_safety_result"
+            else "artifact_fingerprint"
+        )
+        if entry["artifact_fingerprint"] is not None:
+            content[seal_key] = entry["artifact_fingerprint"]
+        if entry["plan_fingerprint"] is not None:
+            content["plan_fingerprint"] = entry["plan_fingerprint"]
         path.write_text(json.dumps(content))
         entry["sha256"] = _sha256(path)
     registry_path = _write_registry(tmp_path / "fixture-registry.json", _reseal(registry))
@@ -525,6 +532,22 @@ def test_any_integrity_failure_blocks_rather_than_retains() -> None:
     assert promotion_decision(**inputs)["decision"] == DECISION_BLOCKED
 
 
+def test_challenger_or_incumbent_avoidable_loss_retains_but_m_violation_blocks() -> None:
+    for policy in (CHALLENGER_ID, INCUMBENT_ID):
+        inputs = _decision_inputs(lift_lower=0.01, random_lower=0.6, seat=0.6)
+        inputs["tactical"]["by_policy"][policy]["executed_avoidable_provable_losses"] = 1
+        assert promotion_decision(**inputs)["decision"] == DECISION_RETAIN
+    zero = empty_tactical()
+    loss = {**zero, "executed_avoidable_provable_losses": 1}
+    assert (
+        aggregate_tactical({"c": {"tactical": {CHALLENGER_ID: loss, INCUMBENT_ID: loss}}})["status"]
+        == "passed"
+    )
+    assert aggregate_tactical({"c": {"tactical": {"q2-terminal-safety-v1": loss}}})["status"] == (
+        "failed"
+    )
+
+
 def test_regression_block_or_challenger_miss_retains() -> None:
     inputs = _decision_inputs(lift_lower=0.01, random_lower=0.6, seat=0.6)
     inputs["prefix"]["totals"]["incumbent_win_challenger_loss_games"] = 1
@@ -541,3 +564,83 @@ def test_game_spec_seat_orders_are_physical_seats() -> None:
     spec: GameSpec = next(iter(schedule_arena(cell_arena_config(cell, specs))))
     assert tuple(agent.agent_id for agent in spec.seats) == (INCUMBENT_ID, CHALLENGER_ID)
     assert tuple(PlayerId) == (PlayerId.PLAYER_ONE, PlayerId.PLAYER_TWO)
+
+
+def test_result_seal_key_and_temporary_sweep_and_checksum_scope(tmp_path: Path) -> None:
+    from agent_avenue.runners.league import (
+        checksum_excluded,
+        checksum_manifest,
+        evidence_seal_key,
+        sweep_temporary_files,
+    )
+
+    assert evidence_seal_key({"result_fingerprint": "x", "plan_fingerprint": "p"}) == (
+        "result_fingerprint"
+    )
+    assert evidence_seal_key({"artifact_fingerprint": "x"}) == "artifact_fingerprint"
+    records = tmp_path / "cells" / "family-a" / "x" / "records"
+    records.mkdir(parents=True)
+    (records / ".shard-000001.tmp-abc").write_text("partial")
+    (records / ".lock").write_text("")
+    (records / "games.jsonl.gz").write_text("g")
+    (tmp_path / "cells" / "family-a" / "x" / "validation.json").write_text("{}")
+    (tmp_path / "validation.json").write_text("{}")
+    assert sweep_temporary_files(tmp_path) == ["cells/family-a/x/records/.shard-000001.tmp-abc"]
+    files = checksum_manifest(tmp_path)["files"]
+    assert isinstance(files, dict)
+    assert set(files) == {
+        "cells/family-a/x/records/games.jsonl.gz",
+        "cells/family-a/x/validation.json",
+    }
+    assert checksum_excluded(Path("validation.json"))
+    assert not checksum_excluded(Path("cells/validation.json"))
+
+
+def test_runtime_preflight_scales_only_per_game_phases(tmp_path: Path) -> None:
+    from agent_avenue.runners.league import (
+        EXECUTION_VERSION,
+        PREFLIGHT_VERSION,
+        build_runtime_preflight,
+        sealed,
+        write_mutable,
+    )
+
+    plan = {
+        "plan_fingerprint": "plan",
+        "registry_fingerprint": REGISTRY_FINGERPRINT,
+        "source": {"code_fingerprint": "code"},
+        "execution": {"claim": False, "policy_mode": "learned-checkpoints", "pair_count": 2},
+    }
+    write_mutable(tmp_path / "plan.json", plan)
+    state = sealed(
+        EXECUTION_VERSION,
+        plan_fingerprint="plan",
+        claim=False,
+        attempts=[{"attempt": 1}],
+        active_seconds=110.0,
+        phase_seconds={"plan_and_inputs": 6.0, "holdout": 4.0, "cells": 100.0},
+        completed=True,
+    )
+    write_mutable(tmp_path / "execution-state.json", state)
+    write_mutable(tmp_path / "validation.json", {"status": "passed"})
+    write_mutable(
+        tmp_path / "validator-runtime.json",
+        {"elapsed_seconds": 60.0, "phase_seconds": {"holdout": 10.0, "replay_and_tactical": 50.0}},
+    )
+    preflight = build_runtime_preflight(tmp_path)
+    assert preflight["version"] == PREFLIGHT_VERSION
+    assert preflight["fixed_seconds"] == 20.0 and preflight["scaled_seconds"] == 150.0
+    assert preflight["projected_claim_minutes"] == pytest.approx((20 + 150 * 100) * 1.2 / 60)
+    assert preflight["all_phases_linear_projected_minutes"] == pytest.approx(170 * 100 * 1.2 / 60)
+    assert preflight["claim_eligible"] is True  # 300.4 minutes; all-linear would be 340
+    slow = sealed(
+        EXECUTION_VERSION,
+        plan_fingerprint="plan",
+        claim=False,
+        attempts=[{"attempt": 1}],
+        active_seconds=210.0,
+        phase_seconds={"plan_and_inputs": 6.0, "holdout": 4.0, "cells": 200.0},
+        completed=True,
+    )
+    write_mutable(tmp_path / "execution-state.json", slow)
+    assert build_runtime_preflight(tmp_path)["claim_eligible"] is False  # 500.4 minutes

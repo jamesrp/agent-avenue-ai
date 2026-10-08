@@ -73,16 +73,48 @@ were not spelled out and are recorded here so they can be reviewed before claim 
    current-turn win. The challenger must choose a guaranteed action and its record must end there
    (after the opponent's recruit for a play action) in its own win. Games with no endpoint must be
    identical in actions and outcome.
-6. **Integrity versus retention.** Condition 8 failures and any non-challenger envelope violation
-   (avoidable loss by any safety-enveloped policy, or a missed/false forced win by M1–M3) yield
-   `blocked_no_decision`; failures of conditions 1–7 yield `retain_q0_terminal_safety_v1`.
+6. **Integrity versus retention.** Failures of conditions 1–7 yield
+   `retain_q0_terminal_safety_v1`, including an avoidable loss by the incumbent or challenger
+   (conditions 4–5). Condition-8 failures and envelope violations by the descriptive policies (an
+   avoidable loss by q1–q4 or M1–M3, or a missed/false forced win by M1–M3) indicate an evidence
+   defect and yield `blocked_no_decision`.
 7. **Input identity.** Checkpoint directories must contain exactly the declared files; source
-   evidence must match its SHA-256 and any declared top-level `artifact_fingerprint` or
-   `plan_fingerprint`; claim runs require the four archives at the paths named in the prior result
-   documents.
+   evidence must match its SHA-256, its declared `plan_fingerprint`, and its declared seal, which
+   the Step-1/3/4 result writers store as `result_fingerprint` and every other retained artifact
+   (including the Step-0 result) as `artifact_fingerprint`; claim runs require the four archives at
+   the paths named in the prior result documents.
 8. **Deadline accounting.** The 465-minute claim cutoff applies to accumulated active runner time
-   across the initial attempt and the single permitted resume. The validator records its elapsed
-   time and fails the step if runner plus validator time exceeds 480 minutes.
+   (planning/input hashing, holdout, cells, audits, statistics, and finalization) across the
+   initial attempt and the single permitted resume; only the final `runtime.json`/`checksums.json`
+   writes are untimed. Time inside a phase killed by SIGKILL is not recovered. The validator fails
+   the step if runner plus validator time exceeds 480 minutes.
+9. **Runtime projection (needs explicit sign-off).** §10 multiplies "the measured combined
+   projection" by 1.20 but does not say how a small smoke is scaled. The preflight counts phases
+   whose cost does not depend on block count once (runner planning/input hashing and holdout scan;
+   validator authentication, input hashing, holdout scan, and final checks) and scales every other
+   measured second by 200 / smoke pairs. The all-phases-linear projection is also recorded; with
+   a large `runs/` the linear rule would multiply the fixed holdout scans by 100 and could fail
+   the gate for a reason unrelated to the claim's cost. If the phase-aware rule is not accepted,
+   use the recorded linear figure or a larger smoke.
+10. **Holdout at validation.** The validator requires the retained holdout to have passed, the
+    proposed setup identities to reproduce, a fresh scan of `runs` to show zero overlap, and every
+    retained prior corpus that is still present to be byte-identical. Exact equality of the whole
+    prior inventory at validation time is reported but not required, because `runs/` may change
+    after the claim starts.
+11. **Checksum scope.** Mutable and wrapper files are excluded only at the output root; corpus
+    `.lock` files are excluded anywhere. Dot-temporary files left by an interrupted atomic write
+    are swept (and listed in `runtime.json`) before checksums are written.
+
+## Known limitations
+
+- A source repair changes `plan.json`'s source identity, so the immutable plan refuses to resume
+  after any code change; a repair would need an explicit repair ledger and, if partial claim
+  corpora stay under `runs/`, a fresh holdout decision. No such path is implemented.
+- As in earlier cycles, both runner and validator classify provable losses with the production
+  terminal-safety filter; only guaranteed wins use the independent public oracle.
+- Learned configs' `model_version`, `encoder_fingerprint`, `device`, `inference`, and
+  `tie_breaking` are not declared in the registry; they are checked for consistency between the
+  plan and every record, not against the registry.
 
 ## Verification in the development container
 
@@ -94,6 +126,12 @@ were not spelled out and are recorded here so they can be reviewed before claim 
   registry (`--smoke-pairs 2`): validator passed with zero problems. Runner 101 s, validator 75 s;
   the gate projection was 351 minutes. This is indicative only: retained checkpoints, real game
   lengths, and the target VM determine the binding preflight.
+
+- A fresh-context review found that the source-evidence check used the wrong seal key for three
+  result files (which would have refused the claim at input authentication), that the
+  all-linear preflight would scale fixed scans by 100x, that incumbent/challenger avoidable losses
+  were classified as blocking rather than retaining, and several resume/holdout/checksum-scope
+  edge cases. All were fixed with regression tests except the documented limitations above.
 
 ## Remaining steps
 

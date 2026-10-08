@@ -229,7 +229,8 @@ class Roles:
         )
         self.rng = {policy["id"]: policy["rng_identity"] for policy in policies}
         self.declared = {policy["id"]: policy["config"] for policy in policies}
-        self.enveloped = (self.incumbent, self.challenger, *self.descendants, *self.replicates)
+        # Incumbent/challenger failures are promotion conditions; the rest are integrity failures.
+        self.integrity_enveloped = (*self.descendants, *self.replicates)
 
 
 class Design:
@@ -431,9 +432,14 @@ def check_inputs(registry: Mapping[str, Any], root: Path, *, archives_required: 
             problems.append(f"source evidence differs: {name}")
             continue
         content = _load(path)
-        for key in ("artifact_fingerprint", "plan_fingerprint"):
-            if entry[key] is not None and content.get(key) != entry[key]:
-                problems.append(f"source evidence {key} differs: {name}")
+        # Results from Steps 1, 3, and 4 seal themselves under result_fingerprint.
+        seal = content.get("result_fingerprint", content.get("artifact_fingerprint"))
+        if entry["artifact_fingerprint"] is not None and seal != entry["artifact_fingerprint"]:
+            problems.append(f"source evidence seal differs: {name}")
+        if entry["plan_fingerprint"] is not None and (
+            content.get("plan_fingerprint") != entry["plan_fingerprint"]
+        ):
+            problems.append(f"source evidence plan_fingerprint differs: {name}")
     for name, digest in registry["archive_sha256"].items():
         path = root / ARCHIVES[name]
         if path.is_file():
@@ -461,6 +467,7 @@ def independent_holdout(design: Design, roots: Sequence[Path], output: Path) -> 
     }
     prior: set[str] = set()
     corpora = 0
+    fingerprints: dict[str, str] = {}
     excluded = output.resolve()
     for declared in roots:
         root = declared.resolve()
@@ -469,10 +476,15 @@ def independent_holdout(design: Design, roots: Sequence[Path], output: Path) -> 
         for manifest in sorted(root.rglob("manifest.json")):
             if manifest.resolve().is_relative_to(excluded):
                 continue
-            if not (manifest.parent / "games.jsonl.gz").exists():
+            try:
+                declared_corpus = "records_file" in json.loads(manifest.read_text())
+            except (OSError, json.JSONDecodeError):
+                declared_corpus = False
+            if not (manifest.parent / "games.jsonl.gz").exists() and not declared_corpus:
                 continue
-            _, records = load_corpus(manifest.parent, verify_code=False, verify_replays=False)
+            loaded, records = load_corpus(manifest.parent, verify_code=False, verify_replays=False)
             corpora += 1
+            fingerprints[str(manifest.parent)] = loaded.corpus_fingerprint
             prior |= {_setup_key(normalize_config(r.replay.config), r.replay.seed) for r in records}
     return {
         "proposed_setup_count": len(proposed),
@@ -480,6 +492,7 @@ def independent_holdout(design: Design, roots: Sequence[Path], output: Path) -> 
         "prior_unique_setup_count": len(prior),
         "prior_setup_fingerprint": _digest(sorted(prior)),
         "corpus_count": corpora,
+        "corpus_fingerprints": fingerprints,
         "overlap_count": len(proposed & prior),
     }
 
@@ -1130,7 +1143,7 @@ def decide(
     ]
     envelope_ok = all(
         tactical.get(policy, {}).get("executed_avoidable_provable_losses", 0) == 0
-        for policy in roles.enveloped
+        for policy in roles.integrity_enveloped
     ) and all(
         tactical.get(policy, {}).get("missed_guaranteed_wins", 0) == 0
         and tactical.get(policy, {}).get("false_forced_wins", 0) == 0
@@ -1141,6 +1154,26 @@ def decide(
     if all(checks):
         return "promote_q0_terminal_offense_v1", checks
     return "retain_q0_terminal_safety_v1", checks
+
+
+def check_claim_preflight(
+    output: Path, plan: Mapping[str, Any], registry: Mapping[str, Any], problems: list[str]
+) -> None:
+    """A claim must be bound to a sealed, passing measured runtime preflight."""
+    path = output / "runtime-preflight.json"
+    if not path.is_file():
+        problems.append("claim runtime preflight is missing")
+        return
+    preflight = _load(path)
+    if (
+        not _self_sealed(preflight)
+        or preflight.get("artifact_fingerprint") != plan.get("runtime_preflight_fingerprint")
+        or preflight.get("claim_eligible") is not True
+        or not preflight.get("projected_claim_minutes", math.inf) <= 420.0
+        or preflight.get("code_fingerprint") != plan["source"]["code_fingerprint"]
+        or preflight.get("registry_fingerprint") != registry["artifact_fingerprint"]
+    ):
+        problems.append("claim runtime preflight is invalid or unbound")
 
 
 def check_cross_references(
@@ -1183,8 +1216,15 @@ def check_decision_reproduces(
 # Output-tree scope and checksums
 
 
-def expected_tree(design: Design) -> set[str]:
+def _unchecksummed(relative: str) -> bool:
+    name = relative.rsplit("/", 1)[-1]
+    return name == ".lock" or ("/" not in relative and name in NOT_CHECKSUMMED)
+
+
+def expected_tree(design: Design, *, claim: bool = False) -> set[str]:
     files = {name for name in TOP_LEVEL_ARTIFACTS}
+    if claim:
+        files.add("runtime-preflight.json")
     for family, left, right in design.cells():
         base = f"cells/{family}/{left}--vs--{right}"
         files |= {f"{base}/cell.json", f"{base}/records/manifest.json"}
@@ -1192,15 +1232,18 @@ def expected_tree(design: Design) -> set[str]:
     return files
 
 
-def check_tree_and_checksums(output: Path, design: Design, problems: list[str]) -> None:
+def check_tree_and_checksums(
+    output: Path, design: Design, problems: list[str], *, claim: bool = False
+) -> None:
     """Require the exact retained file set and exact checksum scope and digests."""
     present = {
-        path.relative_to(output).as_posix()
+        relative
         for path in output.rglob("*")
         if path.is_file()
-        and path.name not in NOT_CHECKSUMMED - {"checksums.json", "execution-state.json"}
+        for relative in [path.relative_to(output).as_posix()]
+        if not _unchecksummed(relative) or relative in {"checksums.json", "execution-state.json"}
     }
-    expected = expected_tree(design)
+    expected = expected_tree(design, claim=claim)
     if present != expected:
         extra, missing = sorted(present - expected), sorted(expected - present)
         problems.append(f"output tree differs: extra={extra[:5]} missing={missing[:5]}")
@@ -1215,7 +1258,7 @@ def check_tree_and_checksums(output: Path, design: Design, problems: list[str]) 
         return
     if set(manifest["excluded_names"]) != NOT_CHECKSUMMED:
         problems.append("checksum exclusion scope differs")
-    scoped = {name for name in expected if Path(name).name not in NOT_CHECKSUMMED}
+    scoped = {name for name in expected if not _unchecksummed(name)}
     if set(manifest["files"]) != scoped:
         problems.append("checksum scope differs from the retained artifact set")
     for name, digest in manifest["files"].items():
@@ -1338,16 +1381,19 @@ def validate(
         or holdout["overlap_count"] != 0
     ):
         problems.append("setup holdout overlap or malformed holdout inventory")
-    for key in (
-        "proposed_setup_count",
-        "proposed_setup_fingerprint",
-        "prior_unique_setup_count",
-        "prior_setup_fingerprint",
-    ):
+    for key in ("proposed_setup_count", "proposed_setup_fingerprint"):
         if holdout.get(key) != independent[key]:
             problems.append(f"holdout {key} does not reproduce")
-    if len(holdout.get("prior_inventory", [])) != independent["corpus_count"]:
-        problems.append("holdout prior inventory size does not reproduce")
+    # runs/ may legitimately change after the claim started (for example, a moved smoke tree), so
+    # the fresh scan must show zero overlap and every retained corpus still present must be
+    # byte-identical; exact equality of the whole prior inventory is reported, not required.
+    for row in holdout.get("prior_inventory", []):
+        current = independent["corpus_fingerprints"].get(row["path"])
+        if current is not None and current != row["corpus_fingerprint"]:
+            problems.append(f"retained holdout corpus changed: {row['path']}")
+    holdout_inventory_identical = (
+        holdout.get("prior_setup_fingerprint") == independent["prior_setup_fingerprint"]
+    )
     mark = lap("holdout", mark)
 
     summaries: dict[str, dict[str, Any]] = {}
@@ -1469,7 +1515,9 @@ def validate(
     if not deadline_ok:
         problems.append("claim cutoff exceeded")
 
-    check_tree_and_checksums(output, design, problems)
+    check_tree_and_checksums(output, design, problems, claim=claim)
+    if claim:
+        check_claim_preflight(output, plan, registry, problems)
     decision = _load(output / "promotion-decision.json")
     check_cross_references(
         decision,
@@ -1507,6 +1555,7 @@ def validate(
         "final_decision": expected_decision if status == "passed" else "blocked_no_decision",
         "independent_condition_results": checks,
         "replayed_games": sum(2 * design.pairs for _ in design.cells()),
+        "holdout_prior_inventory_identical_at_validation": holdout_inventory_identical,
         "runner_active_seconds": runner_seconds,
         "validator_seconds": total,
         "problems": problems[:200],

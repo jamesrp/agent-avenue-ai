@@ -97,6 +97,9 @@ POLICY_ORDER: Final = (
 )
 COMMON_OPPONENT_IDS: Final = POLICY_ORDER[2:]
 SAFETY_ENVELOPED_IDS: Final = (INCUMBENT_ID, CHALLENGER_ID, *Q_IDS, *M_IDS)
+# Incumbent/challenger tactical failures are promotion conditions 4-5 (retain); only the
+# descriptive enveloped policies' violations are integrity failures (blocked).
+INTEGRITY_ENVELOPED_IDS: Final = (*Q_IDS, *M_IDS)
 OFFENSE_ENVELOPED_IDS: Final = (CHALLENGER_ID, *M_IDS)
 NON_M_IDS: Final = tuple(policy for policy in POLICY_ORDER if policy not in M_IDS)
 
@@ -112,6 +115,9 @@ HARD_LIMIT_SECONDS: Final = 480 * 60
 PROJECTION_LIMIT_MINUTES: Final = 420.0
 PROJECTION_SAFETY_FACTOR: Final = 1.20
 ALLOWED_ATTEMPTS: Final = 2
+# Phases whose cost does not grow with block count; every other measured second scales linearly.
+RUNNER_FIXED_PHASES: Final = ("plan_and_inputs", "holdout")
+VALIDATOR_FIXED_PHASES: Final = ("authentication", "inputs", "holdout", "checks_and_decision")
 
 DECISION_PROMOTE: Final = "promote_q0_terminal_offense_v1"
 DECISION_RETAIN: Final = "retain_q0_terminal_safety_v1"
@@ -504,6 +510,10 @@ def _verify_file(path: Path, expected: str) -> dict[str, object]:
     }
 
 
+def evidence_seal_key(content: Mapping[str, object]) -> str:
+    return "result_fingerprint" if "result_fingerprint" in content else "artifact_fingerprint"
+
+
 def verify_league_inputs(
     registry: Mapping[str, Any], root: Path, *, require_archives: bool
 ) -> dict[str, object]:
@@ -542,9 +552,18 @@ def verify_league_inputs(
         row = _verify_file(path, entry["sha256"])
         if row["status"] == "passed":
             content = read_json(path)
-            for key in ("artifact_fingerprint", "plan_fingerprint"):
-                if entry.get(key) is not None and content.get(key) != entry[key]:
-                    row["status"] = f"{key}_mismatch"
+            # Step-1/3/4 result writers seal under ``result_fingerprint``; other retained
+            # artifacts (and the Step-0 result) seal under ``artifact_fingerprint``.
+            seal_key = evidence_seal_key(content)
+            row["seal_key"] = seal_key
+            if entry.get("artifact_fingerprint") is not None and (
+                content.get(seal_key) != entry["artifact_fingerprint"]
+            ):
+                row["status"] = "artifact_fingerprint_mismatch"
+            if entry.get("plan_fingerprint") is not None and (
+                content.get("plan_fingerprint") != entry["plan_fingerprint"]
+            ):
+                row["status"] = "plan_fingerprint_mismatch"
         if row["status"] != "passed":
             failures.append(f"source_evidence:{name}")
         evidence_rows[name] = row
@@ -1672,7 +1691,7 @@ def aggregate_tactical(cells: Mapping[str, Mapping[str, Any]]) -> dict[str, obje
             for name in TACTICAL_FIELDS:
                 row[name] += counts[name]
     violations: list[str] = []
-    for policy in SAFETY_ENVELOPED_IDS:
+    for policy in INTEGRITY_ENVELOPED_IDS:
         if policy in totals and totals[policy]["executed_avoidable_provable_losses"]:
             violations.append(f"avoidable_loss:{policy}")
     for policy in M_IDS:
@@ -1684,6 +1703,7 @@ def aggregate_tactical(cells: Mapping[str, Mapping[str, Any]]) -> dict[str, obje
         TACTICAL_VERSION,
         by_policy=dict(sorted(totals.items())),
         safety_enveloped=list(SAFETY_ENVELOPED_IDS),
+        integrity_enveloped=list(INTEGRITY_ENVELOPED_IDS),
         offense_enveloped=list(OFFENSE_ENVELOPED_IDS),
         q_policies_missed_wins_descriptive=list(Q_IDS),
         nonchallenger_envelope_violations=violations,
@@ -1799,10 +1819,27 @@ def promotion_decision(
 # Execution state, checksums, and orchestration
 
 
+def checksum_excluded(relative: Path) -> bool:
+    """Mutable/wrapper files are excluded only at the output root; corpus locks anywhere."""
+    return relative.name == ".lock" or (
+        len(relative.parts) == 1 and relative.name in CHECKSUM_EXCLUDED_NAMES
+    )
+
+
+def sweep_temporary_files(output: Path) -> list[str]:
+    """Remove dot-temporary files left by an interrupted atomic write before a resume finishes."""
+    swept: list[str] = []
+    for path in sorted(output.rglob(".*")):
+        if path.is_file() and ".tmp" in path.name:
+            swept.append(path.relative_to(output).as_posix())
+            path.unlink()
+    return swept
+
+
 def checksum_manifest(output: Path) -> dict[str, object]:
     files: dict[str, str] = {}
     for path in sorted(output.rglob("*")):
-        if path.is_file() and path.name not in CHECKSUM_EXCLUDED_NAMES:
+        if path.is_file() and not checksum_excluded(path.relative_to(output)):
             files[path.relative_to(output).as_posix()] = sha256_file(path)
     return sealed(CHECKSUM_VERSION, excluded_names=sorted(CHECKSUM_EXCLUDED_NAMES), files=files)
 
@@ -1845,6 +1882,16 @@ def begin_execution(output: Path, plan: Mapping[str, object]) -> Path:
         }
     _store_execution(path, state)
     return path
+
+
+def add_phase_seconds(path: Path, phase: str, seconds: float) -> None:
+    """Charge time measured before the execution state existed (planning and input hashing)."""
+    state = _load_execution(path)
+    phases = dict(state["phase_seconds"])
+    phases[phase] = float(phases.get(phase, 0.0)) + seconds
+    state["phase_seconds"] = phases
+    state["active_seconds"] = float(state["active_seconds"]) + seconds
+    _store_execution(path, state)
 
 
 @contextmanager
@@ -1924,7 +1971,15 @@ def build_runtime_preflight(smoke_output: Path) -> dict[str, object]:
     scale = PAIRS_PER_FAMILY / int(execution["pair_count"])
     runner_seconds = float(state["active_seconds"])
     validator_seconds = float(runtime["elapsed_seconds"])
-    projected = (runner_seconds + validator_seconds) * scale * PROJECTION_SAFETY_FACTOR / 60
+    runner_phases = cast(Mapping[str, float], state["phase_seconds"])
+    validator_phases = cast(Mapping[str, float], runtime["phase_seconds"])
+    fixed = sum(float(runner_phases.get(name, 0.0)) for name in RUNNER_FIXED_PHASES) + sum(
+        float(validator_phases.get(name, 0.0)) for name in VALIDATOR_FIXED_PHASES
+    )
+    unattributed = validator_seconds - sum(float(value) for value in validator_phases.values())
+    scaled = runner_seconds + validator_seconds - fixed
+    linear = (runner_seconds + validator_seconds) * scale * PROJECTION_SAFETY_FACTOR / 60
+    projected = (fixed + scaled * scale) * PROJECTION_SAFETY_FACTOR / 60
     return sealed(
         PREFLIGHT_VERSION,
         smoke_plan_fingerprint=plan["plan_fingerprint"],
@@ -1936,7 +1991,16 @@ def build_runtime_preflight(smoke_output: Path) -> dict[str, object]:
         runner_active_seconds=runner_seconds,
         validator_seconds=validator_seconds,
         validator_phase_seconds=runtime.get("phase_seconds"),
+        fixed_phases={
+            "runner": list(RUNNER_FIXED_PHASES),
+            "validator": list(VALIDATOR_FIXED_PHASES),
+        },
+        fixed_seconds=fixed,
+        scaled_seconds=scaled,
+        validator_unattributed_seconds=unattributed,
         safety_factor=PROJECTION_SAFETY_FACTOR,
+        projection_method="fixed-phases-once-plus-per-game-phases-scaled-v1",
+        all_phases_linear_projected_minutes=linear,
         projected_claim_minutes=projected,
         limit_minutes=PROJECTION_LIMIT_MINUTES,
         claim_eligible=projected <= PROJECTION_LIMIT_MINUTES,
@@ -2047,12 +2111,18 @@ def build_plan(
         "deployment_mutation": "never-performed-by-runner",
     }
     plan = {"version": PLAN_VERSION, **plan_payload, "plan_fingerprint": fingerprint(plan_payload)}
-    return plan, design, bundle, {"registry": registry, "input_audit": input_audit}
+    return (
+        plan,
+        design,
+        bundle,
+        {"registry": registry, "input_audit": input_audit, "preflight": preflight},
+    )
 
 
 def run_league(config: LeagueRunConfig) -> dict[str, object]:
     """Run the complete league (claim or nonclaim smoke) and emit the immutable decision."""
     output = config.output
+    planning_started = time.perf_counter()
     plan, design, bundle, context = build_plan(config)
     output.mkdir(parents=True, exist_ok=True)
     claim = cast(Mapping[str, object], plan["execution"])["claim"] is True
@@ -2063,7 +2133,11 @@ def run_league(config: LeagueRunConfig) -> dict[str, object]:
     write_immutable(output / "input-audit.json", cast(Mapping[str, object], context["input_audit"]))
     write_immutable(output / "source.json", cast(Mapping[str, object], plan["source"]))
     write_immutable(output / "schedule.json", cast(Mapping[str, object], plan["schedule"]))
+    preflight = cast(Mapping[str, object] | None, context.get("preflight"))
+    if preflight is not None:
+        write_immutable(output / "runtime-preflight.json", preflight)
     state_path = begin_execution(output, plan)
+    add_phase_seconds(state_path, "plan_and_inputs", time.perf_counter() - planning_started)
     with timed_phase(state_path, "holdout", cutoff_seconds=cutoff):
         holdout_path = output / "holdout.json"
         if holdout_path.exists():
@@ -2095,41 +2169,45 @@ def run_league(config: LeagueRunConfig) -> dict[str, object]:
             },
         )
         write_immutable(output / "statistics.json", statistics)
-    state = _load_execution(state_path)
-    integrity = {
-        "registry_schedule": cast(Mapping[str, object], plan["registry_schedule_audit"])["status"]
-        == "passed"
-        or not claim,
-        "inputs": cast(Mapping[str, object], context["input_audit"])["status"]
-        in ({"passed"} if claim else {"passed", "not-applicable-toy-smoke"}),
-        "holdout": holdout["status"] == "passed",
-        "within_claim_cutoff": cutoff is None or float(state["active_seconds"]) < cutoff,
-        "all_cells_reconstructed": len(cells) == len(design.cells()),
-    }
-    decision = promotion_decision(
-        statistics=statistics, tactical=tactical, prefix=prefix, integrity=integrity
-    )
-    write_immutable(output / "promotion-decision.json", decision)
-    result = sealed(
-        RESULT_VERSION,
-        plan_fingerprint=plan["plan_fingerprint"],
-        evidence_class=cast(Mapping[str, object], plan["execution"])["evidence_class"],
-        cells={
-            key: {
-                "artifact_fingerprint": artifact["artifact_fingerprint"],
-                "corpus_fingerprint": artifact["corpus_fingerprint"],
-            }
-            for key, artifact in sorted(cells.items())
-        },
-        holdout_fingerprint=holdout["artifact_fingerprint"],
-        prefix_fingerprint=prefix["artifact_fingerprint"],
-        tactical_fingerprint=tactical["artifact_fingerprint"],
-        statistics_fingerprint=statistics["artifact_fingerprint"],
-        decision_fingerprint=decision["artifact_fingerprint"],
-        decision=decision["decision"],
-        independent_validation="required",
-    )
-    write_immutable(output / "result.json", result)
+    with timed_phase(state_path, "finalize", cutoff_seconds=None):
+        state = _load_execution(state_path)
+        integrity = {
+            "registry_schedule": cast(Mapping[str, object], plan["registry_schedule_audit"])[
+                "status"
+            ]
+            == "passed"
+            or not claim,
+            "inputs": cast(Mapping[str, object], context["input_audit"])["status"]
+            in ({"passed"} if claim else {"passed", "not-applicable-toy-smoke"}),
+            "holdout": holdout["status"] == "passed",
+            "within_claim_cutoff": cutoff is None or float(state["active_seconds"]) < cutoff,
+            "all_cells_reconstructed": len(cells) == len(design.cells()),
+        }
+        decision = promotion_decision(
+            statistics=statistics, tactical=tactical, prefix=prefix, integrity=integrity
+        )
+        write_immutable(output / "promotion-decision.json", decision)
+        result = sealed(
+            RESULT_VERSION,
+            plan_fingerprint=plan["plan_fingerprint"],
+            evidence_class=cast(Mapping[str, object], plan["execution"])["evidence_class"],
+            cells={
+                key: {
+                    "artifact_fingerprint": artifact["artifact_fingerprint"],
+                    "corpus_fingerprint": artifact["corpus_fingerprint"],
+                }
+                for key, artifact in sorted(cells.items())
+            },
+            holdout_fingerprint=holdout["artifact_fingerprint"],
+            prefix_fingerprint=prefix["artifact_fingerprint"],
+            tactical_fingerprint=tactical["artifact_fingerprint"],
+            statistics_fingerprint=statistics["artifact_fingerprint"],
+            decision_fingerprint=decision["artifact_fingerprint"],
+            decision=decision["decision"],
+            independent_validation="required",
+        )
+        write_immutable(output / "result.json", result)
+        swept = sweep_temporary_files(output)
     state = _load_execution(state_path)
     write_immutable(
         output / "runtime.json",
@@ -2140,6 +2218,8 @@ def run_league(config: LeagueRunConfig) -> dict[str, object]:
             phase_seconds=state["phase_seconds"],
             attempts=state["attempts"],
             games=sum(cell.games for cell in design.cells()),
+            swept_temporary_files=swept,
+            untimed_tail="runtime.json and checksums.json writes",
         ),
     )
     write_immutable(output / "checksums.json", checksum_manifest(output))

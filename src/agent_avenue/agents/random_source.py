@@ -92,6 +92,37 @@ class DeterministicRandom:
             if value < limit:
                 return value % upper_bound
 
+    def randbelow_batch(self, upper_bound: int, count: int) -> list[int]:
+        """Return ``count`` consecutive ``randbelow`` draws from the identical stream.
+
+        This is a throughput path for bootstrap resampling. It hashes the exact canonical word
+        payload that ``_word`` serializes, but builds the constant prefix and suffix once, so the
+        values and the final counter equal ``count`` sequential ``randbelow`` calls.
+        """
+        _exact_int(upper_bound, "upper_bound")
+        _exact_int(count, "count")
+        if upper_bound <= 0:
+            raise ValueError("upper_bound must be positive")
+        if count < 0:
+            raise ValueError("count cannot be negative")
+        prefix = ('{"algorithm":' + json.dumps(self.algorithm) + ',"counter":').encode()
+        suffix = (
+            ',"domain":' + json.dumps(self.domain) + ',"seed":' + str(self.seed) + "}"
+        ).encode()
+        modulus = 1 << 256
+        limit = modulus - (modulus % upper_bound)
+        sha256 = hashlib.sha256
+        counter = self._counter
+        values: list[int] = []
+        append = values.append
+        while len(values) < count:
+            value = int.from_bytes(sha256(prefix + str(counter).encode() + suffix).digest(), "big")
+            counter += 1
+            if value < limit:
+                append(value % upper_bound)
+        self._counter = counter
+        return values
+
     @classmethod
     def from_data(cls, data: object) -> "DeterministicRandom":
         """Restore a stream from an exact normalized state representation."""

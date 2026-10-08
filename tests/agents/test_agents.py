@@ -171,6 +171,20 @@ def test_rng_is_versioned_domain_separated_and_reproducible() -> None:
         DeterministicRandom.from_root_seed(7, "")
 
 
+def test_rng_batch_draws_equal_sequential_draws_and_advance_the_same_counter() -> None:
+    sequential = DeterministicRandom.from_root_seed(2026091705, "league:bootstrap/étude")
+    batched = DeterministicRandom.from_root_seed(2026091705, "league:bootstrap/étude")
+    for bound, count in ((3, 7), (200, 400), (1, 3), (2**70 + 13, 9), (5, 0)):
+        expected = [sequential.randbelow(bound) for _ in range(count)]
+        assert batched.randbelow_batch(bound, count) == expected
+        assert batched.to_data() == sequential.to_data()
+    assert batched.randbelow(11) == sequential.randbelow(11)
+    with pytest.raises(ValueError, match="positive"):
+        batched.randbelow_batch(0, 1)
+    with pytest.raises(ValueError, match="negative"):
+        batched.randbelow_batch(3, -1)
+
+
 def test_random_agent_maps_every_controlled_index_to_corresponding_action() -> None:
     observation = recruit_observation()
     for index, expected in enumerate(observation.legal_actions):

@@ -3,7 +3,7 @@
 **Program:** `m7-stronger-policy-program-v1`
 **Step:** 5 of 5
 **Cycle:** `m7-independent-league-promotion-v1`
-**Status:** Approved and design-frozen; implementation pending
+**Status:** Approved and design-frozen; implemented (see [`M7_INDEPENDENT_LEAGUE_IMPLEMENTATION_V1.md`](M7_INDEPENDENT_LEAGUE_IMPLEMENTATION_V1.md)); smoke and preflight pending
 **Approved:** September 17, 2026 under the September 11 five-step program authorization
 **Input registry:** [`m7-independent-league-inputs.json`](m7-independent-league-inputs.json), fingerprint `df238b7d9c948563ee15e4e2cfc59fe1525a9721b10e24362a7d251c1dfb7d48`
 **Budget:** one CPU process at a time; claim cutoff 7 h 45 min; hard whole-step stop 8 h

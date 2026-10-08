@@ -1,8 +1,8 @@
 # Stronger policy program: progress and decision log
 
 **Program:** `m7-stronger-policy-program-v1`
-**Last updated:** September 17, 2026
-**Overall state:** Step 5 exact design frozen; implementation and preflight pending
+**Last updated:** October 8, 2026
+**Overall state:** Step 5 implemented; retained-input learned smoke and runtime preflight pending
 **Current selected policy:** `q0-terminal-safety-v1`
 
 ## Goal snapshot
@@ -41,7 +41,7 @@ public-history signaling, and specializes to narrow self-play distributions.
 | 2. Population replay v1 | Complete; does not advance | [`M7_POPULATION_REPLAY_V1.md`](M7_POPULATION_REPLAY_V1.md) | `027b434`, `fb696f8`, `adc55a2`, `bf7cb09`, `c9b78c3` | 24,000 training + 24,000 development; repaired validation passed | [`docs/M7_POPULATION_REPLAY_RESULTS.md`](../../docs/M7_POPULATION_REPLAY_RESULTS.md) |
 | 3. Structured model v2 | Complete; does not advance | [`M7_STRUCTURED_MODEL_V2.md`](M7_STRUCTURED_MODEL_V2.md) | `b1f2b6f` through `7321aa1` | Six fits + 30,000 games; exact-source validation passed after one operational repair | [`docs/M7_STRUCTURED_MODEL_V2_RESULTS.md`](../../docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) |
 | 4. Counterfactual rollouts | Complete; inconclusive, does not advance | [`M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md`](M7_COUNTERFACTUAL_ROLLOUT_SUPERVISION_V1.md) | `b20699b` through `cb0e045` | 24,000 games; repaired exact-source validation passed | [`docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md`](../../docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) |
-| 5. Independent league | Exact design frozen; implementation pending | [`M7_INDEPENDENT_LEAGUE_PROMOTION_V1.md`](M7_INDEPENDENT_LEAGUE_PROMOTION_V1.md) | None | None | Sole promotion challenger is q0 terminal offense; M-v2 descriptive |
+| 5. Independent league | Implemented; smoke and preflight pending | [`M7_INDEPENDENT_LEAGUE_PROMOTION_V1.md`](M7_INDEPENDENT_LEAGUE_PROMOTION_V1.md) | [`M7_INDEPENDENT_LEAGUE_IMPLEMENTATION_V1.md`](M7_INDEPENDENT_LEAGUE_IMPLEMENTATION_V1.md) | None | Sole promotion challenger is q0 terminal offense; M-v2 descriptive |
 
 ## Completed step 1
 
@@ -131,6 +131,14 @@ No locked-final game has been run.
 
 ## Completed implementation work
 
+- Step-5 implementation: registry/schedule authentication, declaration-checked policy construction,
+  exhaustive holdout, 132-cell execution with tactical replay, aligned prefix audit, integer-exact
+  matrix/anchor/M-family bootstraps, the immutable eight-condition decision, deadline/resume/
+  checksum boundaries, runtime preflight, and a fully independent validator with mutation tests.
+  Toy and synthetic-learned smokes validated with zero problems; synthetic projection 351 minutes
+  (indicative only). Implementation interpretations needing sign-off are listed in
+  [`M7_INDEPENDENT_LEAGUE_IMPLEMENTATION_V1.md`](M7_INDEPENDENT_LEAGUE_IMPLEMENTATION_V1.md).
+
 - `de1872a`: explicit agent RNG identities with backward-compatible default schedules.
 - `b99cc2d`: terminal-offense confirmation runner, independent public oracle, tie diagnostics, and
   validator foundation.
@@ -155,6 +163,10 @@ No locked-final game has been run.
   decision logic, and a separate independent validator are committed and smoke-tested.
 
 ## Decision log
+
+- **October 8 — Step-5 implementation:** runner, independent validator, preflight, and mutation
+  tests are implemented without changing entrants, seeds, statistics, or gates. Next is the
+  learned smoke on retained inputs and the binding runtime preflight; no claim game has run.
 
 - **September 17 — Step-5 design freeze:** twelve-policy two-family locked league, 52,800 games,
   q0 terminal offense as sole promotion challenger, descriptive M replicate family, aligned anchor

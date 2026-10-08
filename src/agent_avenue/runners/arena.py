@@ -88,10 +88,16 @@ def paired_bootstrap_interval(
     bootstrap_seed = derive_seed(master_seed, PAIRED_BOOTSTRAP_DOMAIN)
     rng = DeterministicRandom(bootstrap_seed, PAIRED_BOOTSTRAP_DOMAIN)
     pair_count = len(pair_wins)
-    totals = [
-        sum(pair_wins[rng.randbelow(pair_count)] for _ in range(pair_count))
-        for _ in range(PAIRED_BOOTSTRAP_RESAMPLES)
-    ]
+    # Resamples are drawn in chunks of one shared bound; the stream equals sequential draws.
+    totals: list[int] = []
+    chunk = 64
+    while len(totals) < PAIRED_BOOTSTRAP_RESAMPLES:
+        count = min(chunk, PAIRED_BOOTSTRAP_RESAMPLES - len(totals))
+        draws = rng.randbelow_batch(pair_count, pair_count * count)
+        totals.extend(
+            sum(pair_wins[index] for index in draws[start : start + pair_count])
+            for start in range(0, pair_count * count, pair_count)
+        )
     totals.sort()
     denominator = 2 * pair_count
     return PairedBootstrapInterval(

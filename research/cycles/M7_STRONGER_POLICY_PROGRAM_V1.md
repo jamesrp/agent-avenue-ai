@@ -1,7 +1,7 @@
 # Approved research program: stronger policy v1
 
 **Program ID:** `m7-stronger-policy-program-v1`
-**Status:** Step 5 design-frozen; implementation and preflight pending
+**Status:** Step 5 design-frozen and implemented; retained-input smoke and preflight pending
 **Completed through:** September 17, 2026
 **Briefing:** [`docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md`](../../docs/M7_STRONGER_POLICY_PROGRAM_BRIEFING.md)
 **Approved:** September 11, 2026

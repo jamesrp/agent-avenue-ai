@@ -1,7 +1,7 @@
 # Stronger-policy program v1: Step-4 briefing
 
 **Program:** `m7-stronger-policy-program-v1`
-**Status:** Step 5 design-frozen; implementation and preflight pending
+**Status:** Step 5 design-frozen and implemented; retained-input smoke and preflight pending
 **Updated:** October 7, 2026
 **Agreement:** [`research/cycles/M7_STRONGER_POLICY_PROGRAM_V1.md`](../research/cycles/M7_STRONGER_POLICY_PROGRAM_V1.md)
 
@@ -26,7 +26,7 @@ The selected champion and web default remain `q0-terminal-safety-v1` until Step 
 | 2. Population replay v1 | Does not advance | Mixed beat q0-only control 62.10% [60.13%, 64.00%], but robustness gates failed |
 | 3. Structured model v2 | Does not advance | V2 beat v1 in both data arms; mixed-v2 selected only as Step-4 development input |
 | 4. Counterfactual rollout | Inconclusive; does not advance | Treatment beat matched control 53.03% [51.80%, 54.30%], but heuristic lower bound was -6.11 pp |
-| 5. Independent league | Design frozen; implementation pending | Retained Step-3 mixed structured-v2 M is descriptive; q0 terminal offense is the sole promotion challenger |
+| 5. Independent league | Design frozen; implemented; smoke/preflight pending | Retained Step-3 mixed structured-v2 M is descriptive; q0 terminal offense is the sole promotion challenger |
 
 ## Step-4 interpretation
 

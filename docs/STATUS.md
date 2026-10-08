@@ -1,6 +1,6 @@
 # Project status
 
-**As of:** October 7, 2026
+**As of:** October 8, 2026
 **Current selected hybrid champion:** q0-terminal-safety-v1
 **Permanent pure-neural baseline:** historical q0
 **Latest completed learned experiment:** [M7 counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md)
@@ -27,7 +27,7 @@ actual present state.
 | [Population replay v1](M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Mixed replay beat matched controls but frozen robustness gates failed |
 | [Structured model v2](M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | V2 beat v1 in both data arms; mixed selected for Step-4 development |
 | [Counterfactual rollout supervision](M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) | Complete; inconclusive, did not advance | Positive matched-control result; heuristic robustness gate failed |
-| [7: controlled RL experiments](MILESTONE7.md) | In progress at stronger-policy Step 5 | Exact league design frozen; implementation and preflight pending |
+| [7: controlled RL experiments](MILESTONE7.md) | In progress at stronger-policy Step 5 | Runner, independent validator, and mutation tests implemented; retained-input smoke and preflight pending |
 
 ## Current measured policies
 
@@ -306,7 +306,10 @@ additional off-VM durability remain unconfigured.
 
 ## Planned next work
 
-1. implement the frozen Step-5 runner, independent validator, and mutation tests;
-2. run an isolated end-to-end smoke and freeze a clean claim source only if runtime passes;
+1. run the learned-checkpoint Step-5 smoke and independent validator against the retained inputs,
+   then the measured runtime preflight (the runner, validator, and mutation tests are implemented;
+   see the [implementation record](../research/cycles/M7_INDEPENDENT_LEAGUE_IMPLEMENTATION_V1.md));
+2. review the recorded implementation interpretations and freeze a clean claim source only if the
+   preflight passes;
 3. execute the 52,800-game locked league, then issue the final champion decision; and
 4. choose an off-VM retention mechanism if stronger disaster recovery is desired.

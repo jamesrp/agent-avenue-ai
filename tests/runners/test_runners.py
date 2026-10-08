@@ -360,6 +360,19 @@ def test_paired_bootstrap_matches_declared_fixture() -> None:
         paired_bootstrap_interval((3,), 17)
 
 
+def test_chunked_paired_bootstrap_equals_sequential_single_draw_definition() -> None:
+    pair_wins = (2, 0, 1, 1, 2, 0, 2)
+    master = 2026091705
+    domain = "arena:paired-bootstrap:agent-a-win-rate:v1"
+    rng = DeterministicRandom(derive_seed(master, domain), domain)
+    totals = sorted(
+        sum(pair_wins[rng.randbelow(len(pair_wins))] for _ in pair_wins) for _ in range(20_000)
+    )
+    result = paired_bootstrap_interval(pair_wins, master)
+    assert result.interval == (totals[499] / 14, totals[19_499] / 14)
+    assert result.bootstrap_seed == derive_seed(master, domain)
+
+
 def test_arena_report_contains_reproducible_paired_outcomes() -> None:
     report = run_arena(ArenaConfig("paired", _random_spec("a"), _random_spec("b"), 2, 41))
     assert len(report.paired_seed_outcomes) == 2

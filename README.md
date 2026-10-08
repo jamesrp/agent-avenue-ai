@@ -18,7 +18,7 @@ The long-term measure of success is an AI that becomes meaningfully stronger thr
 self-play while remaining fair, testable, auditable, and practical to run on a CPU-only development
 machine.
 
-## Current status — October 7, 2026
+## Current status — October 8, 2026
 
 | Milestone | Status | Result |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ machine.
 | [Population replay v1](docs/M7_POPULATION_REPLAY_RESULTS.md) | Complete; did not advance | Three paired corpus/training replicates; direct gain but frozen robustness gates failed |
 | [Structured model v2](docs/M7_STRUCTURED_MODEL_V2_RESULTS.md) | Complete; did not advance | Combined recipe beat v1 in both data arms; mixed selected for rollout development |
 | [Counterfactual rollout supervision](docs/M7_COUNTERFACTUAL_ROLLOUT_RESULTS.md) | Complete; inconclusive, did not advance | Treatment beat matched control 53.03% [51.80%, 54.30%], but heuristic robustness gate failed |
-| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress at stronger-policy Step 5 | Exact league design frozen; implementation and preflight pending |
+| [7: controlled RL experiments](docs/MILESTONE7.md) | In progress at stronger-policy Step 5 | Runner, independent validator, and mutation tests implemented; retained-input smoke and preflight pending |
 
 The permanent pure-neural baseline remains historical **q0**. The current selected hybrid champion is
 **q0-terminal-safety-v1**, which wraps a separately retrained q0 checkpoint in an information-safe
@@ -179,7 +179,20 @@ uv run python -m agent_avenue.research status research/cycles/setup-smoke-v1.jso
 
 See [`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md) for approval, delegation, unattended
 execution, stop/resume, and durability boundaries. Stronger-policy Step 5 has a frozen exact league
-design; implementation and preflight are pending before any locked-final game.
+design and an implemented runner plus independent validator; the retained-input smoke and runtime
+preflight are pending before any locked-final game:
+
+```bash
+uv run --extra rl python scripts/run_independent_league_promotion_v1.py run \
+  --output runs/m7-independent-league-smoke --smoke-pairs 2
+uv run --extra rl python scripts/validate_independent_league_promotion_v1.py \
+  runs/m7-independent-league-smoke
+uv run --extra rl python scripts/run_independent_league_promotion_v1.py preflight \
+  runs/m7-independent-league-smoke --output runs/m7-independent-league-preflight.json
+```
+
+See the Step-5 [implementation record](research/cycles/M7_INDEPENDENT_LEAGUE_IMPLEMENTATION_V1.md)
+for claim gating and implementation interpretations.
 
 See `AGENTS.md` for package boundaries, engine invariants, testing conventions, and contribution
 rules.

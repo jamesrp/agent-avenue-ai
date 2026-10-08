@@ -135,7 +135,7 @@ No locked-final game has been run.
   exhaustive holdout, 132-cell execution with tactical replay, aligned prefix audit, integer-exact
   matrix/anchor/M-family bootstraps, the immutable eight-condition decision, deadline/resume/
   checksum boundaries, runtime preflight, and a fully independent validator with mutation tests.
-  Toy and synthetic-learned smokes validated with zero problems; synthetic projection 351 minutes
+  Toy and synthetic-learned smokes validated with zero problems; synthetic projection 368 minutes
   (indicative only). Implementation interpretations needing sign-off are listed in
   [`M7_INDEPENDENT_LEAGUE_IMPLEMENTATION_V1.md`](M7_INDEPENDENT_LEAGUE_IMPLEMENTATION_V1.md).
 

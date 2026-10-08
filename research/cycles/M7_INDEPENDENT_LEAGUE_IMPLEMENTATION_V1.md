@@ -123,8 +123,9 @@ were not spelled out and are recorded here so they can be reviewed before claim 
   artifact, zero prefix/alignment failures, decision `retain_q0_terminal_safety_v1` (expected for
   random stand-ins).
 - Learned smoke with synthetic checkpoints of the real architectures bound by a resealed fixture
-  registry (`--smoke-pairs 2`): validator passed with zero problems. Runner 101 s, validator 75 s;
-  the gate projection was 351 minutes. This is indicative only: retained checkpoints, real game
+  registry (`--smoke-pairs 2`): validator passed with zero problems. Runner 110 s (including
+  planning), validator 76 s; the phase-aware projection was 368 minutes (all-linear 371) with
+  an empty holdout root. This is indicative only: retained checkpoints, real game
   lengths, and the target VM determine the binding preflight.
 
 - A fresh-context review found that the source-evidence check used the wrong seal key for three

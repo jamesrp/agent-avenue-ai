@@ -455,3 +455,17 @@ def test_tampered_plan_is_rejected_before_any_replay(
             inputs_root=Path("."),
             holdout_roots=(tmp_path / "none",),
         )
+
+
+def test_completed_execution_refuses_to_run_again(league_output: Path) -> None:
+    from agent_avenue.runners.league import LeagueError
+
+    with pytest.raises(LeagueError, match="already completed"):
+        run_league(
+            LeagueRunConfig(
+                output=league_output,
+                policy_mode="toy-random",
+                smoke_pairs=1,
+                holdout_roots=(league_output.parent / "empty-runs",),
+            )
+        )

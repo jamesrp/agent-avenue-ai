@@ -1827,7 +1827,7 @@ def begin_execution(output: Path, plan: Mapping[str, object]) -> Path:
         if state["plan_fingerprint"] != plan["plan_fingerprint"]:
             raise LeagueError("execution state belongs to another plan")
         if state["completed"] is True:
-            return path
+            raise LeagueError("this league execution already completed; validate it instead")
         attempts = list(state["attempts"])
         if len(attempts) >= ALLOWED_ATTEMPTS:
             raise LeagueError("the single permitted Step-5 resume has already been used")
